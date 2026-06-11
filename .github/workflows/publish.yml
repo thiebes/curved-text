@@ -1,4 +1,4 @@
-name: Release
+name: Publish
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
       id-token: write  # OIDC token for PyPI trusted publishing
     steps:

@@ -1,5 +1,7 @@
 # curved-text
 
+[![CI](https://github.com/thiebes/curved-text/actions/workflows/ci.yml/badge.svg)](https://github.com/thiebes/curved-text/actions/workflows/ci.yml)
+
 Draw text that follows an arbitrary curve in [matplotlib](https://matplotlib.org/).
 
 ![Direct labeling versus a legend](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/01_direct_labeling.png)

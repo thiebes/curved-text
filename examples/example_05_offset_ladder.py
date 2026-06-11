@@ -15,7 +15,7 @@ import numpy as np
 from curved_text import curved_text
 from _style import PALETTE, figure, bare, caption, anchor_xy, save
 
-OFFSETS = [-10.0, 0.0, 10.0]
+OFFSETS = [-14.0, 0.0, 14.0]
 POS = 0.5
 
 
@@ -30,16 +30,20 @@ def make(images_dir):
         bare(ax)
         ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
         ax.set_xlim(-0.05, 1.05)
-        ax.set_ylim(-0.15, 0.7)
-        curved_text(ax, x, y, "offset", pos=POS, anchor="center",
-                    offset=offset, color=PALETTE["gold"], fontsize=11)
+        ax.set_ylim(-0.35, 0.95)
+        label = curved_text(ax, x, y, "offset", pos=POS, anchor="center",
+                            offset=offset, color=PALETTE["gold"], fontsize=11)
+        # Lift the glyphs above the anchor dot so the dot never sits on the
+        # text -- it marks the on-curve reference the offset is measured from.
+        label.set_zorder(5)
         caption(ax, f"offset={offset:g}")
 
+    # Mark the on-curve anchor the offset is measured from, behind the glyphs.
     fig.canvas.draw()
     for ax in axes:
         ax_x, ax_y = anchor_xy(ax, x, y, POS)
-        ax.plot([ax_x], [ax_y], "o", color=PALETTE["green"], markersize=6,
-                zorder=5)
+        ax.plot([ax_x], [ax_y], "o", color=PALETTE["green"], markersize=5,
+                zorder=4)
 
     path = os.path.join(images_dir, "05_offset_ladder.png")
     return save(fig, path)

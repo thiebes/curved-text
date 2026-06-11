@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "curved-text"
+version = "0.1.0"
+description = "Draw text along an arbitrary curve in matplotlib, with arc-length positioning and a perpendicular offset."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Joseph Thiebes", email = "joseph@thiebes.org" }]
+keywords = ["matplotlib", "text", "annotation", "label", "curve", "visualization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: Matplotlib",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Intended Audience :: Science/Research",
+]
+
+# Library dependencies use compatible lower bounds; a consuming application pins
+# exact versions in its own lockfile.
+dependencies = [
+    "matplotlib>=3.5",
+    "numpy>=1.20",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+# Extra renderers used only by the integration example (matplotlib is already a
+# core dependency). Lower bounds, like the rest of the project.
+examples = [
+    "seaborn>=0.11",
+    "pandas>=1.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/thiebes/curved-text"
+Source = "https://github.com/thiebes/curved-text"
+Issues = "https://github.com/thiebes/curved-text/issues"
+Changelog = "https://github.com/thiebes/curved-text/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -26,6 +26,11 @@ A label that overruns either end of the curve is not clipped: the curve is
 extended along its end tangent and the overrunning glyphs sit on that straight
 extension.
 
+If you know LaTeX, this is matplotlib's analogue of TikZ's `text along path`
+decoration (from `decorations.text`): `pos`/`anchor` play the role of `text
+align` and the indents, `offset` plays the role of `raise`, and overrunning
+text rides the tangent extension instead of being truncated at the path's end.
+
 ## Install
 
 ```bash

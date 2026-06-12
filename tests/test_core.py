@@ -102,6 +102,29 @@ def test_left_overrun_is_not_clipped():
     plt.close(fig)
 
 
+def test_glyph_rotation_smooths_across_vertices():
+    # A coarse polyline with one sharp vertex: flat, then rising. A glyph whose
+    # advance straddles the vertex must take the angle of the chord across its
+    # own advance -- strictly between the two segment tangents -- rather than
+    # snapping to whichever segment its midpoint falls in.
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.array([0.0, 5.0, 10.0])
+    y = np.array([0.0, 0.0, 5.0])
+    # Wide glyphs centered near the vertex so one of them straddles it.
+    ct = curved_text(ax, x, y, "mmmm", pos=0.5, anchor="center", fontsize=24)
+    _draw(fig)
+    pts = ax.transData.transform(np.column_stack([x, y]))
+    rising = np.degrees(np.arctan2(pts[2, 1] - pts[1, 1], pts[2, 0] - pts[1, 0]))
+    rots = [t.get_rotation() for t in ct._chars]
+    # The flat segment's tangent is 0; every rotation stays within the two
+    # segment tangents, and the straddling glyph lands strictly between them.
+    assert all(-0.1 <= r <= rising + 0.1 for r in rots)
+    assert any(1.0 < r < rising - 1.0 for r in rots)
+    plt.close(fig)
+
+
 def test_degenerate_curve_does_not_raise():
     # A curve whose points are all identical has zero arc length; drawing must
     # short-circuit cleanly rather than raising.

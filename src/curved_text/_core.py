@@ -20,7 +20,11 @@ class CurvedText(mtext.Text):
 
     Each character is an independent :class:`matplotlib.text.Text`, centered
     (``ha="center"``, ``va="center"``) on its own arc-length midpoint, placed in
-    display coordinates and rotated to the local tangent of the curve. The layout
+    display coordinates and rotated to the chord across its own advance -- the
+    direction from where the glyph starts on the curve to where it ends. The
+    chord follows the local tangent but averages over the glyph's own width, so
+    rotation stays smooth across the vertices of a coarsely sampled polyline
+    instead of snapping to each segment's angle. The layout
     is recomputed on every draw, so the label keeps following the curve through
     figure layout, resizing, and interactive panning or zooming.
 
@@ -127,7 +131,7 @@ class CurvedText(mtext.Text):
 
         def _point(s):
             # Position at arc length ``s``. ``i`` is the segment it falls in, which
-            # the caller also uses to read the local tangent ``rads[i]``. Clipping
+            # the caller uses for the segment-tangent fallback ``rads[i]``. Clipping
             # the index extrapolates past either end along the terminal segment.
             i = int(np.clip(np.searchsorted(arc, s) - 1, 0, len(arc) - 2))
             d = arc[i + 1] - arc[i]
@@ -153,11 +157,19 @@ class CurvedText(mtext.Text):
         ox, oy = nx * scale, ny * scale
 
         # ``cursor`` walks the label's left edge along the arc; each glyph is
-        # centered on its own midpoint and rotated to the local tangent.
+        # centered on its own midpoint and rotated to the chord across its own
+        # advance, which smooths the segment-wise tangent of a coarse polyline
+        # at exactly the glyph's own length scale.
         for t, w in zip(self._chars, widths):
             i, px, py = _point(cursor + w / 2.0)
+            _, lx, ly = _point(cursor)
+            _, rx, ry = _point(cursor + w)
+            if rx == lx and ry == ly:
+                rot = rads[i]  # zero-width glyph; the chord is degenerate
+            else:
+                rot = np.arctan2(ry - ly, rx - lx)
             t.set_position(inv.transform((px + ox, py + oy)))
-            t.set_rotation(np.degrees(rads[i]))
+            t.set_rotation(np.degrees(rot))
             t.set_visible(True)
             cursor += w
 

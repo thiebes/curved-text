@@ -9,10 +9,11 @@ Draw text that follows an arbitrary curve in [matplotlib](https://matplotlib.org
 Label curves along their own paths instead of in a legend, so the eye never
 leaves the data to decode a colour key.
 
-Each character is placed in display coordinates and rotated to the local tangent
-of the curve, recomputed on every draw, so the label keeps following the curve
-through layout, resizing, and interactive panning or zooming. Placement is
-controlled by three independent parameters:
+Each character is placed in display coordinates and rotated to the chord across
+its own advance, which follows the curve's local tangent while staying smooth
+even when the curve is coarsely sampled. The layout is recomputed on every draw,
+so the label keeps following the curve through layout, resizing, and interactive
+panning or zooming. Placement is controlled by three independent parameters:
 
 - `pos` -- where the label is anchored along the curve, as a fraction of arc
   length (`0.0` = first point, `1.0` = last).

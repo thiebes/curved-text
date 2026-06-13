@@ -25,3 +25,41 @@ jobs:
           pip install -e ".[test]"
       - name: Run tests
         run: pytest -q
+
+  # The matplotlib floor declared in pyproject.toml. Mathtext support relies on
+  # get_glyphs_mathtext, Path.code_type, and the parse_math kwarg, all present
+  # since 3.5; pin the floor and prove the suite passes against it.
+  floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - name: Set up Python 3.9
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.9"
+      - name: Install with floor matplotlib
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]" "matplotlib==3.5.*"
+      - name: Run tests
+        run: pytest -q
+
+  # Non-blocking early warning. curved-text is listed in matplotlib's
+  # third-party registry, so surface upstream breakage from a matplotlib
+  # pre-release here before users meet it.
+  prerelease:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - name: Set up Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Install with pre-release matplotlib
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+          pip install --pre --upgrade matplotlib
+      - name: Run tests
+        run: pytest -q

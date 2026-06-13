@@ -23,6 +23,7 @@ MODULES = [
     "example_07_glued_resize",
     "example_08_styling_passthrough",
     "example_09_seaborn_pandas",
+    "example_10_mathtext",
 ]
 
 

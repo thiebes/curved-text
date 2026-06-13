@@ -80,6 +80,26 @@ first (matching matplotlib's axes-first helper functions).
 Any extra keyword arguments (`color`, `fontsize`, `alpha`, `fontfamily`, ...) are
 passed through to each character's `matplotlib.text.Text`.
 
+## Mathtext
+
+A `$...$` run in the label is laid out by matplotlib's
+[mathtext](https://matplotlib.org/stable/users/explain/text/mathtext.html)
+engine and bent through the same arc-length frame as plain text. Every glyph
+outline and rule box is mapped through the curve, so radicals, fractions, and
+sized delimiters stay connected and follow it at any curvature. Plain and math
+runs mix freely in one string:
+
+```python
+curved_text(ax, x, y, r"flux $\propto \sqrt{D_{\mathrm{eff}}}\,(L/L_0)^2$",
+            pos=0.5, anchor="center", offset=8.0)
+```
+
+![A mathtext expression following a sine wave](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/10_mathtext.png)
+
+Pass `parse_math=False` to treat dollar signs literally. Tall expressions
+compress vertically on the inside of tight bends, so choose the label size
+relative to the curvature. `text.usetex` is not supported.
+
 ## Works with seaborn, pandas, and other matplotlib-backed libraries
 
 `curved_text` needs a `matplotlib.axes.Axes`, so it works with any library that
@@ -101,6 +121,10 @@ curved_text(ax, df["x"], df["y"], "along the curve",
   and have at least two points.
 - Arc length and the offset are computed in display space, so spacing and the
   offset are correct at any DPI and figure size.
+- The curve should be smooth relative to the glyph size. Each glyph (and each
+  mathtext run) follows the local tangent, so when the curve reverses direction
+  within a glyph's width -- as raw noisy data does -- the label collides with
+  itself. Label a smoothed or fitted trend line rather than the raw samples.
 
 ## License
 

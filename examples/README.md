@@ -46,6 +46,16 @@ One curve, one centred label riding it with a small perpendicular offset.
 
 [example_02_sine_hello.py](example_02_sine_hello.py)
 
+### Mathtext rides the curve too
+
+A `$...$` run is laid out by matplotlib's mathtext engine and bent through the
+same arc-length frame as plain text, so the radical, fraction, and superscript
+stay connected and follow the curve. Plain and math runs mix in one string.
+
+![A mathtext expression following a sine wave](images/10_mathtext.png)
+
+[example_10_mathtext.py](example_10_mathtext.py)
+
 ## The three placement controls
 
 `pos`, `anchor`, and `offset` are independent. Each small-multiple below varies

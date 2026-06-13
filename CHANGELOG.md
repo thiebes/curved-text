@@ -3,6 +3,15 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.0
+
+- Mathtext support: a `$...$` run in the label is laid out by matplotlib's
+  mathtext engine and bent through the curve's arc-length frame, mapping every
+  glyph outline and rule box so radicals, fractions, and sized delimiters stay
+  connected and follow the curve. Plain and math runs mix in one string. Pass
+  `parse_math=False` to treat dollar signs literally; `text.usetex` is not
+  supported.
+
 ## 0.1.1
 
 - Fixed kinked letters on coarsely sampled curves: each glyph is now rotated to

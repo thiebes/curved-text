@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "curved-text"
-version = "0.1.1"
+version = "0.2.0"
 description = "Draw text along an arbitrary curve in matplotlib, with arc-length positioning and a perpendicular offset."
 readme = "README.md"
 requires-python = ">=3.9"

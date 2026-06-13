@@ -211,7 +211,7 @@ class _MathRun(mtext.Text):
         prop = self.get_fontproperties()
         key = (self.get_text(), hash(prop))
         if self._outline_cache is not None and self._outline_cache[0] == key:
-            return self._outline_cache[1:]
+            return self._outline_cache[1]
         glyph_info, glyph_map, rects = _text_to_path.get_glyphs_mathtext(
             prop, self.get_text())
         pieces = []
@@ -236,7 +236,7 @@ class _MathRun(mtext.Text):
         _, height, depth = _text_to_path.get_text_width_height_descent(
             self.get_text(), prop, ismath=True)
         datum = (height / 2.0 - depth) * _text_to_path.FONT_SCALE / size
-        self._outline_cache = (key, verts, codes, datum)
+        self._outline_cache = (key, (verts, codes, datum))
         return verts, codes, datum
 
 

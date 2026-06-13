@@ -15,6 +15,52 @@ __all__ = ["CurvedText", "curved_text"]
 _ANCHORS = ("start", "center", "end")
 
 
+class _CurveFrame:
+    """Display-space curve geometry: cumulative arc length with an elementwise
+    point-and-tangent lookup.
+
+    Arc lengths past either end of the curve clip into the terminal segments,
+    so lookups there extrapolate along the end tangents and an overrunning
+    label rides a straight extension instead of being clipped.
+    """
+
+    def __init__(self, xf: np.ndarray, yf: np.ndarray) -> None:
+        self._xf = xf
+        self._yf = yf
+        self._arc = np.insert(
+            np.cumsum(np.hypot(np.diff(xf), np.diff(yf))), 0, 0.0)
+        self._rads = np.arctan2(np.diff(yf), np.diff(xf))
+
+    @property
+    def length(self) -> float:
+        return float(self._arc[-1])
+
+    def points_and_angles(self, s):
+        """Map arc length ``s`` (scalar or array, pixels) to the position on
+        the curve and the local segment-tangent angle, elementwise."""
+        i = np.clip(np.searchsorted(self._arc, s) - 1, 0, len(self._arc) - 2)
+        d = self._arc[i + 1] - self._arc[i]
+        f = np.where(d != 0.0, (s - self._arc[i]) / np.where(d != 0.0, d, 1.0),
+                     0.0)
+        x = self._xf[i] + f * (self._xf[i + 1] - self._xf[i])
+        y = self._yf[i] + f * (self._yf[i + 1] - self._yf[i])
+        return x, y, self._rads[i]
+
+    def chord_angles(self, s, span):
+        """Angle of the chord across ``[s, s + span]``, elementwise.
+
+        This is the rotation a glyph of advance ``span`` takes: it follows the
+        local tangent but averages over the glyph's own width, so it stays
+        smooth across the vertices of a coarsely sampled polyline instead of
+        snapping to each segment's angle. Degenerate chords (zero ``span`` or a
+        zero-length stretch of curve) fall back to the segment tangent.
+        """
+        xl, yl, rad = self.points_and_angles(s)
+        xr, yr, _ = self.points_and_angles(np.asarray(s) + span)
+        return np.where((xr == xl) & (yr == yl), rad,
+                        np.arctan2(yr - yl, xr - xl))
+
+
 class CurvedText(mtext.Text):
     """A string drawn along an (x, y) curve, one character at a time.
 
@@ -112,14 +158,12 @@ class CurvedText(mtext.Text):
         if not self._chars:
             return
         axes = self.axes
-        # Work in display pixels: project the curve, accumulate cumulative arc
-        # length along it, and the tangent angle of each segment.
+        # Work in display pixels: project the curve and build its arc-length
+        # frame.
         pts = axes.transData.transform(np.column_stack([self._cx, self._cy]))
-        xf, yf = pts[:, 0], pts[:, 1]
-        arc = np.insert(np.cumsum(np.hypot(np.diff(xf), np.diff(yf))), 0, 0.0)
-        if not np.isfinite(arc[-1]) or arc[-1] <= 0.0:
+        frame = _CurveFrame(pts[:, 0], pts[:, 1])
+        if not np.isfinite(frame.length) or frame.length <= 0.0:
             return
-        rads = np.arctan2(np.diff(yf), np.diff(xf))
         inv = axes.transData.inverted()
 
         # Reset any rotation left by the previous draw before measuring, so each
@@ -129,16 +173,7 @@ class CurvedText(mtext.Text):
         widths = [t.get_window_extent(renderer=renderer).width for t in self._chars]
         total = float(sum(widths))
 
-        def _point(s):
-            # Position at arc length ``s``. ``i`` is the segment it falls in, which
-            # the caller uses for the segment-tangent fallback ``rads[i]``. Clipping
-            # the index extrapolates past either end along the terminal segment.
-            i = int(np.clip(np.searchsorted(arc, s) - 1, 0, len(arc) - 2))
-            d = arc[i + 1] - arc[i]
-            f = (s - arc[i]) / d if d else 0.0
-            return i, xf[i] + f * (xf[i + 1] - xf[i]), yf[i] + f * (yf[i + 1] - yf[i])
-
-        s0 = self._pos * arc[-1]
+        s0 = self._pos * frame.length
         if self._anchor == "center":
             cursor = s0 - total / 2.0
         elif self._anchor == "end":
@@ -147,9 +182,9 @@ class CurvedText(mtext.Text):
             cursor = s0
 
         # Offset the whole label along the normal of its chord (first to last
-        # glyph); ``_point`` extrapolates past the curve ends along their tangents.
-        _, x0, y0 = _point(cursor)
-        _, x1, y1 = _point(cursor + total)
+        # glyph); the frame extrapolates past the curve ends along their tangents.
+        x0, y0, _ = frame.points_and_angles(cursor)
+        x1, y1, _ = frame.points_and_angles(cursor + total)
         dx, dy = x1 - x0, y1 - y0
         norm = float(np.hypot(dx, dy))
         nx, ny = (-dy / norm, dx / norm) if norm else (0.0, 1.0)
@@ -161,13 +196,8 @@ class CurvedText(mtext.Text):
         # advance, which smooths the segment-wise tangent of a coarse polyline
         # at exactly the glyph's own length scale.
         for t, w in zip(self._chars, widths):
-            i, px, py = _point(cursor + w / 2.0)
-            _, lx, ly = _point(cursor)
-            _, rx, ry = _point(cursor + w)
-            if rx == lx and ry == ly:
-                rot = rads[i]  # zero-width glyph; the chord is degenerate
-            else:
-                rot = np.arctan2(ry - ly, rx - lx)
+            px, py, _ = frame.points_and_angles(cursor + w / 2.0)
+            rot = frame.chord_angles(cursor, w)
             t.set_position(inv.transform((px + ox, py + oy)))
             t.set_rotation(np.degrees(rot))
             t.set_visible(True)

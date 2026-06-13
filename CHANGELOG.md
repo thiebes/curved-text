@@ -3,13 +3,22 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.2.1
+## 0.3.0
 
-- Mathtext runs now honor `path_effects`, matching the per-character glyphs. A
-  white `withStroke` effect draws a casing that follows the curved text, so a
-  label stays legible where it crosses the lines it labels. Path effects already
+- Added `box`: a casing drawn behind the label that follows the curve at the
+  label's height, under the glyphs, so the label stays legible where it crosses
+  the lines it labels. Because it is a single fill it gives solid coverage
+  behind plain and mathtext alike, unlike a wide `path_effects` stroke, which
+  cannibalizes adjacent per-character glyphs. Accepts `True`, a color string, or
+  a dict of `color` / `pad` / `alpha`.
+- Mathtext runs now honor `path_effects`, matching the per-character glyphs, for
+  a lighter glyph-hugging casing (a white `withStroke`). Path effects already
   reached plain characters through the keyword pass-through; mathtext runs draw
   their own path and previously skipped them.
+- Fixed mathtext vertical alignment: a run now rides the curve on the
+  surrounding text's x-height line rather than its own bounding box, so a
+  superscript or tall delimiter no longer drops the body below the neighbouring
+  plain characters.
 
 ## 0.2.0
 

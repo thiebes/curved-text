@@ -121,14 +121,14 @@ per-character `Text`.
 
 [example_08_styling_passthrough.py](example_08_styling_passthrough.py)
 
-### Clear the line behind the label
+### Clear the lines behind the label
 
-Because keyword arguments reach every glyph and mathtext run, matplotlib's
-`path_effects` work too. A white `withStroke` effect draws a casing that follows
-each glyph -- curved to match the text -- so the label stays legible where it
-crosses the data lines.
+`box=True` draws a casing that follows the curve at the label's height, under
+the glyphs, so the label stays legible where it crosses the lines it labels. It
+is a single fill, so it covers plain text and mathtext alike. (For a lighter
+glyph-hugging casing, pass a white `withStroke` through `path_effects` instead.)
 
-![A label cleared from the lines it crosses by a white halo](images/11_halo.png)
+![A label cleared from the lines it crosses by a white casing](images/11_halo.png)
 
 [example_11_halo.py](example_11_halo.py)
 

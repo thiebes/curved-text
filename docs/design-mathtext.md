@@ -118,13 +118,17 @@ All code lives in `src/curved_text/_core.py`.
 
 ## Vertical datum
 
-A math run sits where a rigid `Text` child with `va="center"` would sit: its
-own layout box center rides the curve, so `datum = height / 2 - depth` above
-the baseline, taken from the mathtext metrics. This is the one definition
-consistent with how every plain character is already placed, and it is pinned
-by test rather than asserted: on a straight line the bend map is the identity,
-so the bent path must match the window extent of an equivalent plain `Text`
-within a pixel or two.
+A math run rides the curve on the surrounding text's x-height line: `datum =
+x_height / 2` above the baseline, measured from a plain lowercase reference at
+the run's font size. This keeps the run's main symbols level with neighbouring
+plain characters in a mixed label.
+
+The earlier choice -- the run's own layout box center (`height / 2 - depth`) --
+was wrong for mixed labels: a superscript or tall delimiter inflates the box, so
+centering on it dropped the body below the plain characters. The x-height line
+is immune, because it does not depend on the run's own extent. Pinned by two
+tests: a lowercase math symbol centers where the plain character does under
+`va="center"`, and an exponent extends the run upward without moving its body.
 
 ## Path effects
 
@@ -133,8 +137,25 @@ Keyword arguments reach every child, so `path_effects` flow to the per-character
 `Text.draw`; `_MathRun.draw` draws its own bent path, so it wraps the renderer in
 a `PathEffectRenderer` when effects are set. The effect strokes the bent outline,
 so a white `withStroke` casing follows the curved text and clears the lines a
-label crosses. This is the matplotlib-native idiom for legible labels; no
-dedicated parameter is added.
+label crosses. This is the matplotlib-native idiom for a light, glyph-hugging
+casing.
+
+## Casing (`box`)
+
+A `path_effects` stroke cannot give solid coverage under plain text: each
+character is its own artist that strokes then fills, so a wide neighbor stroke
+overwrites the previous glyph's fill. The `box` parameter solves the
+full-coverage case with a different mechanism -- a single `Line2D` casing
+following the offset curve across the label's span, its linewidth set to the
+tallest glyph's height, drawn as one fill so nothing cannibalizes. It is a child
+artist positioned per draw in `CurvedText.draw`, like the glyphs.
+
+Layering is by zorder, applied once in `__init__` and maintained by
+`set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at
+`z + 1`. The casing must sit above the container because the container's `draw`
+is what positions it -- a lower zorder would draw the casing before its geometry
+is set, leaving it stale or empty. It must sit below the glyphs so the text
+reads on top.
 
 ## Behavior rules
 

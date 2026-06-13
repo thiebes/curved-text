@@ -1,42 +1,40 @@
-"""Tier 2: clear the line behind a label with a path-effect halo.
+"""Tier 2: clear the lines behind a label with a casing.
 
-Extra keyword arguments pass through to every glyph and mathtext run, so
-matplotlib's ``path_effects`` reach the label like any other ``Text``. A white
-``withStroke`` effect draws a casing that follows each glyph -- curved to match
-the text -- so the label stays legible where it crosses the data lines.
+Set ``box`` to draw a band that follows the curve at the label's height,
+under the glyphs, so the label stays legible where it crosses the lines it
+labels. The casing is a single fill, so it gives solid coverage behind plain
+and mathtext alike. For a lighter, glyph-hugging casing instead, pass a white
+``withStroke`` through ``path_effects``.
 """
 from __future__ import annotations
 
 import os
 
-import matplotlib.patheffects as pe
 import numpy as np
 
 from curved_text import curved_text
 from _style import PALETTE, figure, bare, caption, save
 
+LABEL = r"signal $s(t) = A\,e^{-t/\tau}$"
+
 
 def make(images_dir):
-    fig = figure(15, 7, font_size=11)
-    ax = fig.subplots()
-    bare(ax)
+    fig = figure(20, 9, font_size=9)
+    axes = fig.subplots(2, 1)
 
+    # A gentle arch with enough curvature that the label visibly follows it.
     x = np.linspace(0, 10, 400)
-    # A small family of nearby curves for the label to cross.
-    for shift in (-0.5, 0.0, 0.5):
-        ax.plot(x, np.sin(x) + shift, color="0.55", linewidth=1.4)
-    ax.set_xlim(0, 10)
-    ax.set_ylim(-2.0, 2.0)
+    y = 1.5 * np.sin(np.pi * x / 10.0)
 
-    # offset=0 puts the label on the middle curve, so it crosses its neighbours;
-    # the white halo clears all three behind the text.
-    curved_text(ax, x, np.sin(x), r"signal $s(t) = A\,e^{-t/\tau}$",
-                pos=0.5, anchor="center", offset=0.0,
-                color=PALETTE["gold"], fontsize=16,
-                path_effects=[pe.withStroke(linewidth=4.0, foreground="white")])
-
-    caption(ax, 'curved_text(ax, x, y, "...", '
-                'path_effects=[pe.withStroke(linewidth=4, foreground="white")])')
+    for ax, box in zip(axes, [False, True]):
+        bare(ax)
+        for shift in (-0.4, 0.0, 0.4):
+            ax.plot(x, y + shift, color="0.55", linewidth=1.4)
+        ax.set_xlim(-0.2, 10.2)
+        ax.set_ylim(-0.9, 2.4)
+        curved_text(ax, x, y, LABEL, pos=0.5, anchor="center", offset=0.0,
+                    color=PALETTE["gold"], fontsize=16, box=box)
+        caption(ax, f"box={box}")
 
     path = os.path.join(images_dir, "11_halo.png")
     return save(fig, path)

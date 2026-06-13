@@ -102,11 +102,26 @@ relative to the curvature. `text.usetex` is not supported.
 
 ## Clearing the line behind the label
 
-Keyword arguments reach every glyph and mathtext run, so matplotlib's
-[`path_effects`](https://matplotlib.org/stable/users/explain/artists/patheffects_guide.html)
-work like they do on any `Text`. A white `withStroke` effect draws a casing that
-follows each glyph -- curved to match the text -- so a label stays readable
-where it crosses the data lines:
+Set `box` to draw a casing behind the label: a band that follows the curve at
+the label's height, under the glyphs, so the label stays legible where it
+crosses the lines it labels. It is a single fill, so it gives solid coverage
+behind plain text and mathtext alike:
+
+```python
+curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$", box=True)
+```
+
+`box` accepts `True`, a color string, or a dict (`color`, `pad` for the band
+height relative to the tallest glyph, and `alpha`).
+
+![A label cleared from the lines it crosses by a white casing](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_halo.png)
+
+For a lighter, glyph-hugging casing instead, pass a white `withStroke` through
+matplotlib's
+[`path_effects`](https://matplotlib.org/stable/users/explain/artists/patheffects_guide.html),
+which reach every glyph and mathtext run like they do on any `Text`. A wide
+stroke there merges adjacent per-character glyphs, so `box` is the way to get
+solid coverage under plain text:
 
 ```python
 import matplotlib.patheffects as pe
@@ -114,8 +129,6 @@ import matplotlib.patheffects as pe
 curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$",
             path_effects=[pe.withStroke(linewidth=4, foreground="white")])
 ```
-
-![A label cleared from the lines it crosses by a white halo](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_halo.png)
 
 ## Works with seaborn, pandas, and other matplotlib-backed libraries
 

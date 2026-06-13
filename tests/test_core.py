@@ -293,26 +293,44 @@ def test_math_run_straight_line_reduces_to_affine():
     plt.close(fig)
 
 
-def test_math_run_centres_on_curve_like_rigid_text():
-    # The datum is chosen so the run rides the curve exactly where a rigid
-    # va="center" Text would. On a straight line the bent ink centre must match
-    # the centre of an equivalent centred mathtext Text.
+def test_math_run_aligns_to_plain_x_height():
+    # A math run rides the curve on the surrounding text's x-height line, so a
+    # lowercase math symbol lands where the plain character would under
+    # va="center". On a straight line the bent "x" centre must match a plain
+    # centred "x".
     fig, ax = plt.subplots()
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 100)
     y = np.full_like(x, 5.0)
-    s = r"$\propto\sqrt{D_{\mathrm{eff}}}$"
-    ct = curved_text(ax, x, y, s, pos=0.5, anchor="center", fontsize=14)
-    reference = ax.text(5.0, 5.0, s, ha="center", va="center", fontsize=14)
+    math_x = curved_text(ax, x, y, "$x$", pos=0.5, anchor="center", fontsize=16)
+    plain_x = ax.text(5.0, 5.0, "x", ha="center", va="center", fontsize=16)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    bent = ct._segments[0]._bent_path(renderer).get_extents()
-    ref = reference.get_window_extent(renderer)
-    assert (bent.x0 + bent.x1) / 2.0 == pytest.approx(
-        (ref.x0 + ref.x1) / 2.0, abs=3.0)
+    bent = math_x._segments[0]._bent_path(renderer).get_extents()
+    ref = plain_x.get_window_extent(renderer)
     assert (bent.y0 + bent.y1) / 2.0 == pytest.approx(
         (ref.y0 + ref.y1) / 2.0, abs=2.0)
+    plt.close(fig)
+
+
+def test_superscript_does_not_drop_math_body():
+    # A raised exponent must not drag the body down (the bug that put the math
+    # run below neighbouring plain text). The body shares its baseline with the
+    # exponent-free run; only the top extends to carry the exponent.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 100)
+    y = np.full_like(x, 5.0)
+    plain = curved_text(ax, x, y, "$x$", pos=0.5, fontsize=20)
+    raised = curved_text(ax, x, y, "$x^2$", pos=0.5, fontsize=20)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    body = plain._segments[0]._bent_path(renderer).get_extents()
+    with_exp = raised._segments[0]._bent_path(renderer).get_extents()
+    assert with_exp.y0 == pytest.approx(body.y0, abs=1.5)
+    assert with_exp.y1 > body.y1 + 2.0
     plt.close(fig)
 
 
@@ -502,6 +520,75 @@ def test_math_run_path_effects_clears_line_behind_it():
 
     assert dark_pixels_under_label(use_halo=True) < \
         dark_pixels_under_label(use_halo=False)
+
+
+def test_box_creates_and_removes_casing():
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    plain = curved_text(ax, x, np.zeros_like(x), "ab")
+    assert plain._box is None
+    boxed = curved_text(ax, x, np.zeros_like(x), "ab", box=True)
+    assert boxed._box is not None and boxed._box in ax.get_lines()
+    casing = boxed._box
+    boxed.remove()
+    assert casing not in ax.get_lines()
+    plt.close(fig)
+
+
+def test_box_config_color_and_pad():
+    import matplotlib.colors as mcolors
+
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    red = curved_text(ax, x, np.zeros_like(x), "ab", box="red")
+    assert mcolors.to_rgba(red._box.get_color()) == mcolors.to_rgba("red")
+    tuned = curved_text(ax, x, np.zeros_like(x), "ab",
+                        box=dict(color="yellow", pad=1.5))
+    assert mcolors.to_rgba(tuned._box.get_color()) == mcolors.to_rgba("yellow")
+    assert tuned._box_pad == 1.5
+    plt.close(fig)
+
+
+def test_box_sits_below_glyphs_in_zorder():
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    ct = curved_text(ax, x, np.zeros_like(x), "ab", box=True)
+    ct.set_zorder(5)
+    assert all(t.get_zorder() == 6 for t in ct._segments)
+    assert ct._box.get_zorder() < min(t.get_zorder() for t in ct._segments)
+    plt.close(fig)
+
+
+def test_box_covers_line_behind_label():
+    # The casing must mask the line the label rides, including behind plain
+    # per-character text (where a wide path_effects stroke would fail). Draw a
+    # thick black line through the label; with the box almost no dark line
+    # pixels survive inside the label's footprint.
+    def dark_pixels_under_label(use_box):
+        fig, ax = plt.subplots()
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        x = np.linspace(0, 10, 100)
+        y = np.full_like(x, 5.0)
+        ax.plot(x, y, color="black", linewidth=8)
+        ct = curved_text(ax, x, y, "coverage", pos=0.5, anchor="center",
+                         fontsize=22, color="red", box=use_box)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        extents = [s.get_window_extent(renderer) for s in ct._segments]
+        x0 = int(min(e.x0 for e in extents))
+        x1 = int(np.ceil(max(e.x1 for e in extents)))
+        y0 = int(min(e.y0 for e in extents))
+        y1 = int(np.ceil(max(e.y1 for e in extents)))
+        buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]
+        height = buf.shape[0]
+        region = buf[max(height - y1, 0):height - y0, max(x0, 0):x1]
+        dark = int(np.all(region < 80, axis=-1).sum())
+        plt.close(fig)
+        return dark
+
+    assert dark_pixels_under_label(use_box=True) < \
+        dark_pixels_under_label(use_box=False) / 4
 
 
 def test_set_zorder_and_remove_cover_math_runs():

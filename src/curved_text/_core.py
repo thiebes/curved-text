@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import matplotlib.artist as martist
 import matplotlib.colors as mcolors
+import matplotlib.lines as mlines
 import matplotlib.text as mtext
 import numpy as np
 from matplotlib.patheffects import PathEffectRenderer
@@ -59,6 +60,23 @@ def _split_runs(text: str) -> list[_Run]:
     if cursor < len(text) or not runs:
         runs.append(_Run(False, text[cursor:].replace(r"\$", "$")))
     return runs
+
+
+def _box_config(box) -> dict | None:
+    """Normalize the ``box`` argument to a settings dict, or None when off.
+
+    ``box`` may be a bool, a color string, or a dict of ``color`` / ``pad`` /
+    ``alpha`` overrides. ``pad`` scales the band height relative to the tallest
+    glyph.
+    """
+    if not box:
+        return None
+    config = {"color": "white", "pad": 1.1, "alpha": None}
+    if isinstance(box, str):
+        config["color"] = box
+    elif isinstance(box, dict):
+        config.update(box)
+    return config
 
 
 class _CurveFrame:
@@ -237,12 +255,14 @@ class _MathRun(mtext.Text):
         else:
             verts = np.empty((0, 2))
             codes = np.empty(0, dtype=Path.code_type)
-        # The datum is the va="center" box center: the layout box spans
-        # [-depth, height - depth] around the baseline.
+        # Ride the curve on the surrounding text's x-height line, so the main
+        # symbols sit level with neighbouring plain characters. Centering on the
+        # run's own box instead would let a superscript or tall delimiter inflate
+        # the box and drop the body below the rest of the label.
         size = prop.get_size_in_points()
-        _, height, depth = _text_to_path.get_text_width_height_descent(
-            self.get_text(), prop, ismath=True)
-        datum = (height / 2.0 - depth) * _text_to_path.FONT_SCALE / size
+        _, x_height, _ = _text_to_path.get_text_width_height_descent(
+            "x", prop, ismath=False)
+        datum = (x_height / 2.0) * _text_to_path.FONT_SCALE / size
         self._outline_cache = (key, (verts, codes, datum))
         return verts, codes, datum
 
@@ -278,6 +298,13 @@ class CurvedText(mtext.Text):
     ``anchor`` -- is not clipped. The curve is extended along its end tangent and
     the overrunning glyphs are placed on that straight extension.
 
+    Set ``box`` to draw a casing behind the label -- a band that follows the
+    curve at the label's height, drawn under the glyphs -- so the label stays
+    legible where it crosses the lines it labels. For a lighter, glyph-hugging
+    casing instead, pass a white ``withStroke`` through ``path_effects``; a wide
+    stroke there merges adjacent per-character glyphs, so ``box`` is the way to
+    get solid coverage under plain text.
+
     Mathtext is supported: each ``$...$`` run in ``text`` is laid out by
     matplotlib's mathtext engine and bent continuously along the curve --
     every glyph outline and rule box is mapped through the curve's arc-length
@@ -302,6 +329,11 @@ class CurvedText(mtext.Text):
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
         Perpendicular offset off the curve, in points.
+    box : bool, str, or dict, default False
+        A casing drawn behind the label to clear the lines it crosses. ``True``
+        draws a white band; a color string sets its color; a dict accepts
+        ``color``, ``pad`` (band height relative to the tallest glyph, default
+        ``1.1``), and ``alpha``.
     **kwargs
         Passed to each per-character :class:`~matplotlib.text.Text` and each
         mathtext run (for example ``color``, ``fontsize``, ``alpha``,
@@ -310,7 +342,7 @@ class CurvedText(mtext.Text):
 
     def __init__(self, x: ArrayLike, y: ArrayLike, text: str, axes: Axes, *,
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
-                 **kwargs: Any) -> None:
+                 box: bool | str | dict = False, **kwargs: Any) -> None:
         if anchor not in _ANCHORS:
             raise ValueError(f"anchor must be one of {_ANCHORS}, got {anchor!r}")
         x = np.asarray(x, dtype=float)
@@ -326,6 +358,19 @@ class CurvedText(mtext.Text):
         self._anchor = anchor
         self._offset = float(offset)
         axes.add_artist(self)
+        # Optional casing behind the label: a fat line following the curve at
+        # the label's height. Its geometry is set in ``draw`` (on the container),
+        # so it must draw after the container and before the glyphs; ``set_zorder``
+        # below places it between them.
+        box_config = _box_config(box)
+        self._box_pad = box_config["pad"] if box_config else 0.0
+        self._box: mlines.Line2D | None = None
+        if box_config is not None:
+            self._box = mlines.Line2D([], [], color=box_config["color"],
+                                      alpha=box_config["alpha"],
+                                      solid_capstyle="round",
+                                      solid_joinstyle="round")
+            axes.add_line(self._box)
         self._segments: list[mtext.Text] = []
         runs = (_split_runs(text) if self.get_parse_math()
                 else [_Run(False, text)])
@@ -341,21 +386,32 @@ class CurvedText(mtext.Text):
                 t.set_va("center")
                 axes.add_artist(t)
                 self._segments.append(t)
+        # Apply the layered zorders now that the casing and glyphs exist: the
+        # container draws first (it positions them), then the casing, then the
+        # glyphs on top.
+        self.set_zorder(self.get_zorder())
 
     def set_zorder(self, zorder) -> None:
-        # Keep the glyphs one level above the container so they sit on top of it.
-        # ``super().__init__`` may set the zorder before ``_segments`` exists, so
-        # guard against running during base-class construction.
+        # Glyphs sit one level above the container; the casing sits between, so
+        # it clears the data lines but stays under the glyphs. ``super().__init__``
+        # may set the zorder before these attributes exist, so guard against
+        # running during base-class construction.
         super().set_zorder(zorder)
+        box = getattr(self, "_box", None)
+        if box is not None:
+            box.set_zorder(self.get_zorder() + 0.5)
         for t in getattr(self, "_segments", ()):
             t.set_zorder(self.get_zorder() + 1)
 
     def remove(self) -> None:
-        # The glyphs are independent artists on the axes; remove them with the
-        # container so removal does not leave them behind as orphans.
+        # The glyphs and casing are independent artists on the axes; remove them
+        # with the container so removal does not leave them behind as orphans.
         for t in self._segments:
             t.remove()
         self._segments = []
+        if self._box is not None:
+            self._box.remove()
+            self._box = None
         super().remove()
 
     def draw(self, renderer, *args, **kwargs) -> None:
@@ -374,8 +430,9 @@ class CurvedText(mtext.Text):
         # width is the unrotated advance, not the wider rotated bounding box.
         for t in self._segments:
             t.set_rotation(0)
-        widths = [t.get_window_extent(renderer=renderer).width
-                  for t in self._segments]
+        extents = [t.get_window_extent(renderer=renderer)
+                   for t in self._segments]
+        widths = [e.width for e in extents]
         total = float(sum(widths))
 
         s0 = self._pos * frame.length
@@ -396,6 +453,20 @@ class CurvedText(mtext.Text):
         scale = self._offset * renderer.points_to_pixels(1.0)
         ox, oy = nx * scale, ny * scale
 
+        # The casing follows the offset curve across the label's whole span at
+        # the tallest glyph's height, so it clears the lines behind plain and
+        # math segments alike (a single fill, immune to the per-character
+        # cannibalization a wide ``path_effects`` stroke would cause).
+        if self._box is not None:
+            s_box = np.linspace(cursor, cursor + total, 64)
+            bx, by, _ = frame.points_and_angles(s_box)
+            box_xy = inv.transform(np.column_stack([bx + ox, by + oy]))
+            height = max(e.height for e in extents)
+            self._box.set_data(box_xy[:, 0], box_xy[:, 1])
+            self._box.set_linewidth(
+                self._box_pad * height / renderer.points_to_pixels(1.0))
+            self._box.set_visible(True)
+
         # ``cursor`` walks the label's left edge along the arc. Each character
         # is centered on its own midpoint and rotated to the chord across its
         # own advance, which smooths the segment-wise tangent of a coarse
@@ -415,13 +486,14 @@ class CurvedText(mtext.Text):
 
 def curved_text(ax: Axes, x: ArrayLike, y: ArrayLike, text: str, *,
                 pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
-                **kwargs: Any) -> CurvedText:
+                box: bool | str | dict = False, **kwargs: Any) -> CurvedText:
     """Draw ``text`` along the curve ``(x, y)`` on ``ax`` and return the artist.
 
     Thin convenience wrapper around :class:`CurvedText`; see it for the meaning of
-    ``pos``, ``anchor``, and ``offset``. The axes is the first argument here,
-    matching matplotlib's axes-first helper functions, whereas :class:`CurvedText`
-    takes it after ``x, y, text`` to match :class:`matplotlib.text.Text`.
+    ``pos``, ``anchor``, ``offset``, and ``box``. The axes is the first argument
+    here, matching matplotlib's axes-first helper functions, whereas
+    :class:`CurvedText` takes it after ``x, y, text`` to match
+    :class:`matplotlib.text.Text`.
     """
     return CurvedText(x, y, text, ax, pos=pos, anchor=anchor, offset=offset,
-                      **kwargs)
+                      box=box, **kwargs)

@@ -1,10 +1,16 @@
 """Draw text along an arbitrary curve in a matplotlib Axes."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, NamedTuple
 
+import matplotlib.artist as martist
+import matplotlib.colors as mcolors
 import matplotlib.text as mtext
 import numpy as np
+from matplotlib.path import Path
+from matplotlib.textpath import TextToPath
+from matplotlib.transforms import IdentityTransform
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -13,6 +19,45 @@ if TYPE_CHECKING:
 __all__ = ["CurvedText", "curved_text"]
 
 _ANCHORS = ("start", "center", "end")
+
+# Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
+_MATH_DELIMITER = re.compile(r"(?<!\\)\$")
+
+# Longest straight outline segment, in mathtext layout units (1/100 em), that
+# the bend map will not subdivide. Short chords keep bent rule boxes (fraction
+# bars, radical overlines) smooth at any curvature where text is readable.
+_MAX_SEGMENT_UNITS = 5.0
+
+# Shared converter from text to glyph outlines; it caches font faces internally.
+_text_to_path = TextToPath()
+
+
+class _Run(NamedTuple):
+    is_math: bool
+    text: str
+
+
+def _split_runs(text: str) -> list[_Run]:
+    """Split ``text`` into plain runs and ``$...$`` mathtext runs.
+
+    Mirrors matplotlib's parsing rules: a string with an odd number of
+    unescaped dollar signs is literal text, and ``\\$`` in plain text renders
+    as a dollar sign. Math runs keep their delimiters so they re-parse as
+    written; empty plain runs between adjacent math runs are dropped.
+    """
+    delimiters = [m.start() for m in _MATH_DELIMITER.finditer(text)]
+    if len(delimiters) % 2:
+        delimiters = []
+    runs = []
+    cursor = 0
+    for opening, closing in zip(delimiters[::2], delimiters[1::2]):
+        if opening > cursor:
+            runs.append(_Run(False, text[cursor:opening].replace(r"\$", "$")))
+        runs.append(_Run(True, text[opening:closing + 1]))
+        cursor = closing + 1
+    if cursor < len(text) or not runs:
+        runs.append(_Run(False, text[cursor:].replace(r"\$", "$")))
+    return runs
 
 
 class _CurveFrame:
@@ -61,6 +106,140 @@ class _CurveFrame:
                         np.arctan2(yr - yl, xr - xl))
 
 
+def _densify(verts: np.ndarray, codes: np.ndarray,
+             max_du: float = _MAX_SEGMENT_UNITS) -> tuple[np.ndarray, np.ndarray]:
+    """Subdivide straight LINETO segments longer than ``max_du`` along x.
+
+    The bend map displaces vertices but keeps segments straight between them,
+    so a long horizontal segment (a fraction bar, a radical overline) would
+    cut a chord across the curve. Bezier control points pass through: font
+    outline segments are short, and mapping their control points directly is
+    the standard path-bending approximation.
+    """
+    out_verts: list[np.ndarray] = []
+    out_codes: list[int] = []
+    prev = None
+    for vert, code in zip(verts, codes):
+        if code == Path.LINETO and prev is not None:
+            n_extra = int(abs(vert[0] - prev[0]) // max_du)
+            if n_extra:
+                fractions = np.linspace(0.0, 1.0, n_extra + 2)[1:, None]
+                out_verts.extend(prev + (vert - prev) * fractions)
+                out_codes.extend([Path.LINETO] * (n_extra + 1))
+                prev = vert
+                continue
+        out_verts.append(vert)
+        out_codes.append(code)
+        if code != Path.CLOSEPOLY:
+            prev = vert
+    return np.asarray(out_verts), np.asarray(out_codes, dtype=Path.code_type)
+
+
+class _MathRun(mtext.Text):
+    """One mathtext run of a curved label, drawn by bending the expression's
+    glyph outlines through the curve frame.
+
+    Inheriting :class:`~matplotlib.text.Text` keeps keyword handling and
+    measurement identical to the sibling per-character artists: the parent
+    advances its cursor by window-extent width for every segment alike. Only
+    rendering differs. At draw time the mathtext layout is mapped through
+    ``(u, v) -> curve(u) + (v - datum) * normal(u)``, where ``u`` is arc
+    length from the run's left edge and ``v`` is height above the baseline,
+    with the datum at the layout box center so the run rides the curve exactly
+    where ``va="center"`` would put it. Normals follow em-scale chords,
+    matching the chord rotation of plain characters across coarse polyline
+    vertices.
+    """
+
+    def __init__(self, text: str, **kwargs: Any) -> None:
+        super().__init__(0.0, 0.0, text, **kwargs)
+        self._frame: _CurveFrame | None = None
+        self._s_left = 0.0
+        self._offset_px = (0.0, 0.0)
+        self._outline_cache: tuple | None = None
+
+    def _set_frame(self, frame: _CurveFrame, s_left: float,
+                   offset_px: tuple[float, float]) -> None:
+        """Receive this draw's frame: the run starts at arc length ``s_left``
+        and shifts by ``offset_px`` along the label's chord normal."""
+        self._frame = frame
+        self._s_left = float(s_left)
+        self._offset_px = offset_px
+
+    @martist.allow_rasterization
+    def draw(self, renderer, *args, **kwargs) -> None:
+        if not self.get_visible() or self._frame is None:
+            return
+        path = self._bent_path(renderer)
+        if path is None:
+            return
+        gc = renderer.new_gc()
+        try:
+            if self.get_clip_on():
+                gc.set_clip_rectangle(self.get_clip_box())
+                gc.set_clip_path(self.get_clip_path())
+            gc.set_linewidth(0.0)
+            gc.set_url(self.get_url())
+            face = mcolors.to_rgba(self.get_color(), self.get_alpha())
+            renderer.open_group("mathrun", self.get_gid())
+            renderer.draw_path(gc, path, IdentityTransform(), face)
+            renderer.close_group("mathrun")
+        finally:
+            gc.restore()
+        self.stale = False
+
+    def _bent_path(self, renderer) -> Path | None:
+        """The expression's outline bent along the frame, in display pixels."""
+        verts, codes, datum = self._expression_outline()
+        if len(verts) == 0:
+            return None
+        em_px = renderer.points_to_pixels(self.get_fontsize())
+        px_per_unit = em_px / _text_to_path.FONT_SCALE
+        s = self._s_left + verts[:, 0] * px_per_unit
+        v = (verts[:, 1] - datum) * px_per_unit
+        x, y, _ = self._frame.points_and_angles(s)
+        angle = self._frame.chord_angles(s - em_px / 2.0, em_px)
+        ox, oy = self._offset_px
+        bent = np.column_stack([x - v * np.sin(angle) + ox,
+                                y + v * np.cos(angle) + oy])
+        return Path(bent, codes)
+
+    def _expression_outline(self) -> tuple[np.ndarray, np.ndarray, float]:
+        """Glyph outlines and rule boxes of the laid-out expression as one
+        (vertices, codes) pair in layout units (1/100 em), plus the vertical
+        datum above the baseline. Cached until text or font changes."""
+        prop = self.get_fontproperties()
+        key = (self.get_text(), hash(prop))
+        if self._outline_cache is not None and self._outline_cache[0] == key:
+            return self._outline_cache[1:]
+        glyph_info, glyph_map, rects = _text_to_path.get_glyphs_mathtext(
+            prop, self.get_text())
+        pieces = []
+        for glyph_id, x_pen, y_pen, scale in glyph_info:
+            outline_verts, outline_codes = glyph_map[glyph_id]
+            if len(outline_verts) == 0:  # whitespace glyphs have no outline
+                continue
+            placed = np.asarray(outline_verts, float) * scale + [x_pen, y_pen]
+            pieces.append(_densify(placed, np.asarray(outline_codes)))
+        for rect_verts, rect_codes in rects:
+            pieces.append(_densify(np.asarray(rect_verts, float),
+                                   np.asarray(rect_codes)))
+        if pieces:
+            verts = np.concatenate([p[0] for p in pieces])
+            codes = np.concatenate([p[1] for p in pieces])
+        else:
+            verts = np.empty((0, 2))
+            codes = np.empty(0, dtype=Path.code_type)
+        # The datum is the va="center" box center: the layout box spans
+        # [-depth, height - depth] around the baseline.
+        size = prop.get_size_in_points()
+        _, height, depth = _text_to_path.get_text_width_height_descent(
+            self.get_text(), prop, ismath=True)
+        datum = (height / 2.0 - depth) * _text_to_path.FONT_SCALE / size
+        self._outline_cache = (key, verts, codes, datum)
+        return verts, codes, datum
+
+
 class CurvedText(mtext.Text):
     """A string drawn along an (x, y) curve, one character at a time.
 
@@ -92,13 +271,22 @@ class CurvedText(mtext.Text):
     ``anchor`` -- is not clipped. The curve is extended along its end tangent and
     the overrunning glyphs are placed on that straight extension.
 
+    Mathtext is supported: each ``$...$`` run in ``text`` is laid out by
+    matplotlib's mathtext engine and bent continuously along the curve --
+    every glyph outline and rule box is mapped through the curve's arc-length
+    frame, so radicals, fractions, and sized delimiters stay connected at any
+    curvature. Pass ``parse_math=False`` to treat dollar signs literally.
+    ``text.usetex`` is not supported. Tall expressions compress vertically on
+    the inside of tight bends, so choose label size relative to curvature
+    accordingly.
+
     Parameters
     ----------
     x, y : array-like
         The curve in data coordinates: 1-D, equal length, at least two points,
         finite, and ordered along the curve.
     text : str
-        The string to draw.
+        The string to draw. May contain mathtext runs (``$...$``).
     axes : matplotlib.axes.Axes
         The axes to draw into.
     pos : float, default 0.5
@@ -108,8 +296,9 @@ class CurvedText(mtext.Text):
     offset : float, default 0.0
         Perpendicular offset off the curve, in points.
     **kwargs
-        Passed to each per-character :class:`~matplotlib.text.Text` (for example
-        ``color``, ``fontsize``, ``alpha``, ``fontfamily``).
+        Passed to each per-character :class:`~matplotlib.text.Text` and each
+        mathtext run (for example ``color``, ``fontsize``, ``alpha``,
+        ``fontfamily``).
     """
 
     def __init__(self, x: ArrayLike, y: ArrayLike, text: str, axes: Axes, *,
@@ -130,32 +319,40 @@ class CurvedText(mtext.Text):
         self._anchor = anchor
         self._offset = float(offset)
         axes.add_artist(self)
-        self._chars: list[mtext.Text] = []
-        for ch in text:
-            t = mtext.Text(0.0, 0.0, " " if ch == " " else ch, **kwargs)
-            t.set_ha("center")
-            t.set_va("center")
-            axes.add_artist(t)
-            self._chars.append(t)
+        self._segments: list[mtext.Text] = []
+        runs = (_split_runs(text) if self.get_parse_math()
+                else [_Run(False, text)])
+        for run in runs:
+            if run.is_math:
+                segment = _MathRun(run.text, **kwargs)
+                axes.add_artist(segment)
+                self._segments.append(segment)
+                continue
+            for ch in run.text:
+                t = mtext.Text(0.0, 0.0, " " if ch == " " else ch, **kwargs)
+                t.set_ha("center")
+                t.set_va("center")
+                axes.add_artist(t)
+                self._segments.append(t)
 
     def set_zorder(self, zorder) -> None:
         # Keep the glyphs one level above the container so they sit on top of it.
-        # ``super().__init__`` may set the zorder before ``_chars`` exists, so
+        # ``super().__init__`` may set the zorder before ``_segments`` exists, so
         # guard against running during base-class construction.
         super().set_zorder(zorder)
-        for t in getattr(self, "_chars", ()):
+        for t in getattr(self, "_segments", ()):
             t.set_zorder(self.get_zorder() + 1)
 
     def remove(self) -> None:
         # The glyphs are independent artists on the axes; remove them with the
         # container so removal does not leave them behind as orphans.
-        for t in self._chars:
+        for t in self._segments:
             t.remove()
-        self._chars = []
+        self._segments = []
         super().remove()
 
     def draw(self, renderer, *args, **kwargs) -> None:
-        if not self._chars:
+        if not self._segments:
             return
         axes = self.axes
         # Work in display pixels: project the curve and build its arc-length
@@ -168,9 +365,10 @@ class CurvedText(mtext.Text):
 
         # Reset any rotation left by the previous draw before measuring, so each
         # width is the unrotated advance, not the wider rotated bounding box.
-        for t in self._chars:
+        for t in self._segments:
             t.set_rotation(0)
-        widths = [t.get_window_extent(renderer=renderer).width for t in self._chars]
+        widths = [t.get_window_extent(renderer=renderer).width
+                  for t in self._segments]
         total = float(sum(widths))
 
         s0 = self._pos * frame.length
@@ -191,15 +389,19 @@ class CurvedText(mtext.Text):
         scale = self._offset * renderer.points_to_pixels(1.0)
         ox, oy = nx * scale, ny * scale
 
-        # ``cursor`` walks the label's left edge along the arc; each glyph is
-        # centered on its own midpoint and rotated to the chord across its own
-        # advance, which smooths the segment-wise tangent of a coarse polyline
-        # at exactly the glyph's own length scale.
-        for t, w in zip(self._chars, widths):
-            px, py, _ = frame.points_and_angles(cursor + w / 2.0)
-            rot = frame.chord_angles(cursor, w)
-            t.set_position(inv.transform((px + ox, py + oy)))
-            t.set_rotation(np.degrees(rot))
+        # ``cursor`` walks the label's left edge along the arc. Each character
+        # is centered on its own midpoint and rotated to the chord across its
+        # own advance, which smooths the segment-wise tangent of a coarse
+        # polyline at exactly the glyph's own length scale; a math run instead
+        # receives the frame and bends its outlines through it when it draws.
+        for t, w in zip(self._segments, widths):
+            if isinstance(t, _MathRun):
+                t._set_frame(frame, cursor, (ox, oy))
+            else:
+                px, py, _ = frame.points_and_angles(cursor + w / 2.0)
+                rot = frame.chord_angles(cursor, w)
+                t.set_position(inv.transform((px + ox, py + oy)))
+                t.set_rotation(np.degrees(rot))
             t.set_visible(True)
             cursor += w
 

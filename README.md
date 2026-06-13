@@ -100,6 +100,23 @@ Pass `parse_math=False` to treat dollar signs literally. Tall expressions
 compress vertically on the inside of tight bends, so choose the label size
 relative to the curvature. `text.usetex` is not supported.
 
+## Clearing the line behind the label
+
+Keyword arguments reach every glyph and mathtext run, so matplotlib's
+[`path_effects`](https://matplotlib.org/stable/users/explain/artists/patheffects_guide.html)
+work like they do on any `Text`. A white `withStroke` effect draws a casing that
+follows each glyph -- curved to match the text -- so a label stays readable
+where it crosses the data lines:
+
+```python
+import matplotlib.patheffects as pe
+
+curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$",
+            path_effects=[pe.withStroke(linewidth=4, foreground="white")])
+```
+
+![A label cleared from the lines it crosses by a white halo](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_halo.png)
+
 ## Works with seaborn, pandas, and other matplotlib-backed libraries
 
 `curved_text` needs a `matplotlib.axes.Axes`, so it works with any library that

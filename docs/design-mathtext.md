@@ -126,6 +126,16 @@ by test rather than asserted: on a straight line the bend map is the identity,
 so the bent path must match the window extent of an equivalent plain `Text`
 within a pixel or two.
 
+## Path effects
+
+Keyword arguments reach every child, so `path_effects` flow to the per-character
+`Text` glyphs and to each `_MathRun`. Plain glyphs apply them through the base
+`Text.draw`; `_MathRun.draw` draws its own bent path, so it wraps the renderer in
+a `PathEffectRenderer` when effects are set. The effect strokes the bent outline,
+so a white `withStroke` casing follows the curved text and clears the lines a
+label crosses. This is the matplotlib-native idiom for legible labels; no
+dedicated parameter is added.
+
 ## Behavior rules
 
 - `parse_math=False` (kwarg or rcParam) disables splitting entirely.

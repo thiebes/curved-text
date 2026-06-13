@@ -121,6 +121,17 @@ per-character `Text`.
 
 [example_08_styling_passthrough.py](example_08_styling_passthrough.py)
 
+### Clear the line behind the label
+
+Because keyword arguments reach every glyph and mathtext run, matplotlib's
+`path_effects` work too. A white `withStroke` effect draws a casing that follows
+each glyph -- curved to match the text -- so the label stays legible where it
+crosses the data lines.
+
+![A label cleared from the lines it crosses by a white halo](images/11_halo.png)
+
+[example_11_halo.py](example_11_halo.py)
+
 ### Any matplotlib-backed axes (seaborn, pandas)
 
 `curved_text` only needs a `matplotlib.axes.Axes`, so it composes with seaborn,

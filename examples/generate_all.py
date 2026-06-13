@@ -24,6 +24,7 @@ MODULES = [
     "example_08_styling_passthrough",
     "example_09_seaborn_pandas",
     "example_10_mathtext",
+    "example_11_halo",
 ]
 
 

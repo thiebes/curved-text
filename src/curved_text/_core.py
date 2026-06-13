@@ -8,6 +8,7 @@ import matplotlib.artist as martist
 import matplotlib.colors as mcolors
 import matplotlib.text as mtext
 import numpy as np
+from matplotlib.patheffects import PathEffectRenderer
 from matplotlib.path import Path
 from matplotlib.textpath import TextToPath
 from matplotlib.transforms import IdentityTransform
@@ -173,6 +174,12 @@ class _MathRun(mtext.Text):
         path = self._bent_path(renderer)
         if path is None:
             return
+        # Honor path effects (e.g. a white withStroke halo to clear the line
+        # behind the label) the same way the per-character Text glyphs do; the
+        # effect strokes the bent outline, so the clearing follows the curve.
+        path_effects = self.get_path_effects()
+        if path_effects:
+            renderer = PathEffectRenderer(path_effects, renderer)
         gc = renderer.new_gc()
         try:
             if self.get_clip_on():

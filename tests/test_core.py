@@ -470,6 +470,40 @@ def test_degenerate_curve_with_math_does_not_raise():
     plt.close(fig)
 
 
+def test_math_run_path_effects_clears_line_behind_it():
+    # A withStroke halo must reach the mathtext run, not only the per-character
+    # glyphs (the run draws its own path and would otherwise skip path effects).
+    # Draw a thick black line through a math run with and without the white
+    # halo; the halo must whiten pixels along the line where the glyphs sit.
+    import matplotlib.patheffects as pe
+
+    def dark_pixels_under_label(use_halo):
+        fig, ax = plt.subplots()
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        x = np.linspace(0, 10, 100)
+        y = np.full_like(x, 5.0)
+        ax.plot(x, y, color="black", linewidth=10)
+        halo = [pe.withStroke(linewidth=10, foreground="white")]
+        kw = {"path_effects": halo} if use_halo else {}
+        run = curved_text(ax, x, y, r"$\sqrt{xy}$", pos=0.5, anchor="center",
+                          fontsize=22, color="red", **kw)._segments[0]
+        fig.canvas.draw()
+        bbox = run._bent_path(fig.canvas.get_renderer()).get_extents()
+        buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]
+        height = buf.shape[0]
+        # Buffer rows run top-down; the path extent is bottom-up, so flip y.
+        x0, x1 = int(bbox.x0), int(np.ceil(bbox.x1))
+        y0, y1 = height - int(np.ceil(bbox.y1)), height - int(bbox.y0)
+        region = buf[max(y0, 0):y1, max(x0, 0):x1]
+        dark = int(np.all(region < 80, axis=-1).sum())
+        plt.close(fig)
+        return dark
+
+    assert dark_pixels_under_label(use_halo=True) < \
+        dark_pixels_under_label(use_halo=False)
+
+
 def test_set_zorder_and_remove_cover_math_runs():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)

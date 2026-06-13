@@ -1,9 +1,10 @@
 """Tier 1: mathtext bent along the curve.
 
 A ``$...$`` run in the label is laid out by matplotlib's mathtext engine and
-bent through the same arc-length frame as plain text, so the radical, fraction,
-and superscript stay connected and follow the curve. Plain and math runs mix in
-one string.
+bent through the same arc-length frame as plain text, so the radical, nested
+parentheses, and superscripts stay connected and follow the curve. The label
+rides over a broad, gentle hump -- enough curvature to show the bend, gentle
+enough that the expression stays clearly readable.
 """
 from __future__ import annotations
 
@@ -16,23 +17,22 @@ from _style import PALETTE, figure, bare, caption, save
 
 
 def make(images_dir):
-    fig = figure(14, 6, font_size=11)
+    fig = figure(15, 7, font_size=11)
     ax = fig.subplots()
     bare(ax)
 
-    x = np.linspace(0, 2 * np.pi, 400)
-    y = np.sin(x)
+    x = np.linspace(0, 10, 400)
+    y = 1.6 * np.sin(np.pi * x / 10.0)
     ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
-    ax.set_xlim(0, 2 * np.pi)
-    ax.set_ylim(-1.4, 1.4)
+    ax.set_xlim(-0.3, 10.3)
+    ax.set_ylim(-0.4, 2.9)
 
-    curved_text(ax, x, y,
-                r"flux $\propto \sqrt{D_{\mathrm{eff}}}\,\left(L/L_0\right)^{2}$",
-                pos=0.5, anchor="center", offset=8.0,
-                color=PALETTE["gold"], fontsize=14)
+    curved_text(ax, x, y, r"$E = \sqrt{(pc)^2 + (mc^2)^2}$",
+                pos=0.5, anchor="center", offset=20.0,
+                color=PALETTE["gold"], fontsize=16)
 
-    caption(ax, r'curved_text(ax, x, y, '
-                r'r"flux $\propto \sqrt{D_{\mathrm{eff}}}\,(L/L_0)^2$", ...)')
+    caption(ax, r'curved_text(ax, x, y, r"$E = \sqrt{(pc)^2 + (mc^2)^2}$", '
+                r'pos=0.5, anchor="center", offset=20.0)')
 
     path = os.path.join(images_dir, "10_mathtext.png")
     return save(fig, path)

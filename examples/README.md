@@ -128,9 +128,9 @@ the glyphs, so the label stays legible where it crosses the lines it labels. It
 is a single fill, so it covers plain text and mathtext alike. (For a lighter
 glyph-hugging casing, pass a white `withStroke` through `path_effects` instead.)
 
-![A label cleared from the lines it crosses by a white casing](images/11_halo.png)
+![A label cleared from the lines it crosses by a white casing](images/11_box.png)
 
-[example_11_halo.py](example_11_halo.py)
+[example_11_box.py](example_11_box.py)
 
 ### Any matplotlib-backed axes (seaborn, pandas)
 

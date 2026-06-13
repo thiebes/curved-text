@@ -114,7 +114,7 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$", box=True)
 `box` accepts `True`, a color string, or a dict (`color`, `pad` for the band
 height relative to the tallest glyph, and `alpha`).
 
-![A label cleared from the lines it crosses by a white casing](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_halo.png)
+![A label cleared from the lines it crosses by a white casing](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_box.png)
 
 For a lighter, glyph-hugging casing instead, pass a white `withStroke` through
 matplotlib's

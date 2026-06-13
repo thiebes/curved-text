@@ -36,7 +36,7 @@ def make(images_dir):
                     color=PALETTE["gold"], fontsize=16, box=box)
         caption(ax, f"box={box}")
 
-    path = os.path.join(images_dir, "11_halo.png")
+    path = os.path.join(images_dir, "11_box.png")
     return save(fig, path)
 
 

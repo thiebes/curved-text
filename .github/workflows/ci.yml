@@ -38,9 +38,13 @@ jobs:
         with:
           python-version: "3.9"
       - name: Install with floor matplotlib
+        # matplotlib 3.5 predates numpy 2.0 and is ABI-incompatible with it, so
+        # the only valid environment for the floor pins numpy below 2. A user on
+        # matplotlib 3.5 is on numpy 1.x for the same reason; curved-text itself
+        # works with either numpy major version.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test]" "matplotlib==3.5.*"
+          pip install -e ".[test]" "matplotlib==3.5.*" "numpy<2"
       - name: Run tests
         run: pytest -q
 

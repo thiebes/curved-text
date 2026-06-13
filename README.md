@@ -126,6 +126,19 @@ curved_text(ax, df["x"], df["y"], "along the curve",
   within a glyph's width -- as raw noisy data does -- the label collides with
   itself. Label a smoothed or fitted trend line rather than the raw samples.
 
+## Related
+
+[matplotlib-label-lines](https://github.com/cphyc/matplotlib-label-lines) labels
+one or many lines inline at a chosen or automatically picked point, each label
+rotated to the local slope. It is the quickest way to replace a legend across a
+set of lines. `curved-text` solves the adjacent problem: making a single string
+(plain or mathtext) follow the curve character by character, with arc-length
+placement and a perpendicular offset, recomputed on every draw. Reach for
+label-lines to drop legend labels onto several lines, and for curved-text to
+make text ride a path. In the ggplot2 world,
+[geomtextpath](https://github.com/AllanCameron/geomtextpath) covers similar
+text-on-path ground.
+
 ## License
 
 MIT

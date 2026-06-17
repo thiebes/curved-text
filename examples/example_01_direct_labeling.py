@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 from curved_text import curved_text
 from _style import PALETTE, figure, data_axes, save

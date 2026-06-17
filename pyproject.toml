@@ -40,12 +40,41 @@ examples = [
     "seaborn>=0.11",
     "pandas>=1.3",
 ]
+# Sphinx and the extensions that build the documentation site. Lower bounds,
+# like the rest of the project.
+docs = [
+    "sphinx>=7.0",
+    "myst-parser>=2.0",
+    "furo>=2024.1.29",
+]
 
 [project.urls]
 Homepage = "https://github.com/thiebes/curved-text"
+Documentation = "https://thiebes.github.io/curved-text/"
 Source = "https://github.com/thiebes/curved-text"
 Issues = "https://github.com/thiebes/curved-text/issues"
 Changelog = "https://github.com/thiebes/curved-text/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+# Match the minimum supported interpreter so lint rules track the floor.
+target-version = "py39"
+line-length = 88
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+# pycodestyle, Pyflakes, pyupgrade, and flake8-bugbear: a conservative set that
+# catches real problems (unused imports, undefined names, legacy syntax) without
+# restyling the hand-grouped imports.
+select = ["E", "F", "UP", "B"]
+
+[tool.mypy]
+# python_version is left unset so it tracks the interpreter mypy runs under;
+# recent mypy no longer accepts 3.9 here, and the pytest matrix (including the
+# 3.9 floor job) is what guards runtime behaviour on the oldest supported Python.
+files = ["src"]
+# matplotlib's type stubs are incomplete (some Text/Artist methods are missing),
+# so allow untyped third-party imports rather than chase upstream stub gaps.
+ignore_missing_imports = true

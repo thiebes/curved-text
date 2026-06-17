@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from curved_text import CurvedText, curved_text
-from curved_text._core import _MathRun, _split_runs
+from curved_text._core import _MathRun, _split_runs, _text_to_path
 
 
 def _draw(fig):
@@ -354,7 +354,17 @@ def test_math_run_follows_tight_arc():
     center = ax.transData.transform((0.0, 0.0))
     radius = ax.transData.transform((1.0, 0.0))[0] - center[0]
     extent = run.get_window_extent(renderer)
-    bound = extent.height / 2.0 + 2.0
+    # Derive the bound from the run's actual outline reach above and below the
+    # x-height datum it rides on, mapped to pixels exactly as _bent_path does.
+    # Tying the bound to the same geometry the bend map uses keeps it robust to
+    # matplotlib mathtext metric changes; half the window-extent height is a
+    # different reference frame (the box midpoint, not the x-height line) and
+    # only happened to sit just above the true reach.
+    verts, _, datum = run._expression_outline()
+    px_per_unit = (renderer.points_to_pixels(run.get_fontsize())
+                   / _text_to_path.FONT_SCALE)
+    reach = np.abs(verts[:, 1] - datum).max() * px_per_unit
+    bound = reach + 2.0
     half_span = extent.width / 2.0 / radius  # half the label arc, radians
     sagitta = radius * (1.0 - np.cos(half_span))
     assert sagitta > bound + 4.0, "test geometry too gentle to discriminate"

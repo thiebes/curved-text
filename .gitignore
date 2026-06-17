@@ -8,6 +8,9 @@ dist/
 .venv/
 venv/
 
+# Docs
+docs/_build/
+
 # Tooling
 .pytest_cache/
 .mypy_cache/

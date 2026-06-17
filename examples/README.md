@@ -2,7 +2,7 @@
 
 A small gallery showing what [`curved-text`](../README.md) does and how to drive
 it. Each figure is produced by a self-contained script in this directory; the
-caption under each panel is the call that drew it.
+link under each panel points to the script that drew it.
 
 Most scripts need only matplotlib and numpy (already installed with the
 package). The one integration example also needs seaborn and pandas; install
@@ -132,11 +132,25 @@ glyph-hugging casing, pass a white `withStroke` through `path_effects` instead.)
 
 [example_11_box.py](example_11_box.py)
 
+### Box versus a path-effects stroke
+
+The same plain-text label over the same lines, two ways. A wide `withStroke` is
+applied per character, so neighbouring letters blur together and the lines show
+through the gaps. `box` is a single fill under the whole label, so it covers
+plain text cleanly. This is why `box` is the way to get solid coverage under
+plain text.
+
+![A wide per-character stroke leaves gaps; a box fill covers cleanly](images/12_box_vs_stroke.png)
+
+[example_12_box_vs_stroke.py](example_12_box_vs_stroke.py)
+
 ### Any matplotlib-backed axes (seaborn, pandas)
 
 `curved_text` only needs a `matplotlib.axes.Axes`, so it composes with seaborn,
 `pandas.DataFrame.plot`, and anything else that draws on matplotlib. This script
 renders only if seaborn and pandas are installed (they come with the `examples`
 extra); they are not runtime dependencies of curved-text.
+
+![A label drawn on a seaborn axes](images/09_seaborn_pandas.png)
 
 [example_09_seaborn_pandas.py](example_09_seaborn_pandas.py)

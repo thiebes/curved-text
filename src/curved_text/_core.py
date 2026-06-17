@@ -144,7 +144,7 @@ def _densify(verts: np.ndarray, codes: np.ndarray,
             if n_extra:
                 fractions = np.linspace(0.0, 1.0, n_extra + 2)[1:, None]
                 out_verts.extend(prev + (vert - prev) * fractions)
-                out_codes.extend([Path.LINETO] * (n_extra + 1))
+                out_codes.extend([int(Path.LINETO)] * (n_extra + 1))
                 prev = vert
                 continue
         out_verts.append(vert)
@@ -215,6 +215,9 @@ class _MathRun(mtext.Text):
 
     def _bent_path(self, renderer) -> Path | None:
         """The expression's outline bent along the frame, in display pixels."""
+        # draw() guards against a missing frame before calling this, so the
+        # frame is set here by contract.
+        assert self._frame is not None
         verts, codes, datum = self._expression_outline()
         if len(verts) == 0:
             return None
@@ -382,8 +385,8 @@ class CurvedText(mtext.Text):
                 continue
             for ch in run.text:
                 t = mtext.Text(0.0, 0.0, " " if ch == " " else ch, **kwargs)
-                t.set_ha("center")
-                t.set_va("center")
+                t.set_horizontalalignment("center")
+                t.set_verticalalignment("center")
                 axes.add_artist(t)
                 self._segments.append(t)
         # Apply the layered zorders now that the casing and glyphs exist: the
@@ -418,6 +421,8 @@ class CurvedText(mtext.Text):
         if not self._segments:
             return
         axes = self.axes
+        if axes is None:
+            return
         # Work in display pixels: project the curve and build its arc-length
         # frame.
         pts = axes.transData.transform(np.column_stack([self._cx, self._cy]))
@@ -478,7 +483,8 @@ class CurvedText(mtext.Text):
             else:
                 px, py, _ = frame.points_and_angles(cursor + w / 2.0)
                 rot = frame.chord_angles(cursor, w)
-                t.set_position(inv.transform((px + ox, py + oy)))
+                gx, gy = inv.transform((px + ox, py + oy))
+                t.set_position((float(gx), float(gy)))
                 t.set_rotation(np.degrees(rot))
             t.set_visible(True)
             cursor += w

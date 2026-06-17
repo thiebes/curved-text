@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 __all__ = ["CurvedText", "curved_text"]
 
 _ANCHORS = ("start", "center", "end")
+_BOX_KEYS = ("color", "pad", "alpha")
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
@@ -31,6 +32,10 @@ _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
 # the bend map will not subdivide. Short chords keep bent rule boxes (fraction
 # bars, radical overlines) smooth at any curvature where text is readable.
 _MAX_SEGMENT_UNITS = 5.0
+
+# Points sampled along the curve to draw the box casing as a polyline. Enough
+# to look smooth across a label-width span at any realistic curvature.
+_BOX_SAMPLES = 64
 
 # Shared converter from text to glyph outlines; it caches font faces internally.
 _text_to_path = TextToPath()
@@ -64,19 +69,23 @@ def _split_runs(text: str) -> list[_Run]:
     return runs
 
 
-def _box_config(box) -> dict | None:
+def _box_config(box: bool | str | dict) -> dict | None:
     """Normalize the ``box`` argument to a settings dict, or None when off.
 
     ``box`` may be a bool, a color string, or a dict of ``color`` / ``pad`` /
     ``alpha`` overrides. ``pad`` scales the band height relative to the tallest
-    glyph.
+    glyph. Unknown dict keys raise, so a typo surfaces instead of vanishing.
     """
     if not box:
         return None
-    config = {"color": "white", "pad": 1.1, "alpha": None}
+    config: dict = {"color": "white", "pad": 1.1, "alpha": None}
     if isinstance(box, str):
         config["color"] = box
     elif isinstance(box, dict):
+        unknown = set(box) - set(_BOX_KEYS)
+        if unknown:
+            raise ValueError(
+                f"box keys must be among {_BOX_KEYS}, got {sorted(unknown)}")
         config.update(box)
     return config
 
@@ -126,6 +135,57 @@ class _CurveFrame:
         return np.where((xr == xl) & (yr == yl), rad,
                         np.arctan2(yr - yl, xr - xl))
 
+    def offset(self, distance: float) -> _CurveFrame:
+        """The parallel (offset) curve at perpendicular ``distance`` pixels.
+
+        Each vertex is displaced along the local normal -- the bisector of its
+        two adjacent segment tangents at interior vertices, the single segment
+        tangent at the ends -- so the returned frame is the curve the label
+        actually rides when offset. Walking glyphs along it (rather than
+        projecting them off the base curve) keeps both the perpendicular
+        clearance and the on-screen letter spacing uniform, because the cursor
+        advances along the very curve the glyphs sit on. Positive ``distance``
+        is to the left of the direction of travel; ``distance`` of zero returns
+        this frame unchanged, so an un-offset label and a straight guide stay
+        numerically identical.
+        """
+        if distance == 0.0:
+            return self
+        tx, ty = np.cos(self._rads), np.sin(self._rads)
+        vtx = np.empty_like(self._xf)
+        vty = np.empty_like(self._yf)
+        vtx[0], vty[0] = tx[0], ty[0]
+        vtx[-1], vty[-1] = tx[-1], ty[-1]
+        # Interior vertices ride the bisector of the adjacent unit tangents; a
+        # near-zero sum means the curve doubles back on itself, so fall back to
+        # the incoming segment tangent there rather than divide by zero.
+        mx, my = tx[:-1] + tx[1:], ty[:-1] + ty[1:]
+        mlen = np.hypot(mx, my)
+        safe = mlen > 1e-12
+        denom = np.where(safe, mlen, 1.0)
+        vtx[1:-1] = np.where(safe, mx / denom, tx[:-1])
+        vty[1:-1] = np.where(safe, my / denom, ty[:-1])
+        return _CurveFrame(self._xf - distance * vty, self._yf + distance * vtx)
+
+    def remap_arc(self, other: _CurveFrame, s):
+        """Map arc length ``s`` on this curve to the corresponding arc length on
+        ``other``, a curve sharing this one's vertices (its :meth:`offset`).
+
+        The point at fraction ``f`` of this curve's segment ``i`` maps to
+        fraction ``f`` of ``other``'s segment ``i``. ``pos`` and ``anchor`` are
+        given against the base curve, so this carries the anchor over to the
+        offset curve the label is laid along -- the label lands where the user
+        asked on the original curve while keeping even spacing on the offset
+        one. On a straight guide the two curves have equal-length segments, so
+        the map is the identity.
+        """
+        s = np.asarray(s, dtype=float)
+        i = np.clip(np.searchsorted(self._arc, s) - 1, 0, len(self._arc) - 2)
+        d = self._arc[i + 1] - self._arc[i]
+        f = np.where(d != 0.0, (s - self._arc[i]) / np.where(d != 0.0, d, 1.0),
+                     0.0)
+        return other._arc[i] + f * (other._arc[i + 1] - other._arc[i])
+
 
 def _densify(verts: np.ndarray, codes: np.ndarray,
              max_du: float = _MAX_SEGMENT_UNITS) -> tuple[np.ndarray, np.ndarray]:
@@ -166,26 +226,25 @@ class _MathRun(mtext.Text):
     rendering differs. At draw time the mathtext layout is mapped through
     ``(u, v) -> curve(u) + (v - datum) * normal(u)``, where ``u`` is arc
     length from the run's left edge and ``v`` is height above the baseline,
-    with the datum at the layout box center so the run rides the curve exactly
-    where ``va="center"`` would put it. Normals follow em-scale chords,
-    matching the chord rotation of plain characters across coarse polyline
-    vertices.
+    with the datum on the surrounding text's x-height line so the run's main
+    symbols sit level with neighbouring plain characters. Normals follow
+    em-scale chords, matching the chord rotation of plain characters across
+    coarse polyline vertices. Any perpendicular offset is already baked into the
+    frame (it is the parallel curve), so the run rides it like the plain glyphs
+    do, with no offset handling of its own.
     """
 
     def __init__(self, text: str, **kwargs: Any) -> None:
         super().__init__(0.0, 0.0, text, **kwargs)
         self._frame: _CurveFrame | None = None
         self._s_left = 0.0
-        self._offset_px = (0.0, 0.0)
         self._outline_cache: tuple | None = None
 
-    def _set_frame(self, frame: _CurveFrame, s_left: float,
-                   offset_px: tuple[float, float]) -> None:
+    def _set_frame(self, frame: _CurveFrame, s_left: float) -> None:
         """Receive this draw's frame: the run starts at arc length ``s_left``
-        and shifts by ``offset_px`` along the label's chord normal."""
+        along the curve (already the parallel curve when offset)."""
         self._frame = frame
         self._s_left = float(s_left)
-        self._offset_px = offset_px
 
     @martist.allow_rasterization
     def draw(self, renderer, *args, **kwargs) -> None:
@@ -229,9 +288,8 @@ class _MathRun(mtext.Text):
         v = (verts[:, 1] - datum) * px_per_unit
         x, y, _ = self._frame.points_and_angles(s)
         angle = self._frame.chord_angles(s - em_px / 2.0, em_px)
-        ox, oy = self._offset_px
-        bent = np.column_stack([x - v * np.sin(angle) + ox,
-                                y + v * np.cos(angle) + oy])
+        bent = np.column_stack([x - v * np.sin(angle),
+                                y + v * np.cos(angle)])
         return Path(bent, codes)
 
     def _expression_outline(self) -> tuple[np.ndarray, np.ndarray, float]:
@@ -294,10 +352,15 @@ class CurvedText(mtext.Text):
         Which part of the label lands at ``pos``: ``"start"``, ``"center"``, or
         ``"end"``.
     ``offset``
-        A perpendicular shift off the curve, in typographic points, along the
-        normal of the label's chord (the line from its first to its last glyph).
-        Positive is to the left of the direction of travel, which is visually
-        above a left-to-right curve.
+        A perpendicular shift off the curve, in typographic points. The label is
+        laid along the parallel (offset) curve at that distance, so the clearance
+        from the curve is uniform along the whole label and the letter spacing
+        stays even, even where the curvature is steep or asymmetric. Positive is
+        to the left of the direction of travel, which is visually above a
+        left-to-right curve. ``pos`` and ``anchor`` stay measured against the
+        original curve and are carried perpendicularly onto the offset curve, so
+        an offset label sits directly off the spot the same ``pos`` marks on the
+        bare curve.
 
     A label that overruns either end of the curve -- because of ``pos`` and
     ``anchor`` -- is not clipped. The curve is extended along its end tangent and
@@ -333,12 +396,14 @@ class CurvedText(mtext.Text):
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
-        Perpendicular offset off the curve, in points.
+        Perpendicular offset off the curve, in points. The label is laid along
+        the parallel (offset) curve at that distance.
     box : bool, str, or dict, default False
         A casing drawn behind the label to clear the lines it crosses. ``True``
         draws a white band; a color string sets its color; a dict accepts
         ``color``, ``pad`` (band height relative to the tallest glyph, default
-        ``1.1``), and ``alpha``.
+        ``1.1``), and ``alpha``. The band has rounded ends, so it extends about
+        half its height past the first and last glyph.
     **kwargs
         Passed to each per-character :class:`~matplotlib.text.Text` and each
         mathtext run (for example ``color``, ``fontsize``, ``alpha``,
@@ -368,9 +433,10 @@ class CurvedText(mtext.Text):
         # so it must draw after the container and before the glyphs; ``set_zorder``
         # below places it between them.
         box_config = _box_config(box)
-        self._box_pad = box_config["pad"] if box_config else 0.0
+        self._box_pad = 1.1
         self._box: mlines.Line2D | None = None
         if box_config is not None:
+            self._box_pad = box_config["pad"]
             self._box = mlines.Line2D([], [], color=box_config["color"],
                                       alpha=box_config["alpha"],
                                       solid_capstyle="round",
@@ -408,6 +474,13 @@ class CurvedText(mtext.Text):
         for t in getattr(self, "_segments", ()):
             t.set_zorder(self.get_zorder() + 1)
 
+    def _hide_box(self) -> None:
+        # The casing is an axes-owned artist drawn independently, so when ``draw``
+        # bails out before positioning it the band must be hidden explicitly or
+        # the previous draw's geometry stays painted.
+        if self._box is not None:
+            self._box.set_visible(False)
+
     def remove(self) -> None:
         # The glyphs and casing are independent artists on the axes; remove them
         # with the container so removal does not leave them behind as orphans.
@@ -420,16 +493,26 @@ class CurvedText(mtext.Text):
         super().remove()
 
     def draw(self, renderer, *args, **kwargs) -> None:
-        if not self._segments:
+        if not self._segments or self.axes is None:
+            self._hide_box()
             return
         axes = self.axes
-        if axes is None:
-            return
         # Work in display pixels: project the curve and build its arc-length
-        # frame.
+        # frame, then shift that frame perpendicularly to the parallel (offset)
+        # curve the label actually rides. Laying glyphs along the offset curve
+        # -- rather than projecting them off the base curve -- keeps the
+        # clearance from the curve and the on-screen letter spacing uniform at
+        # once, because the cursor advances along the curve the glyphs sit on.
+        # ``pos``/``anchor`` stay defined against the base curve and are carried
+        # onto the offset curve below, so the label lands where the user asked.
         pts = axes.transData.transform(np.column_stack([self._cx, self._cy]))
-        frame = _CurveFrame(pts[:, 0], pts[:, 1])
+        offset_px = self._offset * renderer.points_to_pixels(1.0)
+        base = _CurveFrame(pts[:, 0], pts[:, 1])
+        frame = base.offset(offset_px)
         if not np.isfinite(frame.length) or frame.length <= 0.0:
+            # A degenerate curve has no span to position the casing on; hide it
+            # rather than leave the previous draw's band stranded on screen.
+            self._hide_box()
             return
         inv = axes.transData.inverted()
 
@@ -442,7 +525,10 @@ class CurvedText(mtext.Text):
         widths = [e.width for e in extents]
         total = float(sum(widths))
 
-        s0 = self._pos * frame.length
+        # Anchor at ``pos`` of the base curve, carried onto the offset curve, so
+        # the user's placement reads against the curve they passed in. The label
+        # then spans ``total`` pixels along the offset curve from that anchor.
+        s0 = float(base.remap_arc(frame, self._pos * base.length))
         if self._anchor == "center":
             cursor = s0 - total / 2.0
         elif self._anchor == "end":
@@ -450,24 +536,15 @@ class CurvedText(mtext.Text):
         else:
             cursor = s0
 
-        # Offset the whole label along the normal of its chord (first to last
-        # glyph); the frame extrapolates past the curve ends along their tangents.
-        x0, y0, _ = frame.points_and_angles(cursor)
-        x1, y1, _ = frame.points_and_angles(cursor + total)
-        dx, dy = x1 - x0, y1 - y0
-        norm = float(np.hypot(dx, dy))
-        nx, ny = (-dy / norm, dx / norm) if norm else (0.0, 1.0)
-        scale = self._offset * renderer.points_to_pixels(1.0)
-        ox, oy = nx * scale, ny * scale
-
-        # The casing follows the offset curve across the label's whole span at
-        # the tallest glyph's height, so it clears the lines behind plain and
-        # math segments alike (a single fill, immune to the per-character
-        # cannibalization a wide ``path_effects`` stroke would cause).
+        # The casing follows the curve across the label's whole span at the
+        # tallest glyph's height, so it clears the lines behind plain and math
+        # segments alike (a single fill, immune to the per-character
+        # cannibalization a wide ``path_effects`` stroke would cause). The frame
+        # is already the offset curve, so the casing rides it directly.
         if self._box is not None:
-            s_box = np.linspace(cursor, cursor + total, 64)
+            s_box = np.linspace(cursor, cursor + total, _BOX_SAMPLES)
             bx, by, _ = frame.points_and_angles(s_box)
-            box_xy = inv.transform(np.column_stack([bx + ox, by + oy]))
+            box_xy = inv.transform(np.column_stack([bx, by]))
             height = max(e.height for e in extents)
             self._box.set_data(box_xy[:, 0], box_xy[:, 1])
             self._box.set_linewidth(
@@ -481,11 +558,11 @@ class CurvedText(mtext.Text):
         # receives the frame and bends its outlines through it when it draws.
         for t, w in zip(self._segments, widths):
             if isinstance(t, _MathRun):
-                t._set_frame(frame, cursor, (ox, oy))
+                t._set_frame(frame, cursor)
             else:
                 px, py, _ = frame.points_and_angles(cursor + w / 2.0)
                 rot = frame.chord_angles(cursor, w)
-                gx, gy = inv.transform((px + ox, py + oy))
+                gx, gy = inv.transform((px, py))
                 t.set_position((float(gx), float(gy)))
                 t.set_rotation(np.degrees(rot))
             t.set_visible(True)

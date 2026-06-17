@@ -85,6 +85,181 @@ def test_offset_is_dpi_invariant_in_points():
     assert displacement(72) == pytest.approx(displacement(144), rel=0.02)
 
 
+def _fit_circle(xy):
+    """Least-squares circle through points; returns (center, radius, rms)."""
+    x, y = xy[:, 0], xy[:, 1]
+    A = np.column_stack([x, y, np.ones_like(x)])
+    cx2, cy2, c = np.linalg.lstsq(A, x**2 + y**2, rcond=None)[0]
+    cx, cy = cx2 / 2.0, cy2 / 2.0
+    r = np.sqrt(c + cx**2 + cy**2)
+    rms = np.sqrt(np.mean((np.hypot(x - cx, y - cy) - r) ** 2))
+    return (cx, cy), r, rms
+
+
+def _clearance_px(ax, ct, gx, gy):
+    """Perpendicular distance, in display pixels, from each glyph center to the
+    guide polyline."""
+    pts = ax.transData.transform(np.column_stack([gx, gy]))
+    seg = pts[1:] - pts[:-1]
+    seg2 = np.einsum("ij,ij->i", seg, seg)
+    out = []
+    for s in ct._segments:
+        p = ax.transData.transform(np.asarray(s.get_position()))
+        t = np.clip(np.einsum("ij,ij->i", p - pts[:-1], seg) / seg2, 0.0, 1.0)
+        proj = pts[:-1] + t[:, None] * seg
+        out.append(np.hypot(*(p - proj).T).min())
+    return np.asarray(out)
+
+
+def test_offset_is_parallel_curve_on_circle():
+    # A perpendicular offset of a circular guide must be a concentric arc:
+    # the fitted radius shifts by the offset while the center stays put. The
+    # superseded single-chord offset translated the label instead, leaving the
+    # radius at 1.0 and moving the center.
+    t = np.linspace(np.pi, 0, 400)
+    gx, gy = np.cos(t), np.sin(t)
+    fig, ax = plt.subplots(dpi=150)
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.7, 1.7)
+    ax.set_ylim(-0.4, 1.9)
+    ax.plot(gx, gy)
+    _draw(fig)
+
+    radii = {}
+    gaps = {}
+    for off in (0.0, 40.0, -40.0):
+        ct = curved_text(ax, gx, gy, "ABCDEFGHIJKLMNOP", offset=off, fontsize=14)
+        _draw(fig)
+        centers = np.array([s.get_position() for s in ct._segments])
+        center, radii[off], rms = _fit_circle(centers)
+        # Glyph centers lie on a circle (concentric, not translated)...
+        assert rms < 0.01
+        # ...sharing the guide's center.
+        assert center == pytest.approx((0.0, 0.0), abs=0.02)
+        gaps[off] = np.hypot(*np.diff(centers, axis=0).T).mean()
+    # Outward and inward offsets are symmetric about the unit radius.
+    d = radii[40.0] - 1.0
+    assert d > 0.05
+    assert radii[-40.0] == pytest.approx(1.0 - d, abs=0.01)
+    # Laying the label along the offset curve keeps the letter spacing even:
+    # the mean center-to-center gap is unchanged by the offset (the label
+    # occupies a smaller angular span on the larger arc, not a stretched one).
+    assert gaps[40.0] == pytest.approx(gaps[0.0], rel=0.02)
+    assert gaps[-40.0] == pytest.approx(gaps[0.0], rel=0.02)
+    plt.close(fig)
+
+
+def test_offset_clearance_is_uniform_on_asymmetric_curve():
+    # On a steep, asymmetrically curved guide (a Gaussian flank) the offset must
+    # hold a constant perpendicular clearance end to end. The single-chord
+    # offset crowded the gentler end and floated the steeper one.
+    gx = np.linspace(86, 126, 140)
+    gy = 10.0 * np.exp(-0.5 * ((gx - 127) / 20) ** 2)
+    fig, ax = plt.subplots(dpi=150)
+    ax.set_xlim(0, 255)
+    ax.set_ylim(-3.3, 11)
+    ax.plot(gx, gy)
+    _draw(fig)
+    ct = curved_text(ax, gx, gy, "recovered signal", offset=10.0, fontsize=12)
+    _draw(fig)
+    clear = _clearance_px(ax, ct, gx, gy)
+    expected = 10.0 * fig.dpi / 72.0
+    assert clear.mean() == pytest.approx(expected, rel=0.02)
+    # Uniform to a small fraction of the clearance, not the ~30% the single
+    # global offset vector produced here.
+    assert (clear.max() - clear.min()) / clear.mean() < 0.03
+    plt.close(fig)
+
+
+def test_offset_anchor_is_measured_on_base_curve():
+    # pos/anchor are given against the original curve, so an offset label must
+    # sit perpendicularly off the spot pos marks on the bare curve -- not off
+    # the spot at the same arc fraction of the longer/shorter offset curve. A
+    # parabola sampled asymmetrically makes the two fractions differ.
+    x = np.linspace(-1.2, 0.8, 200)
+    y = x**2
+    fig, ax = plt.subplots(dpi=150)
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.6, 1.2)
+    ax.set_ylim(-0.4, 1.8)
+    ax.plot(x, y)
+    _draw(fig)
+    pos = 0.35
+    ct = curved_text(ax, x, y, "o", pos=pos, anchor="center", offset=14.0,
+                     fontsize=14)
+    _draw(fig)
+    center = ax.transData.transform(ct._segments[0].get_position())
+    # Foot of the perpendicular from the glyph center onto the base curve, as an
+    # arc-length fraction; it must land at pos.
+    base = ax.transData.transform(np.column_stack([x, y]))
+    seg = base[1:] - base[:-1]
+    seg2 = np.einsum("ij,ij->i", seg, seg)
+    t = np.clip(np.einsum("ij,ij->i", center - base[:-1], seg) / seg2, 0.0, 1.0)
+    feet = base[:-1] + t[:, None] * seg
+    j = int(np.argmin(np.hypot(*(center - feet).T)))
+    arc = np.insert(np.cumsum(np.hypot(*seg.T)), 0, 0.0)
+    foot_arc = arc[j] + t[j] * (arc[j + 1] - arc[j])
+    assert foot_arc / arc[-1] == pytest.approx(pos, abs=0.01)
+    plt.close(fig)
+
+
+def test_offset_on_straight_guide_is_rigid_translation():
+    # Where the guide is straight the local normal is the chord normal
+    # everywhere, so the parallel-curve offset must still shift every glyph by
+    # one identical vector -- numerically unchanged from the prior behaviour.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 100)
+    y = np.full_like(x, 5.0)
+    flat = curved_text(ax, x, y, "word", pos=0.5, anchor="center", offset=0.0)
+    lifted = curved_text(ax, x, y, "word", pos=0.5, anchor="center", offset=8.0)
+    _draw(fig)
+    shifts = np.array([np.subtract(b.get_position(), a.get_position())
+                       for a, b in zip(flat._segments, lifted._segments)])
+    # Every glyph moves by the same displacement, purely vertical (the curve
+    # runs horizontally, so the normal is +y).
+    assert shifts[:, 0] == pytest.approx(0.0, abs=1e-9)
+    assert shifts[:, 1] == pytest.approx(shifts[0, 1], abs=1e-9)
+    assert shifts[0, 1] > 0.0
+    plt.close(fig)
+
+
+def test_math_run_offset_rides_offset_curve():
+    # The math run rides the same offset curve as the plain glyphs. Centered at
+    # the top of a circular guide, the run's outline centroid sits directly
+    # above the guide center; offsetting moves it radially out (or in) by the
+    # offset distance, holding its horizontal position. A rigid translation (the
+    # superseded behaviour) would shift it by a fixed vector regardless of where
+    # on the curve the run sat.
+    t = np.linspace(np.pi, 0, 400)
+    gx, gy = np.cos(t), np.sin(t)
+    fig, ax = plt.subplots(dpi=150)
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.7, 1.7)
+    ax.set_ylim(-0.4, 1.9)
+    ax.plot(gx, gy)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    center_px = ax.transData.transform((0.0, 0.0))
+
+    def centroid(off):
+        ct = curved_text(ax, gx, gy, "$x^2+y^2$", offset=off, fontsize=18)
+        _draw(fig)
+        return _math_runs(ct)[0]._bent_path(renderer).vertices.mean(axis=0)
+
+    c0, cup, cdn = centroid(0.0), centroid(40.0), centroid(-40.0)
+    expected = 40.0 * fig.dpi / 72.0
+    # Radial distance from the guide center grows by the offset outward and
+    # shrinks by it inward (concentric, not a fixed translation).
+    r0 = np.hypot(*(c0 - center_px))
+    assert np.hypot(*(cup - center_px)) - r0 == pytest.approx(expected, rel=0.05)
+    assert np.hypot(*(cdn - center_px)) - r0 == pytest.approx(-expected, rel=0.05)
+    # At the top of the circle the move is vertical: horizontal drift stays small.
+    assert abs(cup[0] - c0[0]) < 0.05 * expected
+    plt.close(fig)
+
+
 def test_overrun_is_not_clipped():
     # Anchor the start of a long label past the right end of a short curve; the
     # overrunning glyphs should ride the tangent extension, all still visible.
@@ -313,6 +488,9 @@ def test_math_run_aligns_to_plain_x_height():
     ref = plain_x.get_window_extent(renderer)
     assert (bent.y0 + bent.y1) / 2.0 == pytest.approx(
         (ref.y0 + ref.y1) / 2.0, abs=2.0)
+    # The run also sits horizontally where the centred plain glyph does.
+    assert (bent.x0 + bent.x1) / 2.0 == pytest.approx(
+        (ref.x0 + ref.x1) / 2.0, abs=3.0)
     plt.close(fig)
 
 
@@ -558,6 +736,33 @@ def test_box_config_color_and_pad():
                         box=dict(color="yellow", pad=1.5))
     assert mcolors.to_rgba(tuned._box.get_color()) == mcolors.to_rgba("yellow")
     assert tuned._box_pad == 1.5
+    plt.close(fig)
+
+
+def test_box_rejects_unknown_keys():
+    # An unknown dict key (a typo) must raise rather than silently vanish.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    with pytest.raises(ValueError):
+        curved_text(ax, x, np.zeros_like(x), "ab", box=dict(colour="red"))
+    plt.close(fig)
+
+
+def test_box_hidden_on_degenerate_redraw():
+    # A box that drew once must not stay painted with stale geometry when a
+    # later draw hits a degenerate curve (zero arc length in display space).
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.5, box=True)
+    _draw(fig)
+    assert ct._box.get_visible()
+    # Collapse the curve to a single point, then redraw.
+    ct._cx = np.full_like(ct._cx, 5.0)
+    ct._cy = np.full_like(ct._cy, 5.0)
+    _draw(fig)
+    assert not ct._box.get_visible()
     plt.close(fig)
 
 

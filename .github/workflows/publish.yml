@@ -11,7 +11,6 @@ jobs:
     environment: pypi
     permissions:
       id-token: write    # OIDC token for PyPI trusted publishing
-      contents: write    # create the GitHub release for the tag
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
@@ -23,10 +22,24 @@ jobs:
           python -m build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
-      # Create the GitHub release only after PyPI publish succeeds, using the
-      # matching CHANGELOG section as notes (falling back to generated notes).
-      # gh is preinstalled on the runner, so there is no extra action to pin.
-      - name: Create GitHub release
+        with:
+          # Re-running a partially-failed release skips already-uploaded files
+          # instead of erroring on the immutable version.
+          skip-existing: true
+
+  # Separate job so the GitHub release carries only contents:write, never the
+  # OIDC token that mints PyPI credentials. Runs only after publish succeeds.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      # Create the GitHub release from the matching CHANGELOG section (falling
+      # back to generated notes), updating it in place if a re-run already made
+      # it. gh is preinstalled on the runner, so there is no extra action to pin.
+      - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -36,10 +49,16 @@ jobs:
             /^## / && capture {exit}
             capture {print}
           ' CHANGELOG.md)"
-          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
-              --generate-notes
+          has_notes="$(printf '%s' "$notes" | tr -d '[:space:]')"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            cmd=(gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME")
+            [ -n "$has_notes" ] && cmd+=(--notes "$notes")
           else
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
-              --notes "$notes"
+            cmd=(gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME")
+            if [ -n "$has_notes" ]; then
+              cmd+=(--notes "$notes")
+            else
+              cmd+=(--generate-notes)
+            fi
           fi
+          "${cmd[@]}"

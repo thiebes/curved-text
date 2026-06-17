@@ -3,6 +3,24 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.1
+
+This release carries no changes to the library's behaviour. It updates project
+maturity, documentation, and packaging metadata.
+
+### Changed
+
+- Development status is now Beta. The public API (the `curved_text` function and
+  the `CurvedText` class, with `pos`, `anchor`, `offset`, `box`, and the keyword
+  pass-through) has been stable across releases.
+
+### Added
+
+- Hosted documentation and API reference at
+  [thiebes.github.io/curved-text](https://thiebes.github.io/curved-text/).
+- A `docs` extra (`pip install curved-text[docs]`) for building the
+  documentation locally.
+
 ## 0.3.0
 
 - Added `box`: a casing drawn behind the label that follows the curve at the

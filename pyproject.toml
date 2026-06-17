@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "curved-text"
-version = "0.3.0"
+version = "0.3.1"
 description = "Draw text along an arbitrary curve in matplotlib, with arc-length positioning and a perpendicular offset."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Joseph Thiebes", email = "joseph@thiebes.org" }]
 keywords = ["matplotlib", "text", "annotation", "label", "curve", "visualization"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "Joseph Thiebes", email = "joseph@thiebes.org" }]
+authors = [{ name = "Joseph J. Thiebes", email = "joseph@thiebes.org" }]
 keywords = ["matplotlib", "text", "annotation", "label", "curve", "visualization"]
 classifiers = [
     "Development Status :: 4 - Beta",

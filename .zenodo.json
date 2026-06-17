@@ -1,0 +1,26 @@
+{
+  "title": "curved-text",
+  "description": "Draw text along an arbitrary curve in matplotlib, with arc-length positioning and a perpendicular offset.",
+  "upload_type": "software",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Thiebes, Joseph J."
+    }
+  ],
+  "keywords": [
+    "matplotlib",
+    "text",
+    "annotation",
+    "label",
+    "curve",
+    "visualization"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/thiebes/curved-text",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

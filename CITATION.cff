@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: curved-text
+message: If you use this software, please cite it using these metadata.
+type: software
+authors:
+  - given-names: Joseph J.
+    family-names: Thiebes
+    email: joseph@thiebes.org
+abstract: >-
+  Draw text along an arbitrary curve in matplotlib, with arc-length positioning
+  and a perpendicular offset.
+repository-code: https://github.com/thiebes/curved-text
+url: https://thiebes.github.io/curved-text/
+license: MIT
+version: 0.3.1
+date-released: "2026-06-16"
+keywords:
+  - matplotlib
+  - text
+  - annotation
+  - label
+  - curve
+  - visualization

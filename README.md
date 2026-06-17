@@ -227,13 +227,19 @@ Generative AI tools were used to develop and maintain this package. The author
 (the sole maintainer) directed the design and reviewed, tested, and approved
 every change before committing it.
 
-- **Design.** The architecture and the design notes (mathtext via bent glyph
-  outlines, the `_CurveFrame` display-space geometry, tangent-extension
-  overflow) were decided by the maintainer. AI assisted in drafting the design
-  documents.
+- **Design and direction.** The architecture and the design decisions were the
+  maintainer's: the chord-across-advance placement, the `_CurveFrame`
+  display-space geometry, tangent-extension overflow, and the choice to support
+  mathtext by bending glyph outlines along the curve. The mathtext feature was
+  iterated against real problems found in use, including the baseline-alignment
+  fix and the move from a per-character stroke to a single box casing once the
+  per-letter halo was found to leave gaps. AI assisted in drafting the design
+  documents and the implementation against these decisions.
 - **Code.** The implementation in `src/curved_text/` was drafted with
   substantial AI assistance against that design, then reviewed and revised by
-  the maintainer.
+  the maintainer. Correctness, cross-version compatibility (the test suite runs
+  against a matplotlib floor and a pre-release), packaging, and the release
+  process were the maintainer's responsibility.
 - **Tests.** The test suite in `tests/` was drafted with AI assistance and
   reviewed by the maintainer, and is run in CI on every change.
 - **Documentation.** The README, API reference, and example gallery prose were

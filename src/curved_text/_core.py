@@ -1,4 +1,6 @@
 """Draw text along an arbitrary curve in a matplotlib Axes."""
+# Developed with AI assistance under maintainer review; see the
+# "Development and AI use" section of the README.
 from __future__ import annotations
 
 import re

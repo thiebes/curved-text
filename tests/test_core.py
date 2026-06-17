@@ -2,6 +2,8 @@
 
 The Agg backend is selected in conftest.py before pyplot is imported.
 """
+# Developed with AI assistance under maintainer review; see the
+# "Development and AI use" section of the README.
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest

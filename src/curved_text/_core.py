@@ -32,8 +32,8 @@ _CROWDING = ("none", "curvature")
 # absorbs this much curvature before their ink visibly collides, so no gap is
 # added below it and a gentle bend is left untouched. ``_MAX_CROWD`` caps the
 # correction so even a very tight bend adds at most a bounded gap.
-_CROWD_SLACK = 0.1
-_MAX_CROWD = 0.5
+_CROWD_SLACK = 0.2
+_MAX_CROWD = 0.6
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
@@ -148,20 +148,20 @@ class _CurveFrame:
     def curvature(self, s, span):
         """Signed turning rate (radians per pixel) over ``[s, s + span]``.
 
-        The tangent is averaged over each half of the span -- the chord across
-        ``[s, s + span/2]`` and across ``[s + span/2, s + span]`` -- and the
-        wrapped difference between those two angles, divided by ``span``,
-        estimates the local curvature at the glyph's own length scale, the same
-        scale :meth:`chord_angles` smooths rotation over. Positive turns left.
-        A straight stretch (or a degenerate ``span``) yields zero, so a straight
+        The tangent is sampled as the chord across each half of the span --
+        ``[s, s + span/2]`` and ``[s + span/2, s + span]`` -- whose midpoints lie
+        ``span/2`` apart. The wrapped angle between those two chords, divided by
+        that ``span/2`` separation, estimates the curvature at the glyph's own
+        length scale, the same scale :meth:`chord_angles` smooths rotation over;
+        on a circle of radius ``R`` it recovers ``1/R``. Positive turns left. A
+        straight stretch (or a degenerate ``span``) yields zero, so a straight
         guide is left untouched by any curvature-driven adjustment.
         """
-        span = np.asarray(span, dtype=float)
-        half = span / 2.0
+        half = np.asarray(span, dtype=float) / 2.0
         a0 = self.chord_angles(s, half)
         a1 = self.chord_angles(np.asarray(s) + half, half)
         turn = np.arctan2(np.sin(a1 - a0), np.cos(a1 - a0))
-        return np.where(span > 0.0, turn / np.where(span > 0.0, span, 1.0), 0.0)
+        return np.where(half > 0.0, turn / np.where(half > 0.0, half, 1.0), 0.0)
 
     def offset(self, distance: float) -> _CurveFrame:
         """The parallel (offset) curve at perpendicular ``distance`` pixels.

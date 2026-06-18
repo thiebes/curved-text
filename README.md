@@ -156,6 +156,29 @@ stroke per character on top, the single `box` fill on the bottom.
 
 ![A wide per-character stroke leaves gaps; a box fill covers cleanly](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
 
+### Even spacing on tight bends
+
+Letters are placed one after another by their own widths, so where the curve
+bends sharply they crowd together on the inside of the bend, because each rigid
+letter box fans into its neighbour there. Set `crowding="curvature"` to open an
+even letterspacing gap that grows with the local curvature, so the inside edges
+stop colliding:
+
+```python
+curved_text(ax, x, y, "winding", crowding="curvature")
+```
+
+The gap is the same between every pair of letters, so the tracking stays even.
+It also has a deadband: a gentle bend or a straight run stays below it and is
+left unchanged, so only genuinely crowded text is spaced out. The default is
+`crowding="none"`, which leaves the spacing as the letters' own widths set it.
+
+The figure below shows both regimes. Top row: a sharp bend, where the correction
+visibly separates the letters. Bottom row: a gentle bend of the same letters,
+left untouched because it falls below the deadband.
+
+![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
+
 ### Works with seaborn, pandas, and other matplotlib-backed libraries
 
 `curved_text` needs only a `matplotlib.axes.Axes`, so it works with any library

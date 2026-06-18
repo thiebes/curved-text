@@ -433,12 +433,12 @@ class CurvedText(mtext.Text):
         ``1.1``), and ``alpha``. The band has rounded ends, so it extends about
         half its height past the first and last glyph.
     crowding : {"none", "curvature"}, default "none"
-        How to space glyphs around bends (experimental). ``"none"`` advances
-        each glyph by its own width, so on the concave side of a tight bend the
-        rotated glyph boxes can overlap. ``"curvature"`` widens each advance in
-        proportion to the local curvature and the glyph height, so the concave
-        edges stop overlapping; the glyphs fan apart slightly on the convex side
-        in exchange. A straight guide is unaffected either way.
+        How to space glyphs around bends. ``"none"`` advances each glyph by its
+        own width, so on the concave side of a tight bend the rotated glyph
+        boxes can overlap. ``"curvature"`` opens an even letterspacing gap that
+        grows with the local curvature and the glyph height, so the inside edges
+        stop colliding; the gap is the same between every pair of letters, and a
+        deadband leaves gentle bends and straight runs unchanged.
     **kwargs
         Passed to each per-character :class:`~matplotlib.text.Text` and each
         mathtext run (for example ``color``, ``fontsize``, ``alpha``,

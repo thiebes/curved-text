@@ -110,6 +110,20 @@ pan and zoom.
 
 [example_07_glued_resize.py](example_07_glued_resize.py)
 
+### Even spacing on a tight bend
+
+Letters are placed one after another by their own widths, so on a sharp bend
+they crowd together on the inside of the curve, where each rigid letter box fans
+into its neighbour. `crowding="curvature"` opens an even letterspacing gap that
+grows with the local curvature, so the inside edges stop colliding. The gap is
+the same between every pair of letters, so the tracking stays even, and it has a
+deadband: a gentle bend (bottom row) stays below it, so the two columns there
+are identical. Only the tight bend (top row) is changed.
+
+![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](images/13_crowding.png)
+
+[example_13_crowding.py](example_13_crowding.py)
+
 ## Styling and integration
 
 ### Keyword arguments reach every character

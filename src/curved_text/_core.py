@@ -24,6 +24,14 @@ __all__ = ["CurvedText", "curved_text"]
 
 _ANCHORS = ("start", "center", "end")
 _BOX_KEYS = ("color", "pad", "alpha")
+_CROWDING = ("none", "curvature")
+
+# Cap on the per-glyph advance widening that the ``"curvature"`` crowding mode
+# applies, as a fraction of the flat advance. On a bend tight enough that the
+# concave correction would exceed this, the advance saturates instead of
+# blowing up (the factor is ``1 / (1 - crowd)``, which diverges as ``crowd``
+# approaches 1).
+_MAX_CROWD = 0.5
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
@@ -134,6 +142,24 @@ class _CurveFrame:
         xr, yr, _ = self.points_and_angles(np.asarray(s) + span)
         return np.where((xr == xl) & (yr == yl), rad,
                         np.arctan2(yr - yl, xr - xl))
+
+    def curvature(self, s, span):
+        """Signed turning rate (radians per pixel) over ``[s, s + span]``.
+
+        The tangent is averaged over each half of the span -- the chord across
+        ``[s, s + span/2]`` and across ``[s + span/2, s + span]`` -- and the
+        wrapped difference between those two angles, divided by ``span``,
+        estimates the local curvature at the glyph's own length scale, the same
+        scale :meth:`chord_angles` smooths rotation over. Positive turns left.
+        A straight stretch (or a degenerate ``span``) yields zero, so a straight
+        guide is left untouched by any curvature-driven adjustment.
+        """
+        span = np.asarray(span, dtype=float)
+        half = span / 2.0
+        a0 = self.chord_angles(s, half)
+        a1 = self.chord_angles(np.asarray(s) + half, half)
+        turn = np.arctan2(np.sin(a1 - a0), np.cos(a1 - a0))
+        return np.where(span > 0.0, turn / np.where(span > 0.0, span, 1.0), 0.0)
 
     def offset(self, distance: float) -> _CurveFrame:
         """The parallel (offset) curve at perpendicular ``distance`` pixels.
@@ -404,6 +430,13 @@ class CurvedText(mtext.Text):
         ``color``, ``pad`` (band height relative to the tallest glyph, default
         ``1.1``), and ``alpha``. The band has rounded ends, so it extends about
         half its height past the first and last glyph.
+    crowding : {"none", "curvature"}, default "none"
+        How to space glyphs around bends (experimental). ``"none"`` advances
+        each glyph by its own width, so on the concave side of a tight bend the
+        rotated glyph boxes can overlap. ``"curvature"`` widens each advance in
+        proportion to the local curvature and the glyph height, so the concave
+        edges stop overlapping; the glyphs fan apart slightly on the convex side
+        in exchange. A straight guide is unaffected either way.
     **kwargs
         Passed to each per-character :class:`~matplotlib.text.Text` and each
         mathtext run (for example ``color``, ``fontsize``, ``alpha``,
@@ -412,9 +445,13 @@ class CurvedText(mtext.Text):
 
     def __init__(self, x: ArrayLike, y: ArrayLike, text: str, axes: Axes, *,
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
-                 box: bool | str | dict = False, **kwargs: Any) -> None:
+                 box: bool | str | dict = False, crowding: str = "none",
+                 **kwargs: Any) -> None:
         if anchor not in _ANCHORS:
             raise ValueError(f"anchor must be one of {_ANCHORS}, got {anchor!r}")
+        if crowding not in _CROWDING:
+            raise ValueError(
+                f"crowding must be one of {_CROWDING}, got {crowding!r}")
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         if x.ndim != 1 or x.shape != y.shape or x.size < 2:
@@ -427,6 +464,7 @@ class CurvedText(mtext.Text):
         self._pos = float(pos)
         self._anchor = anchor
         self._offset = float(offset)
+        self._crowding = crowding
         axes.add_artist(self)
         # Optional casing behind the label: a fat line following the curve at
         # the label's height. Its geometry is set in ``draw`` (on the container),
@@ -492,6 +530,33 @@ class CurvedText(mtext.Text):
             self._box = None
         super().remove()
 
+    def _advances(self, frame: _CurveFrame, widths: list[float],
+                  heights: list[float], flat_start: float) -> list[float]:
+        """Arc-length advance for each segment along ``frame``.
+
+        In the default ``"none"`` mode the advance is the flat glyph width, so
+        the layout is unchanged. In ``"curvature"`` mode each advance is widened
+        where the curve bends: a rigid glyph box of height ``h`` centered on a
+        curve of local curvature ``kappa`` has its concave edge, a distance
+        ``h/2`` toward the center of curvature, ride an arc that is shorter by a
+        factor ``1 - (h/2)*|kappa|`` than the center. Advancing the center by
+        ``w / (1 - (h/2)*|kappa|)`` therefore keeps the concave edges spaced by
+        ``w`` so they stop overlapping, at the cost of gaps opening on the
+        convex edge. The curvature is sampled along the un-widened layout
+        starting at ``flat_start``; the widening is capped at ``_MAX_CROWD`` so
+        a very tight bend saturates instead of diverging.
+        """
+        if self._crowding == "none":
+            return list(widths)
+        advances = []
+        cursor = flat_start
+        for w, h in zip(widths, heights):
+            kappa = float(frame.curvature(cursor, w))
+            crowd = min(abs(kappa) * h / 2.0, _MAX_CROWD)
+            advances.append(w / (1.0 - crowd))
+            cursor += w
+        return advances
+
     def draw(self, renderer, *args, **kwargs) -> None:
         if not self._segments or self.axes is None:
             self._hide_box()
@@ -523,18 +588,23 @@ class CurvedText(mtext.Text):
         extents = [t.get_window_extent(renderer=renderer)
                    for t in self._segments]
         widths = [e.width for e in extents]
-        total = float(sum(widths))
+        heights = [e.height for e in extents]
 
         # Anchor at ``pos`` of the base curve, carried onto the offset curve, so
-        # the user's placement reads against the curve they passed in. The label
-        # then spans ``total`` pixels along the offset curve from that anchor.
+        # the user's placement reads against the curve they passed in. ``lead``
+        # is the fraction of the label that sits before the anchor point.
         s0 = float(base.remap_arc(frame, self._pos * base.length))
-        if self._anchor == "center":
-            cursor = s0 - total / 2.0
-        elif self._anchor == "end":
-            cursor = s0 - total
-        else:
-            cursor = s0
+        lead = {"start": 0.0, "center": 0.5, "end": 1.0}[self._anchor]
+
+        # Per-glyph advances along the offset curve. In ``"curvature"`` mode
+        # these are widened on bends (see ``_advances``); the curve is sampled
+        # along the un-widened layout, anchored the same way, which is accurate
+        # enough since the widening shifts positions only slightly. The label
+        # then spans ``total`` pixels from the re-anchored cursor.
+        flat_total = float(sum(widths))
+        advances = self._advances(frame, widths, heights, s0 - lead * flat_total)
+        total = float(sum(advances))
+        cursor = s0 - lead * total
 
         # The casing follows the curve across the label's whole span at the
         # tallest glyph's height, so it clears the lines behind plain and math
@@ -556,29 +626,36 @@ class CurvedText(mtext.Text):
         # own advance, which smooths the segment-wise tangent of a coarse
         # polyline at exactly the glyph's own length scale; a math run instead
         # receives the frame and bends its outlines through it when it draws.
-        for t, w in zip(self._segments, widths):
+        for t, w, adv in zip(self._segments, widths, advances):
             if isinstance(t, _MathRun):
-                t._set_frame(frame, cursor)
+                # Center the run's flat width in its (possibly widened) slot, so
+                # crowding spaces runs and plain glyphs alike.
+                t._set_frame(frame, cursor + (adv - w) / 2.0)
             else:
-                px, py, _ = frame.points_and_angles(cursor + w / 2.0)
-                rot = frame.chord_angles(cursor, w)
+                # The glyph sits centered in its slot; its rotation chord still
+                # spans its own flat width about that center, so widening the
+                # slot changes spacing without changing per-glyph rotation.
+                center = cursor + adv / 2.0
+                px, py, _ = frame.points_and_angles(center)
+                rot = frame.chord_angles(center - w / 2.0, w)
                 gx, gy = inv.transform((px, py))
                 t.set_position((float(gx), float(gy)))
                 t.set_rotation(np.degrees(rot))
             t.set_visible(True)
-            cursor += w
+            cursor += adv
 
 
 def curved_text(ax: Axes, x: ArrayLike, y: ArrayLike, text: str, *,
                 pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
-                box: bool | str | dict = False, **kwargs: Any) -> CurvedText:
+                box: bool | str | dict = False, crowding: str = "none",
+                **kwargs: Any) -> CurvedText:
     """Draw ``text`` along the curve ``(x, y)`` on ``ax`` and return the artist.
 
     Thin convenience wrapper around :class:`CurvedText`; see it for the meaning of
-    ``pos``, ``anchor``, ``offset``, and ``box``. The axes is the first argument
-    here, matching matplotlib's axes-first helper functions, whereas
-    :class:`CurvedText` takes it after ``x, y, text`` to match
+    ``pos``, ``anchor``, ``offset``, ``box``, and ``crowding``. The axes is the
+    first argument here, matching matplotlib's axes-first helper functions,
+    whereas :class:`CurvedText` takes it after ``x, y, text`` to match
     :class:`matplotlib.text.Text`.
     """
     return CurvedText(x, y, text, ax, pos=pos, anchor=anchor, offset=offset,
-                      box=box, **kwargs)
+                      box=box, crowding=crowding, **kwargs)

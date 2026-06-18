@@ -820,3 +820,65 @@ def test_set_zorder_and_remove_cover_math_runs():
     assert ct not in children
     assert all(t not in children for t in segments)
     plt.close(fig)
+
+
+def test_crowding_rejects_unknown_value():
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    with pytest.raises(ValueError, match="crowding must be one of"):
+        curved_text(ax, x, np.zeros_like(x), "abc", crowding="wedge")
+    plt.close(fig)
+
+
+def test_crowding_none_leaves_glyph_positions_unchanged():
+    # The default mode must be byte-for-byte the un-widened layout, so the
+    # curvature path is purely opt-in.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 2 * np.pi, 200)
+    y = np.sin(x)
+    default = curved_text(ax, x, y, "following", pos=0.5)
+    explicit = curved_text(ax, x, y, "following", pos=0.5, crowding="none")
+    _draw(fig)
+    for a, b in zip(default._segments, explicit._segments):
+        assert a.get_position() == pytest.approx(b.get_position())
+        assert a.get_rotation() == pytest.approx(b.get_rotation())
+    plt.close(fig)
+
+
+def test_crowding_curvature_leaves_straight_line_unchanged():
+    # A straight guide has zero curvature everywhere, so widening is a no-op and
+    # the two modes must place glyphs identically.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 1)
+    x = np.linspace(0, 10, 100)
+    y = np.full_like(x, 0.5)
+    flat = curved_text(ax, x, y, "straight", pos=0.5, crowding="none")
+    bent = curved_text(ax, x, y, "straight", pos=0.5, crowding="curvature")
+    _draw(fig)
+    for a, b in zip(flat._segments, bent._segments):
+        assert a.get_position()[0] == pytest.approx(b.get_position()[0])
+    plt.close(fig)
+
+
+def test_crowding_curvature_spreads_glyphs_on_a_bend():
+    # On a tight bend the curvature mode widens advances, so the label spans a
+    # longer stretch of curve: its first and last glyph sit farther apart than
+    # in the un-widened layout.
+    fig, ax = plt.subplots()
+    ax.set_aspect("equal")
+    ax.set_xlim(-4, 4)
+    ax.set_ylim(-1.5, 4.5)
+    th = np.linspace(np.pi, 0.0, 300)
+    x, y = np.cos(th), np.sin(th)
+
+    def end_to_end(ct):
+        x0, yy0 = ct._segments[0].get_position()
+        x1, yy1 = ct._segments[-1].get_position()
+        return np.hypot(x1 - x0, yy1 - yy0)
+
+    flat = curved_text(ax, x, y, "concave", pos=0.5, crowding="none")
+    bent = curved_text(ax, x, y, "concave", pos=0.5, crowding="curvature")
+    _draw(fig)
+    assert end_to_end(bent) > end_to_end(flat)
+    plt.close(fig)

@@ -3,7 +3,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.3.2
+## 0.4.0
+
+### Added
+
+- A `crowding` option spaces glyphs apart where the curve bends sharply. The
+  default, `crowding="none"`, advances each glyph by its own width, so on the
+  concave side of a tight bend the rotated glyph boxes can overlap.
+  `crowding="curvature"` opens an even letterspacing gap that grows with the
+  local curvature and the glyph height, so the inside edges stop colliding. The
+  gap is the same between every pair of letters, so the tracking stays even, and
+  a deadband leaves gentle bends and straight runs unchanged.
 
 ### Fixed
 

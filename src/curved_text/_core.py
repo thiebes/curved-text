@@ -26,11 +26,13 @@ _ANCHORS = ("start", "center", "end")
 _BOX_KEYS = ("color", "pad", "alpha")
 _CROWDING = ("none", "curvature")
 
-# Cap on the per-glyph advance widening that the ``"curvature"`` crowding mode
-# applies, as a fraction of the flat advance. On a bend tight enough that the
-# concave correction would exceed this, the advance saturates instead of
-# blowing up (the factor is ``1 / (1 - crowd)``, which diverges as ``crowd``
-# approaches 1).
+# Crowding slack and cap for the ``"curvature"`` mode, both as fractions of the
+# concave-edge shortening relative to the line height. ``_CROWD_SLACK`` is a
+# deadband: the sidebearing whitespace already built into adjacent glyphs
+# absorbs this much curvature before their ink visibly collides, so no gap is
+# added below it and a gentle bend is left untouched. ``_MAX_CROWD`` caps the
+# correction so even a very tight bend adds at most a bounded gap.
+_CROWD_SLACK = 0.1
 _MAX_CROWD = 0.5
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
@@ -536,15 +538,26 @@ class CurvedText(mtext.Text):
 
         In the default ``"none"`` mode the advance is the flat glyph width, so
         the layout is unchanged. In ``"curvature"`` mode each advance is widened
-        where the curve bends: a rigid glyph box of height ``h`` centered on a
-        curve of local curvature ``kappa`` has its concave edge, a distance
-        ``h/2`` toward the center of curvature, ride an arc that is shorter by a
-        factor ``1 - (h/2)*|kappa|`` than the center. Advancing the center by
-        ``w / (1 - (h/2)*|kappa|)`` therefore keeps the concave edges spaced by
-        ``w`` so they stop overlapping, at the cost of gaps opening on the
-        convex edge. The curvature is sampled along the un-widened layout
-        starting at ``flat_start``; the widening is capped at ``_MAX_CROWD`` so
-        a very tight bend saturates instead of diverging.
+        where the curve bends, to keep the concave edges of adjacent rigid glyph
+        boxes from overlapping on the inside of the bend. A box of height ``h``
+        whose center rides a curve of local curvature ``kappa`` has its concave
+        edge, a distance ``h/2`` toward the center of curvature, lose roughly
+        ``(h/2)*|kappa|`` of arc length per unit advance to its neighbor; the
+        ``crowd`` factor below is that fraction, clamped at ``_MAX_CROWD``.
+
+        Only the crowding past ``_CROWD_SLACK`` is corrected: a gentle bend eats
+        into the sidebearing whitespace already between the letters without
+        their ink colliding, so the gap stays zero there and the layout barely
+        changes until the letters are genuinely crowded. The clearance is then
+        added as a width-independent letterspacing gap, ``(crowd - slack) * h``
+        (scaled by the line height, a typographic constant), not as a multiple
+        of the glyph's own width: multiplying by the width would give wide
+        glyphs a proportionally larger trailing gap, which reads as uneven
+        tracking on an arc, whereas a constant gap keeps the spacing even where
+        the curvature is uniform. The center sits in the middle of its widened
+        slot, so the gap is split evenly before and after each glyph. The
+        curvature is sampled along the un-widened layout starting at
+        ``flat_start``.
         """
         if self._crowding == "none":
             return list(widths)
@@ -553,7 +566,7 @@ class CurvedText(mtext.Text):
         for w, h in zip(widths, heights):
             kappa = float(frame.curvature(cursor, w))
             crowd = min(abs(kappa) * h / 2.0, _MAX_CROWD)
-            advances.append(w / (1.0 - crowd))
+            advances.append(w + max(0.0, crowd - _CROWD_SLACK) * h)
             cursor += w
         return advances
 

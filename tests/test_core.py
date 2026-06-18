@@ -861,24 +861,46 @@ def test_crowding_curvature_leaves_straight_line_unchanged():
     plt.close(fig)
 
 
-def test_crowding_curvature_spreads_glyphs_on_a_bend():
-    # On a tight bend the curvature mode widens advances, so the label spans a
-    # longer stretch of curve: its first and last glyph sit farther apart than
-    # in the un-widened layout.
+def _end_to_end(ct):
+    x0, y0 = ct._segments[0].get_position()
+    x1, y1 = ct._segments[-1].get_position()
+    return np.hypot(x1 - x0, y1 - y0)
+
+
+def test_crowding_curvature_spreads_glyphs_on_a_tight_bend():
+    # On a bend tight enough to crowd the letters (a small displayed radius next
+    # to a large font), the curvature mode widens advances past the deadband, so
+    # the label spans a longer stretch of curve: its first and last glyph sit
+    # farther apart than in the un-widened layout.
     fig, ax = plt.subplots()
     ax.set_aspect("equal")
-    ax.set_xlim(-4, 4)
-    ax.set_ylim(-1.5, 4.5)
+    ax.set_xlim(-10, 10)
+    ax.set_ylim(-2, 10)
     th = np.linspace(np.pi, 0.0, 300)
     x, y = np.cos(th), np.sin(th)
-
-    def end_to_end(ct):
-        x0, yy0 = ct._segments[0].get_position()
-        x1, yy1 = ct._segments[-1].get_position()
-        return np.hypot(x1 - x0, yy1 - yy0)
-
-    flat = curved_text(ax, x, y, "concave", pos=0.5, crowding="none")
-    bent = curved_text(ax, x, y, "concave", pos=0.5, crowding="curvature")
+    flat = curved_text(ax, x, y, "concave", pos=0.5, fontsize=26,
+                       crowding="none")
+    bent = curved_text(ax, x, y, "concave", pos=0.5, fontsize=26,
+                       crowding="curvature")
     _draw(fig)
-    assert end_to_end(bent) > end_to_end(flat)
+    assert _end_to_end(bent) > _end_to_end(flat)
+    plt.close(fig)
+
+
+def test_crowding_curvature_is_negligible_on_a_gentle_bend():
+    # The deadband must keep a gentle bend (where the letters are not actually
+    # crowded) essentially unchanged, so the correction does not spread text
+    # that has no overlap to fix.
+    fig, ax = plt.subplots()
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.3, 1.3)
+    ax.set_ylim(-0.1, 1.3)
+    th = np.linspace(np.pi * 0.95, np.pi * 0.05, 400)
+    x, y = np.cos(th), np.sin(th)
+    flat = curved_text(ax, x, y, "Following Curve", pos=0.5, fontsize=14,
+                       crowding="none")
+    bent = curved_text(ax, x, y, "Following Curve", pos=0.5, fontsize=14,
+                       crowding="curvature")
+    _draw(fig)
+    assert _end_to_end(bent) == pytest.approx(_end_to_end(flat), rel=0.01)
     plt.close(fig)

@@ -26,6 +26,7 @@ MODULES = [
     "example_10_mathtext",
     "example_11_box",
     "example_12_box_vs_stroke",
+    "example_13_crowding",
 ]
 
 

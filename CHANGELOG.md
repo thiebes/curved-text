@@ -3,6 +3,42 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.0
+
+### Added
+
+- A `crowding` option spaces glyphs apart where the curve bends sharply. The
+  default, `crowding="none"`, advances each glyph by its own width, so on the
+  concave side of a tight bend the rotated glyph boxes can overlap.
+  `crowding="curvature"` opens an even letterspacing gap that grows with the
+  local curvature and the glyph height, so the inside edges stop colliding. The
+  gap is the same between every pair of letters, so the tracking stays even, and
+  a deadband leaves gentle bends and straight runs unchanged.
+
+### Fixed
+
+- `offset` now lays the label along the parallel (offset) curve at the requested
+  distance, rather than translating it by a single vector taken from the normal
+  of the label's end-to-end chord. The old translation crowded one end of the
+  label against a steep, asymmetrically curved guide while floating the other end
+  off it. Laying the glyphs along the offset curve -- so the cursor advances
+  along the curve they actually sit on -- keeps both the perpendicular clearance
+  and the on-screen letter spacing uniform along the whole label. The casing and
+  mathtext runs ride the same offset curve. `pos` and `anchor` stay measured
+  against the original curve and are carried perpendicularly onto the offset
+  curve, so an offset label sits directly off the spot the same `pos` marks on
+  the bare curve. On straight, gently curved, or symmetric guides the result is
+  unchanged.
+- A `box` casing no longer stays painted with stale geometry when a later draw
+  meets a degenerate curve (zero arc length, e.g. an axis collapsed by zoom) or
+  a detached axes. The casing is hidden on those draws rather than left on
+  screen.
+
+### Changed
+
+- An unknown key in a `box` dict now raises `ValueError` instead of being
+  silently dropped, so a typo such as `box=dict(colour="red")` surfaces.
+
 ## 0.3.1
 
 This release carries no changes to the library's behaviour. It updates project

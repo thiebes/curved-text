@@ -108,8 +108,10 @@ All code lives in `src/curved_text/_core.py`.
   - `draw(renderer)` fills the compound path with one `renderer.draw_path`
     call using the artist's color and alpha, with clipping set through public
     `GraphicsContext` methods. With no frame assigned it draws nothing.
-  - `_set_frame(frame, s_left, offset_px)` is the per-draw handoff the parent
-    calls; it mutates the run and returns None.
+  - `_set_frame(frame, s_left)` is the per-draw handoff the parent calls; it
+    mutates the run and returns None. Any perpendicular offset is already baked
+    into `frame` (it is the parallel curve), so the run needs no offset of its
+    own.
 - `CurvedText` builds children from `_split_runs` (honoring `parse_math`;
   disabling it restores per-character behavior exactly), and its draw gains
   one branch in the cursor walk: math runs receive the frame instead of a
@@ -147,8 +149,11 @@ character is its own artist that strokes then fills, so a wide neighbor stroke
 overwrites the previous glyph's fill. The `box` parameter solves the
 full-coverage case with a different mechanism -- a single `Line2D` casing
 following the offset curve across the label's span, its linewidth set to the
-tallest glyph's height, drawn as one fill so nothing cannibalizes. It is a child
-artist positioned per draw in `CurvedText.draw`, like the glyphs.
+tallest glyph's height scaled by `pad` (default 1.1), drawn as one fill so
+nothing cannibalizes. It is a child artist positioned per draw in
+`CurvedText.draw`, like the glyphs. When `draw` bails out early (no segments,
+detached axes, or a degenerate curve) it hides the casing, so a stale band is
+never left painted.
 
 Layering is by zorder, applied once in `__init__` and maintained by
 `set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at

@@ -210,6 +210,10 @@ fontsize pass-through), two tests carry the design:
 - `usetex` support via `get_glyphs_tex`.
 - Hinted outlines via `FT2Font.get_path` (recovers grid-fit stem weight, which
   rotation largely defeats anyway); marginal gain, not pursued.
+- Inter-character kerning for plain runs. Each plain character is laid out and
+  advanced on its own, so kerning pairs between adjacent glyphs are not applied.
+  The per-character placement that rides the curve is what makes this hard:
+  kerning is a pairwise shift, and the glyphs do not share one layout pass.
 
 ## Ecosystem constraints
 

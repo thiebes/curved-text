@@ -129,7 +129,7 @@ are identical. Only the tight bend (top row) is changed.
 ### Keyword arguments reach every character
 
 Anything beyond the placement controls is forwarded verbatim to each
-per-character `Text`.
+per-character glyph and each mathtext run.
 
 ![A label styled with color, size, weight, and family](images/08_styling_passthrough.png)
 

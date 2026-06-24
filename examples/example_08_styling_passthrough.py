@@ -1,9 +1,10 @@
 """Tier 4: extra keyword arguments reach every character.
 
 Any kwargs beyond the placement controls are forwarded verbatim to each
-per-character ``Text``. Here ``color``, ``fontsize``, ``alpha``, ``fontweight``,
-and ``fontfamily`` are all set on one call, and the label's colour matches its
-curve -- reinforcing the direct-labeling idea from the first figure.
+per-character glyph and each mathtext run. Here ``color``, ``fontsize``,
+``alpha``, ``fontweight``, and ``fontfamily`` are all set on one call, and the
+label's colour matches its curve -- reinforcing the direct-labeling idea from the
+first figure.
 """
 from __future__ import annotations
 

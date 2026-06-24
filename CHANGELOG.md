@@ -3,6 +3,37 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0
+
+### Added
+
+- A `valign` option chooses which line of the text rides the curve: `"center"`
+  (the default), `"baseline"`, `"ascender"`, or `"descender"`. It is a single
+  font-metric shift applied identically to every glyph and every mathtext run, so
+  it keeps plain and math aligned and introduces no per-glyph step. Combine it
+  with `offset` to lift the chosen line off the curve.
+
+### Fixed
+
+- Plain text drawn along a curve no longer shows a per-character perpendicular
+  "step". Each glyph sat a few pixels off the shared baseline, producing a
+  visible staircase that was worst on steep or straight runs. The cause was that
+  every character was an individually rotated `matplotlib.text.Text`, which
+  matplotlib aligns from its own per-glyph bounding box, scattering the baselines
+  by a few pixels. Every segment -- plain character or mathtext run -- now shares
+  one text baseline, so the placement is level by construction.
+- A tab or newline in the label no longer renders a missing-glyph box. Whitespace
+  advances the cursor and draws nothing, as a plain space already did.
+
+### Changed
+
+- Plain characters are now rendered from their glyph outlines, the way mathtext
+  already was, rather than as individually rotated text artists. This is what
+  lets a single shared baseline be placed exactly. The one trade-off is that
+  outlines are unhinted, which is unavoidable for rotated text and is marginal in
+  practice. The default `valign="center"` reproduces the previous "text straddles
+  the curve" placement, so existing `offset` values land where they did.
+
 ## 0.4.0
 
 ### Added

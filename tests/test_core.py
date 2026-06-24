@@ -10,7 +10,7 @@ import pytest
 
 from curved_text import CurvedText, curved_text
 from curved_text._core import (
-    _MathRun, _split_runs, _text_to_path, _valign_datum)
+    _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
 
 
 def _draw(fig):
@@ -49,6 +49,15 @@ def test_places_one_artist_per_character():
     _draw(fig)
     assert all(t.get_visible() for t in ct._segments)
     plt.close(fig)
+
+
+@pytest.mark.parametrize("ws", [" ", "\t", "\n"])
+def test_whitespace_glyph_draws_nothing(ws):
+    # A whitespace glyph advances the cursor but contributes no outline; without
+    # the guard a tab or newline would render a visible ".notdef" box.
+    verts, _ = _PlainGlyph(ws)._outline_units()
+    assert len(verts) == 0
+    assert len(_PlainGlyph("x")._outline_units()[0]) > 0
 
 
 def test_plain_glyphs_share_one_baseline_on_a_slope():

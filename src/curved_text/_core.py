@@ -102,20 +102,23 @@ def _box_config(box: bool | str | dict) -> dict | None:
     return config
 
 
-def _valign_datum(valign: str, prop) -> float:
+def _valign_datum(valign: str, prop: font_manager.FontProperties) -> float:
     """Height above the baseline, in 1/100-em layout units, that rides the curve
     for the given vertical alignment.
 
-    ``"baseline"`` is the shared default and returns 0, so the text baseline
-    follows the curve. The others shift every segment by the same font-metric
-    constant -- the curve passes through the vertical centre, the ascender line,
-    or the descender line -- so plain glyphs and mathtext stay aligned and no
-    per-glyph step is introduced (the shift is identical for every glyph).
+    ``"baseline"`` returns 0, so the text baseline follows the curve unshifted.
+    The others shift every segment by the same font-metric constant -- the curve
+    passes through the vertical centre, the ascender line, or the descender line
+    -- so plain glyphs and mathtext stay aligned and no per-glyph step is
+    introduced (the shift is identical for every glyph).
     """
     if valign == "baseline":
         return 0.0
     font = font_manager.get_font(font_manager.findfont(prop))
     upm = font.units_per_EM
+    # FreeType reports the ascender above the baseline (positive) and the
+    # descender below it (negative); both keep their sign, so "center" is the
+    # signed midpoint and "descender" returns a negative datum.
     ascender = font.ascender / upm * _text_to_path.FONT_SCALE
     descender = font.descender / upm * _text_to_path.FONT_SCALE
     if valign == "ascender":
@@ -389,9 +392,7 @@ class _OutlineSegment(mtext.Text):
 
 class _PlainGlyph(_OutlineSegment):
     """One plain character, drawn as a rigid (undistorted) glyph outline whose
-    baseline rides the curve."""
-
-    _bend = False
+    baseline rides the curve. Inherits ``_bend = False`` from the base."""
 
     def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
         prop = self.get_fontproperties()
@@ -399,7 +400,7 @@ class _PlainGlyph(_OutlineSegment):
         if self._outline_cache is not None and self._outline_cache[0] == key:
             return self._outline_cache[1]
         text = self.get_text()
-        if text in (" ", ""):  # whitespace advances the cursor but draws nothing
+        if not text.strip():  # whitespace advances the cursor but draws nothing
             outline = (np.empty((0, 2)), np.empty(0, dtype=Path.code_type))
         else:
             verts, codes = _text_to_path.get_text_path(prop, text, ismath=False)
@@ -446,7 +447,8 @@ class _MathRun(_OutlineSegment):
 
 
 class CurvedText(mtext.Text):
-    """A string drawn along an (x, y) curve, one character at a time.
+    """A string drawn along an (x, y) curve, one segment at a time (each plain
+    character and each ``$...$`` run).
 
     Every glyph -- plain character or mathtext run -- is laid out on one shared
     text baseline and mapped onto the curve from its glyph outline: a plain

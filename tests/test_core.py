@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 
 from curved_text import CurvedText, curved_text
-from curved_text._core import _MathRun, _split_runs, _text_to_path
+from curved_text._core import (
+    _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
 
 
 def _draw(fig):
@@ -21,6 +22,25 @@ def _math_runs(ct):
     return [t for t in ct._segments if isinstance(t, _MathRun)]
 
 
+def _anchor_px(seg):
+    """The point on the (offset) curve a segment is centered on -- its baseline
+    datum at mid-advance -- in display pixels. This is the placement analog of the
+    superseded per-character ``Text.get_position`` and is valid after a draw."""
+    x, y, _ = seg._frame.points_and_angles(seg._s_left + seg._width_px / 2.0)
+    return np.array([float(x), float(y)])
+
+
+def _anchor_xy(ct):
+    """Per-segment curve anchors in data coordinates."""
+    inv = ct.axes.transData.inverted()
+    return np.array([inv.transform(_anchor_px(s)) for s in ct._segments])
+
+
+def _rotation_deg(seg):
+    """The rigid rotation a plain glyph takes: the chord across its advance."""
+    return float(np.degrees(seg._frame.chord_angles(seg._s_left, seg._width_px)))
+
+
 def test_places_one_artist_per_character():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 50)
@@ -28,6 +48,52 @@ def test_places_one_artist_per_character():
     assert len(ct._segments) == 3
     _draw(fig)
     assert all(t.get_visible() for t in ct._segments)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("ws", [" ", "\t", "\n"])
+def test_whitespace_glyph_draws_nothing(ws):
+    # A whitespace glyph advances the cursor but contributes no outline; without
+    # the guard a tab or newline would render a visible ".notdef" box.
+    verts, _ = _PlainGlyph(ws)._outline_units()
+    assert len(verts) == 0
+    assert len(_PlainGlyph("x")._outline_units()[0]) > 0
+
+
+def test_plain_glyphs_share_one_baseline_on_a_slope():
+    # The headline invariant: on a straight slanted guide every plain glyph rides
+    # one baseline, so the cap tops are collinear -- there is no per-glyph
+    # perpendicular "step". Alternating the two worst-case shapes (F and T differ
+    # most in where their ink sits) the spread of the cap-top perpendicular
+    # position across the whole label is sub-pixel. The superseded per-character
+    # ``Text`` placement scattered these tops by ~4 px.
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_xlim(0.1, 0.9)
+    ax.set_ylim(0.1, 0.9)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    curved_text(ax, [0.1, 0.9], [0.1, 0.9], "FTFTFT", fontsize=44, color="black")
+    fig.canvas.draw()
+    buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].mean(axis=2)
+    H, _ = buf.shape
+    ys, xs = np.where(buf < 100)
+    px = xs.astype(float)
+    py = (H - ys).astype(float)
+    th = np.radians(45.0)
+    d = np.array([np.cos(th), np.sin(th)])
+    n = np.array([-np.sin(th), np.cos(th)])
+    along = px * d[0] + py * d[1]
+    perp = px * n[0] + py * n[1]
+    # The cap-top perpendicular position per bin along the label; constant if the
+    # baselines are collinear. Drop the partial leading/trailing bins.
+    bins = np.linspace(along.min(), along.max(), 14)
+    tops = []
+    for i in range(13):
+        m = (along >= bins[i]) & (along < bins[i + 1])
+        if m.sum() > 40:
+            tops.append(float(np.percentile(perp[m], 98)))
+    tops = tops[1:-1]
+    assert max(tops) - min(tops) < 1.5
     plt.close(fig)
 
 
@@ -42,8 +108,8 @@ def test_anchor_shifts_label_along_curve():
     end = curved_text(ax, x, y, "word", pos=0.5, anchor="end")
     _draw(fig)
     # "start" puts the text to the right of "end" at the same pos.
-    sx = np.mean([t.get_position()[0] for t in start._segments])
-    ex = np.mean([t.get_position()[0] for t in end._segments])
+    sx = _anchor_xy(start)[:, 0].mean()
+    ex = _anchor_xy(end)[:, 0].mean()
     assert sx > ex
     plt.close(fig)
 
@@ -57,8 +123,8 @@ def test_offset_moves_perpendicular():
     flat = curved_text(ax, x, y, "word", pos=0.5, anchor="center", offset=0.0)
     lifted = curved_text(ax, x, y, "word", pos=0.5, anchor="center", offset=10.0)
     _draw(fig)
-    fy = np.mean([t.get_position()[1] for t in flat._segments])
-    ly = np.mean([t.get_position()[1] for t in lifted._segments])
+    fy = _anchor_xy(flat)[:, 1].mean()
+    ly = _anchor_xy(lifted)[:, 1].mean()
     # Positive offset is above a left-to-right curve.
     assert ly > fy
     plt.close(fig)
@@ -77,8 +143,8 @@ def test_offset_is_dpi_invariant_in_points():
         lifted = curved_text(ax, x, y, "word", pos=0.5, anchor="center",
                              offset=10.0)
         _draw(fig)
-        fy = np.mean([t.get_position()[1] for t in flat._segments])
-        ly = np.mean([t.get_position()[1] for t in lifted._segments])
+        fy = _anchor_xy(flat)[:, 1].mean()
+        ly = _anchor_xy(lifted)[:, 1].mean()
         plt.close(fig)
         return ly - fy
 
@@ -104,7 +170,7 @@ def _clearance_px(ax, ct, gx, gy):
     seg2 = np.einsum("ij,ij->i", seg, seg)
     out = []
     for s in ct._segments:
-        p = ax.transData.transform(np.asarray(s.get_position()))
+        p = _anchor_px(s)
         t = np.clip(np.einsum("ij,ij->i", p - pts[:-1], seg) / seg2, 0.0, 1.0)
         proj = pts[:-1] + t[:, None] * seg
         out.append(np.hypot(*(p - proj).T).min())
@@ -130,7 +196,7 @@ def test_offset_is_parallel_curve_on_circle():
     for off in (0.0, 40.0, -40.0):
         ct = curved_text(ax, gx, gy, "ABCDEFGHIJKLMNOP", offset=off, fontsize=14)
         _draw(fig)
-        centers = np.array([s.get_position() for s in ct._segments])
+        centers = _anchor_xy(ct)
         center, radii[off], rms = _fit_circle(centers)
         # Glyph centers lie on a circle (concentric, not translated)...
         assert rms < 0.01
@@ -188,7 +254,7 @@ def test_offset_anchor_is_measured_on_base_curve():
     ct = curved_text(ax, x, y, "o", pos=pos, anchor="center", offset=14.0,
                      fontsize=14)
     _draw(fig)
-    center = ax.transData.transform(ct._segments[0].get_position())
+    center = _anchor_px(ct._segments[0])
     # Foot of the perpendicular from the glyph center onto the base curve, as an
     # arc-length fraction; it must land at pos.
     base = ax.transData.transform(np.column_stack([x, y]))
@@ -215,8 +281,7 @@ def test_offset_on_straight_guide_is_rigid_translation():
     flat = curved_text(ax, x, y, "word", pos=0.5, anchor="center", offset=0.0)
     lifted = curved_text(ax, x, y, "word", pos=0.5, anchor="center", offset=8.0)
     _draw(fig)
-    shifts = np.array([np.subtract(b.get_position(), a.get_position())
-                       for a, b in zip(flat._segments, lifted._segments)])
+    shifts = _anchor_xy(lifted) - _anchor_xy(flat)
     # Every glyph moves by the same displacement, purely vertical (the curve
     # runs horizontally, so the normal is +y).
     assert shifts[:, 0] == pytest.approx(0.0, abs=1e-9)
@@ -246,7 +311,7 @@ def test_math_run_offset_rides_offset_curve():
     def centroid(off):
         ct = curved_text(ax, gx, gy, "$x^2+y^2$", offset=off, fontsize=18)
         _draw(fig)
-        return _math_runs(ct)[0]._bent_path(renderer).vertices.mean(axis=0)
+        return _math_runs(ct)[0]._placed_path(renderer).vertices.mean(axis=0)
 
     c0, cup, cdn = centroid(0.0), centroid(40.0), centroid(-40.0)
     expected = 40.0 * fig.dpi / 72.0
@@ -299,7 +364,7 @@ def test_glyph_rotation_smooths_across_vertices():
     _draw(fig)
     pts = ax.transData.transform(np.column_stack([x, y]))
     rising = np.degrees(np.arctan2(pts[2, 1] - pts[1, 1], pts[2, 0] - pts[1, 0]))
-    rots = [t.get_rotation() for t in ct._segments]
+    rots = [_rotation_deg(t) for t in ct._segments]
     # The flat segment's tangent is 0; every rotation stays within the two
     # segment tangents, and the straddling glyph lands strictly between them.
     assert all(-0.1 <= r <= rising + 0.1 for r in rots)
@@ -330,8 +395,8 @@ def test_wrapper_matches_class():
     via_fn = curved_text(ax, x, y, "word", pos=0.5, anchor="center")
     via_cls = CurvedText(x, y, "word", ax, pos=0.5, anchor="center")
     _draw(fig)
-    for a, b in zip(via_fn._segments, via_cls._segments):
-        assert a.get_position() == pytest.approx(b.get_position())
+    for a, b in zip(_anchor_xy(via_fn), _anchor_xy(via_cls)):
+        assert a == pytest.approx(b)
     plt.close(fig)
 
 
@@ -367,9 +432,9 @@ def test_redraw_is_idempotent():
     ct = curved_text(ax, x, np.sin(x) + 5.0, "stable", pos=0.5, anchor="center",
                      offset=8.0)
     _draw(fig)
-    first = [t.get_position() for t in ct._segments]
+    first = _anchor_xy(ct)
     _draw(fig)
-    second = [t.get_position() for t in ct._segments]
+    second = _anchor_xy(ct)
     for a, b in zip(first, second):
         assert a == pytest.approx(b)
     plt.close(fig)
@@ -457,7 +522,8 @@ def test_math_run_straight_line_reduces_to_affine():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
-    verts, _, datum = run._expression_outline()
+    verts, _ = run._outline_units()
+    datum = _valign_datum(ct._valign, run.get_fontproperties())
     per_unit = renderer.points_to_pixels(14.0) / 100.0
     # A horizontal curve maps data x to pixels linearly, so arc length s lands
     # at first_px + s; the run's left edge is at arc length run._s_left.
@@ -466,31 +532,29 @@ def test_math_run_straight_line_reduces_to_affine():
     expected = np.column_stack([
         first_px + run._s_left + verts[:, 0] * per_unit,
         cy + (verts[:, 1] - datum) * per_unit])
-    assert np.allclose(run._bent_path(renderer).vertices, expected, atol=1e-6)
+    assert np.allclose(run._placed_path(renderer).vertices, expected, atol=1e-6)
     plt.close(fig)
 
 
-def test_math_run_aligns_to_plain_x_height():
-    # A math run rides the curve on the surrounding text's x-height line, so a
-    # lowercase math symbol lands where the plain character would under
-    # va="center". On a straight line the bent "x" centre must match a plain
-    # centred "x".
+def test_math_run_aligns_to_plain_baseline():
+    # Plain glyphs and math runs share one baseline by construction (the v=0
+    # datum), so a math "x" and a plain "x" placed identically land on the same
+    # baseline. On a straight line their ink bottoms (the baseline, neither glyph
+    # has a descender) coincide tightly -- the alignment is structural, not the
+    # tuned 2px tolerance the superseded x-height datum needed.
     fig, ax = plt.subplots()
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 100)
     y = np.full_like(x, 5.0)
     math_x = curved_text(ax, x, y, "$x$", pos=0.5, anchor="center", fontsize=16)
-    plain_x = ax.text(5.0, 5.0, "x", ha="center", va="center", fontsize=16)
+    plain_x = curved_text(ax, x, y, "x", pos=0.5, anchor="center", fontsize=16)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    bent = math_x._segments[0]._bent_path(renderer).get_extents()
-    ref = plain_x.get_window_extent(renderer)
-    assert (bent.y0 + bent.y1) / 2.0 == pytest.approx(
-        (ref.y0 + ref.y1) / 2.0, abs=2.0)
-    # The run also sits horizontally where the centred plain glyph does.
-    assert (bent.x0 + bent.x1) / 2.0 == pytest.approx(
-        (ref.x0 + ref.x1) / 2.0, abs=3.0)
+    mb = math_x._segments[0]._placed_path(renderer).get_extents()
+    pb = plain_x._segments[0]._placed_path(renderer).get_extents()
+    # Baselines (ink bottoms) coincide.
+    assert mb.y0 == pytest.approx(pb.y0, abs=1.0)
     plt.close(fig)
 
 
@@ -507,8 +571,8 @@ def test_superscript_does_not_drop_math_body():
     raised = curved_text(ax, x, y, "$x^2$", pos=0.5, fontsize=20)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    body = plain._segments[0]._bent_path(renderer).get_extents()
-    with_exp = raised._segments[0]._bent_path(renderer).get_extents()
+    body = plain._segments[0]._placed_path(renderer).get_extents()
+    with_exp = raised._segments[0]._placed_path(renderer).get_extents()
     assert with_exp.y0 == pytest.approx(body.y0, abs=1.5)
     assert with_exp.y1 > body.y1 + 2.0
     plt.close(fig)
@@ -530,17 +594,18 @@ def test_math_run_follows_tight_arc():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
-    bent = run._bent_path(renderer)
+    bent = run._placed_path(renderer)
     center = ax.transData.transform((0.0, 0.0))
     radius = ax.transData.transform((1.0, 0.0))[0] - center[0]
     extent = run.get_window_extent(renderer)
     # Derive the bound from the run's actual outline reach above and below the
-    # x-height datum it rides on, mapped to pixels exactly as _bent_path does.
-    # Tying the bound to the same geometry the bend map uses keeps it robust to
+    # baseline datum it rides on, mapped to pixels exactly as the bend map does.
+    # Tying the bound to the same geometry the placement uses keeps it robust to
     # matplotlib mathtext metric changes; half the window-extent height is a
-    # different reference frame (the box midpoint, not the x-height line) and
-    # only happened to sit just above the true reach.
-    verts, _, datum = run._expression_outline()
+    # different reference frame (the box midpoint, not the baseline) and only
+    # happened to sit just above the true reach.
+    verts, _ = run._outline_units()
+    datum = _valign_datum(ct._valign, run.get_fontproperties())
     px_per_unit = (renderer.points_to_pixels(run.get_fontsize())
                    / _text_to_path.FONT_SCALE)
     reach = np.abs(verts[:, 1] - datum).max() * px_per_unit
@@ -566,8 +631,8 @@ def test_math_run_offset_moves_perpendicular_in_points():
                          offset=10.0)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    fy = flat._segments[0]._bent_path(renderer).get_extents()
-    ly = lifted._segments[0]._bent_path(renderer).get_extents()
+    fy = flat._segments[0]._placed_path(renderer).get_extents()
+    ly = lifted._segments[0]._placed_path(renderer).get_extents()
     expected = 10.0 * fig.dpi / 72.0
     assert ly.y0 - fy.y0 == pytest.approx(expected, abs=0.05)
     assert ly.x0 == pytest.approx(fy.x0, abs=0.05)
@@ -585,7 +650,7 @@ def test_math_run_geometry_is_dpi_invariant():
         ct = curved_text(ax, x, np.sin(x) + 5.0, r"$\sqrt{x^2}$", pos=0.5,
                          anchor="center")
         _draw(fig)
-        bent = ct._segments[0]._bent_path(fig.canvas.get_renderer())
+        bent = ct._segments[0]._placed_path(fig.canvas.get_renderer())
         data = ax.transData.inverted().transform(bent.vertices)
         box = (data[:, 0].min(), data[:, 0].max(),
                data[:, 1].min(), data[:, 1].max())
@@ -607,10 +672,9 @@ def test_math_run_orders_with_plain_characters():
     ct = curved_text(ax, x, y, r"ab$x^2$cd", pos=0.5, anchor="center")
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    bent = ct._segments[2]._bent_path(renderer).get_extents()
-    to_px = ax.transData.transform
-    b_x = to_px(ct._segments[1].get_position())[0]
-    c_x = to_px(ct._segments[3].get_position())[0]
+    bent = ct._segments[2]._placed_path(renderer).get_extents()
+    b_x = _anchor_px(ct._segments[1])[0]
+    c_x = _anchor_px(ct._segments[3])[0]
     assert b_x < (bent.x0 + bent.x1) / 2.0 < c_x
     plt.close(fig)
 
@@ -625,15 +689,17 @@ def test_math_run_fontsize_scales_path():
     large = curved_text(ax, x, y, "$x^2$", pos=0.5, fontsize=24)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    hs = small._segments[0]._bent_path(renderer).get_extents().height
-    hl = large._segments[0]._bent_path(renderer).get_extents().height
+    hs = small._segments[0]._placed_path(renderer).get_extents().height
+    hl = large._segments[0]._placed_path(renderer).get_extents().height
     assert hl / hs == pytest.approx(2.0, rel=0.1)
     plt.close(fig)
 
 
 def test_math_run_overrun_rides_tangent_extension():
     # A math label anchored past the right end of a short straight curve rides
-    # the tangent extension at the curve's height, like plain characters do.
+    # the tangent extension at the curve's height, like plain characters do. Under
+    # the default centre alignment the run straddles the extension, so its vertical
+    # centre sits at the curve's height.
     fig, ax = plt.subplots()
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
@@ -644,7 +710,7 @@ def test_math_run_overrun_rides_tangent_extension():
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
     assert run.get_visible()
-    bent = run._bent_path(renderer).get_extents()
+    bent = run._placed_path(renderer).get_extents()
     end_x, end_y = ax.transData.transform((1.0, 5.0))
     assert bent.x0 >= end_x - 1.0
     assert (bent.y0 + bent.y1) / 2.0 == pytest.approx(end_y, abs=3.0)
@@ -660,9 +726,9 @@ def test_math_run_redraw_is_idempotent():
                      offset=6.0)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    first = _math_runs(ct)[0]._bent_path(renderer).vertices.copy()
+    first = _math_runs(ct)[0]._placed_path(renderer).vertices.copy()
     _draw(fig)
-    second = _math_runs(ct)[0]._bent_path(renderer).vertices
+    second = _math_runs(ct)[0]._placed_path(renderer).vertices
     assert np.allclose(first, second)
     plt.close(fig)
 
@@ -697,7 +763,7 @@ def test_math_run_path_effects_clears_line_behind_it():
         run = curved_text(ax, x, y, r"$\sqrt{xy}$", pos=0.5, anchor="center",
                           fontsize=22, color="red", **kw)._segments[0]
         fig.canvas.draw()
-        bbox = run._bent_path(fig.canvas.get_renderer()).get_extents()
+        bbox = run._placed_path(fig.canvas.get_renderer()).get_extents()
         buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]
         height = buf.shape[0]
         # Buffer rows run top-down; the path extent is bottom-up, so flip y.
@@ -792,11 +858,15 @@ def test_box_covers_line_behind_label():
                          fontsize=22, color="red", box=use_box)
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
-        extents = [s.get_window_extent(renderer) for s in ct._segments]
-        x0 = int(min(e.x0 for e in extents))
-        x1 = int(np.ceil(max(e.x1 for e in extents)))
-        y0 = int(min(e.y0 for e in extents))
-        y1 = int(np.ceil(max(e.y1 for e in extents)))
+        # Footprint of the actually-drawn outlines (the segments render their own
+        # paths, so their window extents sit at the origin, not on the curve).
+        verts = np.vstack([p.vertices for p in
+                           (s._placed_path(renderer) for s in ct._segments)
+                           if p is not None])
+        x0 = int(verts[:, 0].min())
+        x1 = int(np.ceil(verts[:, 0].max()))
+        y0 = int(verts[:, 1].min())
+        y1 = int(np.ceil(verts[:, 1].max()))
         buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]
         height = buf.shape[0]
         region = buf[max(height - y1, 0):height - y0, max(x0, 0):x1]
@@ -822,6 +892,37 @@ def test_set_zorder_and_remove_cover_math_runs():
     plt.close(fig)
 
 
+def test_valign_rejects_unknown_value():
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    with pytest.raises(ValueError, match="valign must be one of"):
+        curved_text(ax, x, np.zeros_like(x), "ab", valign="middle")
+    plt.close(fig)
+
+
+def test_valign_shifts_label_perpendicular_uniformly():
+    # valign picks which line rides the curve. On a straight horizontal guide,
+    # "ascender" puts the label below "baseline" (its ascender line is pulled down
+    # onto the curve), and the shift is the same constant for every glyph -- the
+    # datum is a font metric, not a per-glyph box, so it introduces no step.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 100)
+    y = np.full_like(x, 5.0)
+    base = curved_text(ax, x, y, "nnnn", pos=0.5, fontsize=20, valign="baseline")
+    asc = curved_text(ax, x, y, "nnnn", pos=0.5, fontsize=20, valign="ascender")
+    _draw(fig)
+    r = fig.canvas.get_renderer()
+    shifts = np.array([
+        sa._placed_path(r).vertices.mean(axis=0)[1]
+        - sb._placed_path(r).vertices.mean(axis=0)[1]
+        for sb, sa in zip(base._segments, asc._segments)])
+    assert np.all(shifts < 0.0)        # ascender placement sits lower
+    assert shifts.std() < 0.5          # identical shift per glyph: no step
+    plt.close(fig)
+
+
 def test_crowding_rejects_unknown_value():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)
@@ -839,9 +940,10 @@ def test_crowding_none_leaves_glyph_positions_unchanged():
     default = curved_text(ax, x, y, "following", pos=0.5)
     explicit = curved_text(ax, x, y, "following", pos=0.5, crowding="none")
     _draw(fig)
+    for a, b in zip(_anchor_xy(default), _anchor_xy(explicit)):
+        assert a == pytest.approx(b)
     for a, b in zip(default._segments, explicit._segments):
-        assert a.get_position() == pytest.approx(b.get_position())
-        assert a.get_rotation() == pytest.approx(b.get_rotation())
+        assert _rotation_deg(a) == pytest.approx(_rotation_deg(b))
     plt.close(fig)
 
 
@@ -856,15 +958,14 @@ def test_crowding_curvature_leaves_straight_line_unchanged():
     flat = curved_text(ax, x, y, "straight", pos=0.5, crowding="none")
     bent = curved_text(ax, x, y, "straight", pos=0.5, crowding="curvature")
     _draw(fig)
-    for a, b in zip(flat._segments, bent._segments):
-        assert a.get_position()[0] == pytest.approx(b.get_position()[0])
+    for a, b in zip(_anchor_xy(flat), _anchor_xy(bent)):
+        assert a[0] == pytest.approx(b[0])
     plt.close(fig)
 
 
 def _end_to_end(ct):
-    x0, y0 = ct._segments[0].get_position()
-    x1, y1 = ct._segments[-1].get_position()
-    return np.hypot(x1 - x0, y1 - y0)
+    a = _anchor_xy(ct)
+    return np.hypot(a[-1, 0] - a[0, 0], a[-1, 1] - a[0, 1])
 
 
 def test_crowding_curvature_spreads_glyphs_on_a_tight_bend():

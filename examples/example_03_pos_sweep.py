@@ -11,7 +11,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, caption, anchor_xy, save
+from _style import SPANISH, figure, bare, caption, anchor_xy, save
 
 POSITIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 
@@ -25,20 +25,20 @@ def make(images_dir):
 
     for ax, pos in zip(axes, POSITIONS):
         bare(ax)
-        ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
+        ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
         # Wide enough that a centred label at pos 0.0 / 1.0 shows in full
         # (it overruns the endpoint along the tangent rather than clipping).
         ax.set_xlim(-0.35, 1.35)
         ax.set_ylim(-0.15, 0.55)
         curved_text(ax, x, y, "label", pos=pos, anchor="center",
-                    offset=7.0, color=PALETTE["gold"], fontsize=11)
+                    offset=7.0, color=SPANISH["flag_red"], fontsize=11)
         caption(ax, f"pos={pos}")
 
     # Mark each anchor point after a draw, when transData is valid.
     fig.canvas.draw()
     for ax, pos in zip(axes, POSITIONS):
         ax_x, ax_y = anchor_xy(ax, x, y, pos)
-        ax.plot([ax_x], [ax_y], "o", color=PALETTE["green"], markersize=5,
+        ax.plot([ax_x], [ax_y], "o", color=SPANISH["flag_yellow"], markersize=5,
                 zorder=5)
 
     path = os.path.join(images_dir, "03_pos_sweep.png")

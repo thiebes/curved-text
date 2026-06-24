@@ -3,12 +3,13 @@
 ## Decision
 
 `CurvedText` accepts matplotlib mathtext (`$...$`) inside the label string.
-The label is tokenized into runs: plain-text runs keep the existing
-per-character placement exactly, and each math run is rendered by bending the
-glyph outlines of matplotlib's own mathtext layout through the curve's
-arc-length frame at draw time. There is no new public API: mathtext arrives
-through the existing `text` argument, and `pos`, `anchor`, `offset`, and the
-kwargs pass-through keep their meaning.
+The label is tokenized into runs: each plain character and each math run is
+rendered from its glyph outline, positioned so a single shared text baseline
+follows the curve. A plain character is placed rigidly (one rotation, shape
+undistorted); a math run bends its glyph outlines through the curve's arc-length
+frame so radicals and fractions stay connected. Mathtext arrives through the
+existing `text` argument, and `pos`, `anchor`, `offset`, `valign`, and the kwargs
+pass-through keep their meaning.
 
 Two existing design invariants are preserved and remain load-bearing: all
 geometry is computed per draw in display space, and children are independent
@@ -62,19 +63,22 @@ typical label-to-curvature ratios.
 
 ## Mixed-string semantics
 
-Plain runs and math runs deliberately use different placement at different
-scales of rigidity:
+Plain characters and math runs share one baseline and one outline-placement
+mechanism, differing only in rigidity:
 
-- Plain characters stay rigid, each rotated to the tangent at its own arc
-  midpoint. This is unchanged from the library without mathtext.
+- Plain characters are placed rigidly, each rotated to the chord across its own
+  advance, so the glyph shape is undistorted.
 - Math runs bend continuously through the frame.
 
-The two regimes are consistent rather than conflicting: per-character rigid
-placement is the glyph-scale discretization of the same frame, so on a
-straight section they coincide exactly, and within the width of one glyph the
-difference is far below a pixel at any curvature where text is readable.
-Keeping plain runs as real `Text` artists also preserves font rendering
-(hinting, fallback) for the common case.
+The two regimes are the same frame at different scales of discretization: a
+rigid glyph is the glyph-scale case of the bend map, so on a straight section
+they coincide exactly, and within the width of one glyph the difference is far
+below a pixel at any curvature where text is readable. Both ride the text
+baseline as their shared datum, so plain and math sit level by construction and a
+glyph's perpendicular distance from the curve is exactly its height above the
+baseline -- there is no per-glyph step. (Placing plain text instead as rotated
+`Text` artists, the earlier approach, let matplotlib align each glyph from its
+own rotated bounding box, scattering the baselines by a few pixels.)
 
 ## Architecture
 
@@ -90,54 +94,63 @@ All code lives in `src/curved_text/_core.py`.
   replaces the `_point` closure and keeps its clip-then-extrapolate semantics,
   so labels overrunning a curve end still ride the straight tangent
   extension. Shared by the per-character walk and by math runs.
-- `_MathRun(matplotlib.text.Text)`: one child artist per math run.
-  Subclassing `Text` inherits kwargs handling identically to sibling
-  characters, and `get_window_extent` already measures mathtext, so the
-  parent's measurement loop has no special case. The subclass overrides
-  `draw`:
-  - `_glyph_layout()` calls `TextToPath.get_glyphs_mathtext` (public API) and
-    memoizes one entry keyed on text and font properties. Glyph units are
-    resolution independent; only the per-draw pixel scale varies.
-  - `_layout_path(renderer)` builds the bent compound path in display pixels:
-    outline vertices are scaled and offset to expression coordinates, straight
-    segments longer than a few display pixels along the curve direction are
-    subdivided (rule boxes such as fraction bars are the long ones), bezier
-    control points are mapped directly (the same approximation vector editors
-    use for path bending), and whitespace glyphs with empty outlines are
-    skipped.
-  - `draw(renderer)` fills the compound path with one `renderer.draw_path`
-    call using the artist's color and alpha, with clipping set through public
-    `GraphicsContext` methods. With no frame assigned it draws nothing.
-  - `_set_frame(frame, s_left)` is the per-draw handoff the parent calls; it
-    mutates the run and returns None. Any perpendicular offset is already baked
-    into `frame` (it is the parallel curve), so the run needs no offset of its
-    own.
-- `CurvedText` builds children from `_split_runs` (honoring `parse_math`;
-  disabling it restores per-character behavior exactly), and its draw gains
-  one branch in the cursor walk: math runs receive the frame instead of a
-  position and rotation. The child list is named `_segments`, since elements
-  are no longer all characters.
+- `_OutlineSegment(matplotlib.text.Text)`: the shared base for both segment
+  kinds. Subclassing `Text` inherits kwargs handling identically across
+  segments, and `get_window_extent` measures both plain text and mathtext, so
+  the parent's measurement loop has no special case. It owns `draw` and the
+  outline-to-curve mapping; subclasses supply only the outline source
+  (`_outline_units`) and the `_bend` flag.
+  - `_outline_units()` returns the segment's outline `(vertices, codes)` in
+    1/100-em units, baseline at `v = 0`, memoized per text and font properties.
+    `_PlainGlyph` reads it from `TextToPath.get_text_path`; `_MathRun` from
+    `TextToPath.get_glyphs_mathtext`, subdividing rule boxes (fraction bars,
+    radical overlines) with `_densify` so the long straight runs follow the
+    curve. Glyph units are resolution independent; only the per-draw pixel scale
+    varies.
+  - `_placed_path(renderer)` builds the placed compound path in display pixels.
+    For a math run (`_bend = True`) every outline point is bent through the
+    frame, bezier control points mapped directly (the approximation vector
+    editors use for path bending). For a plain glyph (`_bend = False`) the whole
+    outline takes one rigid rotation about its centre on the curve, so its shape
+    is preserved.
+  - `draw(renderer)` fills the compound path with one `renderer.draw_path` call
+    using the artist's color and alpha, clipping set through public
+    `GraphicsContext` methods, wrapping the renderer in a `PathEffectRenderer`
+    when effects are set. With no frame assigned it draws nothing.
+  - `_set_placement(frame, s_left, width_px)` is the per-draw handoff the parent
+    calls. Any perpendicular offset is already baked into `frame` (it is the
+    parallel curve), so a segment needs no offset of its own.
+- `CurvedText` builds children from `_split_runs` (honoring `parse_math`), and
+  its draw walks one cursor over the segments, handing each its placement. The
+  child list is named `_segments`, since elements are characters and runs alike.
 
 ## Vertical datum
 
-A math run rides the curve on the surrounding text's x-height line: `datum =
-x_height / 2` above the baseline, measured from a plain lowercase reference at
-the run's font size. This keeps the run's main symbols level with neighbouring
-plain characters in a mixed label.
+Every segment -- plain glyph and math run -- measures height from the text
+baseline; that shared zero is what makes plain and math level by construction (a
+math run's main symbols sit on the same baseline as the neighbouring plain
+characters, and the math axis for fractions sits at its standard offset above
+it). The `valign` control then chooses which line rides the curve, by subtracting
+a single font-metric datum from every segment's height before placement:
+`"center"` (the default, `(ascender + descender) / 2`) so the text straddles the
+curve, `"baseline"` (`0`), `"ascender"`, or `"descender"`. Because the datum is a
+font metric, not a per-glyph box, it is identical for every glyph and introduces
+no step. The default is `"center"` because it reproduces the placement of the
+superseded `va="center"` per-character design, keeping the `offset` reference
+backward compatible -- minus the per-glyph step, which was that design's bug.
 
-The earlier choice -- the run's own layout box center (`height / 2 - depth`) --
-was wrong for mixed labels: a superscript or tall delimiter inflates the box, so
-centering on it dropped the body below the plain characters. The x-height line
-is immune, because it does not depend on the run's own extent. Pinned by two
-tests: a lowercase math symbol centers where the plain character does under
-`va="center"`, and an exponent extends the run upward without moving its body.
+Centering on a segment's *own* layout box was rejected: a superscript or tall
+delimiter inflates the box, so centering on it dropped the body below the plain
+characters. A shared font-metric datum is immune, because it does not depend on
+the segment's own extent. Pinned by tests: a math `x` shares the baseline of a
+plain `x`, an exponent extends the run upward without moving its body, and
+`valign` shifts the whole label by one constant with no per-glyph step.
 
 ## Path effects
 
-Keyword arguments reach every child, so `path_effects` flow to the per-character
-`Text` glyphs and to each `_MathRun`. Plain glyphs apply them through the base
-`Text.draw`; `_MathRun.draw` draws its own bent path, so it wraps the renderer in
-a `PathEffectRenderer` when effects are set. The effect strokes the bent outline,
+Keyword arguments reach every child, so `path_effects` flow to every segment.
+`_OutlineSegment.draw` draws its own placed path, so it wraps the renderer in a
+`PathEffectRenderer` when effects are set. The effect strokes the placed outline,
 so a white `withStroke` casing follows the curved text and clears the lines a
 label crosses. This is the matplotlib-native idiom for a light, glyph-hugging
 casing.
@@ -150,8 +163,10 @@ overwrites the previous glyph's fill. The `box` parameter solves the
 full-coverage case with a different mechanism -- a single `Line2D` casing
 following the offset curve across the label's span, its linewidth set to the
 tallest glyph's height scaled by `pad` (default 1.1), drawn as one fill so
-nothing cannibalizes. It is a child artist positioned per draw in
-`CurvedText.draw`, like the glyphs. When `draw` bails out early (no segments,
+nothing cannibalizes. Its centreline is shifted off the curve by the glyph
+band's offset (the text rides its baseline, so the ink sits to one side of the
+bare curve) so the band covers the ink. It is a child artist positioned per draw
+in `CurvedText.draw`, like the glyphs. When `draw` bails out early (no segments,
 detached axes, or a degenerate curve) it hides the casing, so a stale band is
 never left painted.
 
@@ -180,19 +195,25 @@ Beyond ports of the existing behavioral suite (ordering, offset, dpi
 invariance, overrun, idempotent redraw, degenerate curve, zorder, remove,
 fontsize pass-through), two tests carry the design:
 
-- Straight-line equivalence: the bent path of a math run on a straight
-  horizontal curve matches matplotlib's own rendering of the same string as a
-  rigid `Text`. Pins datum, width, scale, and dpi handling at once.
+- Straight-line equivalence: the placed path of a math run on a straight
+  horizontal curve reduces to a plain affine reconstructed from its own layout.
+  Pins datum, width, scale, and dpi handling at once.
 - Anti-rigidity: a math label spanning a wide circular arc keeps every path
-  vertex within `radius +/- half label height`, a bound chord placement would
-  violate. Pins that bending actually happens.
+  vertex within `radius +/- label reach`, a bound chord placement would violate.
+  Pins that bending actually happens.
+- No per-glyph step: on a slanted straight guide the cap tops of mixed plain
+  glyphs are collinear to sub-pixel. Pins the shared-baseline placement.
+- Plain/math alignment: a math `x` and a plain `x` land on the same baseline.
 
 ## Deferred
 
-- Routing plain runs through the same outline pipeline would fix the
-  per-character kerning loss but changes the rendering of every existing
-  label; separate decision, tracked as a follow-up issue.
 - `usetex` support via `get_glyphs_tex`.
+- Hinted outlines via `FT2Font.get_path` (recovers grid-fit stem weight, which
+  rotation largely defeats anyway); marginal gain, not pursued.
+- Inter-character kerning for plain runs. Each plain character is laid out and
+  advanced on its own, so kerning pairs between adjacent glyphs are not applied.
+  The per-character placement that rides the curve is what makes this hard:
+  kerning is a pairwise shift, and the glyphs do not share one layout pass.
 
 ## Ecosystem constraints
 

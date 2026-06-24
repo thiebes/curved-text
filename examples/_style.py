@@ -11,7 +11,17 @@ from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
 
+# DICE palette set: blue / gold / green -- the default for most panels.
 PALETTE = {"blue": "#003f7f", "gold": "#f7941e", "green": "#0cce6b"}
+# Spanish-flag palette set: a more saturated, categorical identity used on a few
+# panels for variety. Indigo is the darkest colour and anchors the pairings.
+SPANISH = {
+    "flag_red": "#c60b1e",
+    "flag_yellow": "#ffc400",
+    "fern_green": "#4a7729",
+    "blue": "#0077c8",
+    "indigo": "#540d6e",
+}
 INCH = 1 / 2.54
 DPI = 150
 

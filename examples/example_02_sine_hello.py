@@ -10,7 +10,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, caption, save
+from _style import SPANISH, figure, bare, caption, save
 
 
 def make(images_dir):
@@ -20,13 +20,13 @@ def make(images_dir):
 
     x = np.linspace(0, 2 * np.pi, 400)
     y = np.sin(x)
-    ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
+    ax.plot(x, y, color=SPANISH["fern_green"], linewidth=2)
     ax.set_xlim(0, 2 * np.pi)
     ax.set_ylim(-1.4, 1.4)
 
     curved_text(ax, x, y, "text that follows the curve",
                 pos=0.5, anchor="center", offset=8.0,
-                color=PALETTE["gold"], fontsize=13)
+                color=SPANISH["indigo"], fontsize=13)
 
     caption(ax, 'curved_text(ax, x, y, "...", '
                 'pos=0.5, anchor="center", offset=8.0)')

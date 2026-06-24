@@ -18,7 +18,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, save
+from _style import SPANISH, figure, bare, save
 
 WORD = "winds"
 MODES = ["none", "curvature"]
@@ -56,11 +56,12 @@ def make(images_dir):
         for ax, mode in zip(row, MODES):
             bare(ax)
             ax.set_aspect("equal")
-            ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
+            ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
             ax.set_xlim(*xlim)
             ax.set_ylim(*ylim)
             curved_text(ax, x, y, WORD, pos=0.5, anchor="center", offset=OFFSET,
-                        crowding=mode, color=PALETTE["gold"], fontsize=FONTSIZE)
+                        crowding=mode, color=SPANISH["flag_red"],
+                        fontsize=FONTSIZE)
         row[0].set_ylabel(row_label, labelpad=10)
         row[0].set_axis_on()
         row[0].set_xticks([])

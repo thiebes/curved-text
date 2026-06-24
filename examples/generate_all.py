@@ -27,6 +27,8 @@ MODULES = [
     "example_11_box",
     "example_12_box_vs_stroke",
     "example_13_crowding",
+    "example_14_valign",
+    "example_15_mixed_alignment",
 ]
 
 

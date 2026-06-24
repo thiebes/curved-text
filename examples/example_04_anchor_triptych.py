@@ -11,7 +11,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, caption, anchor_xy, save
+from _style import SPANISH, figure, bare, caption, anchor_xy, save
 
 ANCHORS = ["start", "center", "end"]
 POS = 0.5
@@ -26,17 +26,17 @@ def make(images_dir):
 
     for ax, anchor in zip(axes, ANCHORS):
         bare(ax)
-        ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
+        ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
         ax.set_xlim(-0.05, 1.05)
         ax.set_ylim(-0.1, 0.45)
         curved_text(ax, x, y, "anchored", pos=POS, anchor=anchor,
-                    offset=7.0, color=PALETTE["gold"], fontsize=11)
+                    offset=7.0, color=SPANISH["flag_red"], fontsize=11)
         caption(ax, f'anchor="{anchor}"')
 
     fig.canvas.draw()
     for ax in axes:
         ax_x, ax_y = anchor_xy(ax, x, y, POS)
-        ax.plot([ax_x], [ax_y], "o", color=PALETTE["green"], markersize=6,
+        ax.plot([ax_x], [ax_y], "o", color=SPANISH["flag_yellow"], markersize=6,
                 zorder=5)
 
     path = os.path.join(images_dir, "04_anchor_triptych.png")

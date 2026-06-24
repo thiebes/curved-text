@@ -91,7 +91,7 @@ y, text`, matching `matplotlib.text.Text`. The `curved_text` function takes it
 first, matching matplotlib's axes-first helper functions.
 
 Any extra keyword arguments (`color`, `fontsize`, `alpha`, `fontfamily`, ...)
-pass through to each character's `matplotlib.text.Text`.
+pass through to each per-character glyph and each mathtext run.
 
 ## Features
 
@@ -114,6 +114,16 @@ curved_text(ax, x, y, r"flux $\propto \sqrt{D_{\mathrm{eff}}}\,(L/L_0)^2$",
 Pass `parse_math=False` to treat dollar signs literally. Tall expressions
 compress vertically on the inside of tight bends, so choose the text size to
 suit the curvature. `text.usetex` is not supported.
+
+Plain words and math runs in one label share a single baseline, so the math
+symbols sit level with the surrounding letters and a superscript lifts only the
+exponent, not the body -- the alignment is built in, not tuned:
+
+```python
+curved_text(ax, x, y, r"mass $m$ and speed $c$ give $E = mc^2$")
+```
+
+![Plain words and math runs on one shared baseline along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/15_mixed_alignment.png)
 
 ### Casing behind the label
 
@@ -179,6 +189,23 @@ left untouched because it falls below the deadband.
 
 ![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
 
+### Choosing what rides the curve
+
+By default the text straddles the curve (`valign="center"`). Use `valign` to pick
+a different line: `"baseline"` runs the text baseline along the curve so the body
+sits above it, while `"ascender"` and `"descender"` ride the top or bottom of the
+text -- handy for hanging a label below a curve or sitting it above one:
+
+```python
+curved_text(ax, x, y, "Amplitude", valign="baseline")
+```
+
+The shift is a single font metric applied to the whole label, so it never
+disturbs the spacing or the alignment of plain text with mathtext. Combine it
+with `offset` to lift the chosen line clear of the curve.
+
+![The same word on a curve under each valign option](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/14_valign.png)
+
 ### Works with seaborn, pandas, and other matplotlib-backed libraries
 
 `curved_text` needs only a `matplotlib.axes.Axes`, so it works with any library
@@ -198,12 +225,13 @@ curved_text(ax, df["x"], df["y"], "along the curve",
 
 ## How it works
 
-Each character is a separate `matplotlib.text.Text`. The package places each one
-on the curve and turns it to follow the line. Instead of reading the curve's
-slope at a single point, it draws a straight line across the width of that one
-letter and tips the letter to match. Averaging over the letter's width this way
-keeps neighbouring letters smooth even when the curve is drawn from only a few
-points.
+Each character (and each `$...$` run) is a child artist drawn from its glyph
+outline and placed so a single shared text baseline follows the curve. A plain
+character is turned rigidly to follow the line: instead of reading the curve's
+slope at a single point, the package draws a straight line across the width of
+that one letter and tips the letter to match. Averaging over the letter's width
+this way keeps neighbouring letters smooth even when the curve is drawn from only
+a few points, and sharing one baseline keeps plain text and mathtext level.
 
 All of this is measured in display space, that is, in pixels on the final figure
 after every scaling step. So the spacing and the perpendicular offset stay

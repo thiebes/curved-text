@@ -12,7 +12,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, caption, save
+from _style import SPANISH, figure, bare, caption, save
 
 
 def make(images_dir):
@@ -22,7 +22,7 @@ def make(images_dir):
 
     x = np.linspace(0, 1, 60)
     y = 0.6 * np.sin(np.pi * x)
-    ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
+    ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
 
     # The end tangent, extended -- the straight line the overrun rides.
     dx, dy = x[-1] - x[-2], y[-1] - y[-2]
@@ -37,7 +37,7 @@ def make(images_dir):
 
     curved_text(ax, x, y, "this label overruns the curve end",
                 pos=0.55, anchor="start", offset=6.0,
-                color=PALETTE["gold"], fontsize=12)
+                color=SPANISH["flag_red"], fontsize=12)
 
     caption(ax, 'pos=0.55, anchor="start"  (curve solid, tangent dashed)')
 

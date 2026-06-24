@@ -303,20 +303,20 @@ class _OutlineSegment(mtext.Text):
         self._frame: _CurveFrame | None = None
         self._s_left = 0.0
         self._width_px = 0.0
-        self._valign = "baseline"
+        self._datum = 0.0
         self._outline_cache: tuple | None = None
 
     def _set_placement(self, frame: _CurveFrame, s_left: float,
-                       width_px: float) -> None:
+                       width_px: float, datum: float) -> None:
         """Receive this draw's frame, the arc length of the segment's left edge on
-        it (already the parallel curve when offset), and the segment's flat advance
-        width in pixels (the chord for a rigid glyph's rotation)."""
+        it (already the parallel curve when offset), the segment's flat advance
+        width in pixels (the chord for a rigid glyph's rotation), and the
+        vertical-alignment datum (height in 1/100-em layout units that rides the
+        curve), computed once by the container so every segment shares it."""
         self._frame = frame
         self._s_left = float(s_left)
         self._width_px = float(width_px)
-
-    def _set_valign(self, valign: str) -> None:
-        self._valign = valign
+        self._datum = float(datum)
 
     @martist.allow_rasterization
     def draw(self, renderer, *args, **kwargs) -> None:
@@ -355,9 +355,8 @@ class _OutlineSegment(mtext.Text):
             return None
         em_px = renderer.points_to_pixels(self.get_fontsize())
         px_per_unit = em_px / _text_to_path.FONT_SCALE
-        datum = _valign_datum(self._valign, self.get_fontproperties())
         u = verts[:, 0] * px_per_unit
-        v = (verts[:, 1] - datum) * px_per_unit
+        v = (verts[:, 1] - self._datum) * px_per_unit
         if self._bend:
             # Bend each outline point through the frame: arc length advances with
             # ``u`` and the normal follows the local em-scale chord, so radicals
@@ -377,9 +376,9 @@ class _OutlineSegment(mtext.Text):
             cx, cy, _ = self._frame.points_and_angles(self._s_left + w / 2.0)
             angle = float(self._frame.chord_angles(self._s_left, w))
             cos, sin = np.cos(angle), np.sin(angle)
-            lu = u - w / 2.0
-            placed = np.column_stack([cx + lu * cos - v * sin,
-                                      cy + lu * sin + v * cos])
+            u_centred = u - w / 2.0
+            placed = np.column_stack([cx + u_centred * cos - v * sin,
+                                      cy + u_centred * sin + v * cos])
         return Path(placed, codes)
 
     def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
@@ -602,13 +601,11 @@ class CurvedText(mtext.Text):
         for run in runs:
             if run.is_math:
                 segment = _MathRun(run.text, **kwargs)
-                segment._set_valign(valign)
                 axes.add_artist(segment)
                 self._segments.append(segment)
                 continue
             for ch in run.text:
                 glyph = _PlainGlyph(ch, **kwargs)
-                glyph._set_valign(valign)
                 axes.add_artist(glyph)
                 self._segments.append(glyph)
         # Apply the layered zorders now that the casing and glyphs exist: the
@@ -708,6 +705,12 @@ class CurvedText(mtext.Text):
             return
         inv = axes.transData.inverted()
 
+        # The vertical-alignment datum is a font-metric constant (size
+        # independent) and identical for every segment, so derive it once here
+        # and hand it to each segment rather than re-deriving it per glyph.
+        prop = self.get_fontproperties()
+        datum = _valign_datum(self._valign, prop)
+
         # Measure each segment's unrotated advance width and height. Segments
         # render their own outlines and never set a Text rotation, so the window
         # extent is always the unrotated box.
@@ -740,13 +743,12 @@ class CurvedText(mtext.Text):
         # little off the frame; shift the casing centreline by that band offset so
         # it sits over the ink rather than over the bare datum line.
         if self._box is not None:
-            prop = self.get_fontproperties()
             ppu = (renderer.points_to_pixels(prop.get_size_in_points())
                    / _text_to_path.FONT_SCALE)
-            font = font_manager.get_font(font_manager.findfont(prop))
-            band_mid = ((font.ascender + font.descender) / 2.0
-                        / font.units_per_EM * _text_to_path.FONT_SCALE)
-            band_px = (band_mid - _valign_datum(self._valign, prop)) * ppu
+            # The glyph band's ink centre rides the "center" datum; the frame
+            # rides the chosen ``valign`` datum, so shift the casing centreline by
+            # the gap between the two so it covers the ink, not the bare datum.
+            band_px = (_valign_datum("center", prop) - datum) * ppu
             s_box = np.linspace(cursor, cursor + total, _BOX_SAMPLES)
             bx, by, bang = frame.points_and_angles(s_box)
             bx = bx - band_px * np.sin(bang)
@@ -766,7 +768,7 @@ class CurvedText(mtext.Text):
         # plain glyphs and math runs alike, and the shared baseline datum keeps
         # them level.
         for t, w, adv in zip(self._segments, widths, advances):
-            t._set_placement(frame, cursor + (adv - w) / 2.0, w)
+            t._set_placement(frame, cursor + (adv - w) / 2.0, w, datum)
             t.set_visible(True)
             cursor += adv
 

@@ -514,7 +514,7 @@ def test_math_run_straight_line_reduces_to_affine():
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
     verts, _ = run._outline_units()
-    datum = _valign_datum(run._valign, run.get_fontproperties())
+    datum = _valign_datum(ct._valign, run.get_fontproperties())
     per_unit = renderer.points_to_pixels(14.0) / 100.0
     # A horizontal curve maps data x to pixels linearly, so arc length s lands
     # at first_px + s; the run's left edge is at arc length run._s_left.
@@ -596,7 +596,7 @@ def test_math_run_follows_tight_arc():
     # different reference frame (the box midpoint, not the baseline) and only
     # happened to sit just above the true reach.
     verts, _ = run._outline_units()
-    datum = _valign_datum(run._valign, run.get_fontproperties())
+    datum = _valign_datum(ct._valign, run.get_fontproperties())
     px_per_unit = (renderer.points_to_pixels(run.get_fontsize())
                    / _text_to_path.FONT_SCALE)
     reach = np.abs(verts[:, 1] - datum).max() * px_per_unit

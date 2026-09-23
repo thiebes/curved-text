@@ -152,7 +152,7 @@ When a segment's usetex setting is on (the `text.usetex` rcParam, or
 `usetex=True` passed through the kwargs), LaTeX lays out both segment kinds, so
 a curved label matches the figure's other usetex text. The run architecture
 carries over unchanged; three details make the outline agree with the advance
-matplotlib measures.
+matplotlib measures, and a fourth puts the `valign` lines on the drawn font.
 
 - **Layout at the label size.** matplotlib measures a usetex advance by running
   LaTeX at the label's own size, and TeX fonts change design with size (cmss8 at
@@ -177,10 +177,22 @@ matplotlib measures.
   measures zero wide. Whitespace (TeX reads a tab as a space) is typeset as an
   interword space between two 1sp rules, which measures the true interword
   width.
-
-The `valign` datum still comes from the matplotlib font's metrics, so under
-LaTeX the alignments other than `"baseline"` are approximate by a small,
-uniform shift; plain and math stay level with each other.
+- **`valign` reads the drawn font.** The datum is the FreeType ascender and
+  descender of the font the text is drawn in, under usetex as without it.
+  Under usetex that is the Type 1 TeX font LaTeX sets plain text in, chosen by
+  the preamble, font family, and size; the matplotlib font that the label's
+  font properties name is never drawn. `_drawn_font` typesets one letter and follows its DVI font
+  to the file through the pdfTeX font map, using public `dviread` API
+  (`Dvi`, `PsfontsMap`, `find_tex_file`) that behaves alike from matplotlib 3.5
+  on. The result is cached on `TexManager.get_basefile`, a hash of the full
+  LaTeX source, so it is looked up once per preamble, family, and size. The
+  TeX-reported height and depth of a reference string such as `()` were
+  considered instead. They agree with the font file for Computer Modern (0.747
+  and -0.249 em against 0.759 and -0.250 em) but not for fonts loaded through
+  the preamble: for Times, Helvetica, and Palatino the parentheses give an
+  ascender of 0.68 to 0.73 em where the font file gives 0.92 to 0.95 em. Reading
+  the font file keeps one definition for every font, so a Helvetica label under
+  usetex rides the curve like a DejaVu Sans label without it.
 
 ## Path effects
 
@@ -255,10 +267,13 @@ fontsize pass-through), two tests carry the design:
 - Usetex design match: the ink-to-advance ratio of a plain glyph is the same at
   8 pt and 30 pt, which fails if the outline is laid out at a size other than
   the one measured.
+- Usetex `valign`: Computer Modern parentheses span the font's ascender and
+  descender lines, so they straddle the curve under `"center"` and touch it at
+  the top under `"ascender"`. Both fail when the datum comes from the
+  matplotlib font.
 
 ## Deferred
 
-- The `valign` datum from the TeX font's metrics under usetex.
 - Hinted outlines via `FT2Font.get_path` (recovers grid-fit stem weight, which
   rotation largely defeats anyway); marginal gain, not pursued.
 - Inter-character kerning for plain runs. Each plain character is laid out and

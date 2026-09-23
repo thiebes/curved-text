@@ -1131,3 +1131,23 @@ def test_usetex_bar_is_not_ot1_dash():
     assert ink.height > 2 * ink.width
     plt.close(fig)
 
+
+@needs_latex
+@pytest.mark.parametrize("valign", ["center", "ascender"])
+def test_usetex_valign_follows_the_drawn_font(valign):
+    # Under usetex the text is drawn in a TeX font, whose proportions differ
+    # from the matplotlib font's. Computer Modern parentheses span that font's
+    # ascender and descender lines, so on a flat curve they straddle it evenly
+    # under "center" and reach it at the top under "ascender". A datum taken
+    # from the matplotlib font (DejaVu Sans) misses by 0.09 em and 0.18 em.
+    fig, ct = _flat_label("()", fontsize=30, usetex=True, valign=valign)
+    renderer = fig.canvas.get_renderer()
+    ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
+    top = max(e.y1 for e in ink)
+    bottom = min(e.y0 for e in ink)
+    edge = {"center": (top + bottom) / 2.0, "ascender": top}[valign]
+    curve_y = ct.axes.transData.transform((5.0, 5.0))[1]
+    em_px = renderer.points_to_pixels(30)
+    assert edge == pytest.approx(curve_y, abs=0.02 * em_px)
+    plt.close(fig)
+

@@ -71,6 +71,27 @@ jobs:
         # matplotlib 3.5 is on numpy 1.x for the same reason; curved-text itself
         # works with either numpy major version.
         run: uv pip install --system -e ".[test]" "matplotlib==3.5.*" "numpy<2"
+      - name: Install LaTeX
+        # The usetex tests skip without latex and kpsewhich, so install TeX here
+        # only, where it proves the usetex path against the oldest matplotlib.
+        # matplotlib's usetex preamble loads type1cm (texlive-latex-extra) and
+        # type1ec (cm-super). Outlines are read from the DVI file, so dvipng and
+        # dvips are not needed.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends texlive-latex-extra cm-super
+      - name: Check the usetex toolchain
+        # Render through the same TextToPath call the library uses, including
+        # the escaped markup characters it emits, so a missing TeX package fails
+        # here rather than only in the usetex tests.
+        run: |
+          python - <<'EOF'
+          from matplotlib.font_manager import FontProperties
+          from matplotlib.textpath import TextToPath
+          s = r"a\% \textless{}\textgreater{}\textbar{}\textbackslash{}\textasciitilde{} $\sqrt{x}$"
+          verts, _ = TextToPath().get_text_path(FontProperties(), s, ismath="TeX")
+          assert len(verts) > 0
+          EOF
       - name: Run tests
         run: pytest -q
 

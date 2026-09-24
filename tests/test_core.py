@@ -14,7 +14,8 @@ import pytest
 
 from curved_text import CurvedText, curved_text
 from curved_text._core import (
-    _CHAR_TO_TEX, _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
+    _CHAR_TO_TEX, _font_lines, _MathRun, _PlainGlyph, _split_runs, _text_to_path,
+    _valign_datum)
 
 # usetex outline extraction runs latex and reads the DVI, which needs kpsewhich
 # to locate the fonts.
@@ -533,7 +534,8 @@ def test_math_run_straight_line_reduces_to_affine():
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
     verts, _ = run._outline_units()
-    datum = _valign_datum(ct._valign, run.get_fontproperties(), usetex=False)
+    lines = _font_lines(run.get_fontproperties(), usetex=False)
+    datum = _valign_datum(ct._valign, lines)
     per_unit = renderer.points_to_pixels(14.0) / 100.0
     # A horizontal curve maps data x to pixels linearly, so arc length s lands
     # at first_px + s; the run's left edge is at arc length run._s_left.
@@ -619,7 +621,8 @@ def test_math_run_follows_tight_arc():
     # different reference frame (the box midpoint, not the baseline) and only
     # happened to sit just above the true reach.
     verts, _ = run._outline_units()
-    datum = _valign_datum(ct._valign, run.get_fontproperties(), usetex=False)
+    lines = _font_lines(run.get_fontproperties(), usetex=False)
+    datum = _valign_datum(ct._valign, lines)
     px_per_unit = (renderer.points_to_pixels(run.get_fontsize())
                    / _text_to_path.FONT_SCALE)
     reach = np.abs(verts[:, 1] - datum).max() * px_per_unit
@@ -1156,8 +1159,6 @@ def _tex_font_case(case_id, rc, *tex_files):
     return pytest.param(rc, id=case_id, marks=marks)
 
 
-# Computer Modern runs first, so the later cases also show that the measured
-# lines follow a preamble changed within one session.
 _TEX_FONT_CASES = [
     pytest.param({}, id="computer-modern"),
     _tex_font_case("typewriter", {"font.family": "monospace"}, "cmtt12.pfb"),
@@ -1188,9 +1189,8 @@ def test_usetex_valign_follows_the_drawn_font(valign, rc):
     # cases catch the ways a datum can miss the drawn font: the matplotlib font
     # (DejaVu Sans, off by 0.18 em at the ascender), the font file's bounding
     # box (Latin Modern's is 0.4 em taller than its letters), a font the
-    # preamble loads scaled (Helvetica at 0.92), parentheses alone as the probe
-    # (typewriter "g" and "y" hang 0.14 em below them), and lines cached from an
-    # earlier preamble (Times after Computer Modern).
+    # preamble loads scaled (Helvetica at 0.92), and parentheses alone as the
+    # probe (typewriter "g" and "y" hang 0.14 em below them).
     with mpl.rc_context(rc):
         fig, ct = _flat_label("()gy", fontsize=30, usetex=True, valign=valign)
         renderer = fig.canvas.get_renderer()

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import matplotlib.artist as martist
 import matplotlib.colors as mcolors
-import matplotlib.dviread as dviread
 import matplotlib.font_manager as font_manager
 import matplotlib.lines as mlines
 import matplotlib.text as mtext
@@ -137,35 +136,16 @@ def _box_config(box: bool | str | dict) -> dict | None:
     return config
 
 
-def _valign_datum(valign: str, prop: font_manager.FontProperties, *,
-                  usetex: bool) -> float:
-    """Height above the baseline, in 1/100-em layout units, that rides the curve
-    for the given vertical alignment.
+def _font_lines(prop: font_manager.FontProperties, *,
+                usetex: bool) -> _FontLines:
+    """The ascender and descender lines of the font the text is drawn in.
 
-    ``"baseline"`` returns 0, so the text baseline follows the curve unshifted.
-    The others shift every segment by the same font-metric constant -- the curve
-    passes through the vertical centre, the ascender line, or the descender line
-    -- so plain glyphs and mathtext stay aligned and no per-glyph step is
-    introduced (the shift is identical for every glyph). The lines are those of
-    the font the text is drawn in: the matplotlib font ``prop`` names, or under
-    usetex the TeX font LaTeX sets the text in.
+    Without usetex that is the matplotlib font ``prop`` names, whose lines are
+    the ascender and descender FreeType reports. Under usetex it is the TeX font
+    LaTeX sets the text in (:func:`_tex_font_lines`).
     """
-    if valign == "baseline":
-        return 0.0
     if usetex:
-        lines = _tex_font_lines(prop.get_size_in_points())
-    else:
-        lines = _font_lines(prop)
-    if valign == "ascender":
-        return lines.ascender
-    if valign == "descender":
-        return lines.descender
-    return (lines.ascender + lines.descender) / 2.0  # "center"
-
-
-def _font_lines(prop: font_manager.FontProperties) -> _FontLines:
-    """The ascender and descender FreeType reports for the matplotlib font
-    ``prop`` names."""
+        return _tex_font_lines(prop.get_size_in_points())
     font = font_manager.get_font(font_manager.findfont(prop))
     units = _text_to_path.FONT_SCALE / font.units_per_EM
     return _FontLines(font.ascender * units, font.descender * units)
@@ -173,30 +153,40 @@ def _font_lines(prop: font_manager.FontProperties) -> _FontLines:
 
 def _tex_font_lines(size: float) -> _FontLines:
     """The ascender and descender lines of the TeX font LaTeX sets text in at
-    ``size`` points.
+    ``size`` points: the height and depth TeX gives ``_TEX_LINE_PROBE``.
 
     LaTeX chooses that font from the preamble, the font family, and the size
-    (cmss8 at 8 pt, cmss17 at 30 pt). The DVI file is named by TexManager's hash
-    of the full LaTeX source, so keying the cache on its path follows every one
-    of those choices.
+    (cmss8 at 8 pt, cmss17 at 30 pt), and TeX takes the box from the font's
+    metrics at the size it draws the font, so a font the preamble loads scaled
+    (``helvet`` with ``scaled=0.92``) yields lines scaled with its glyphs. The
+    measurement is matplotlib's own for usetex text, and after the first draw it
+    reads LaTeX's cached DVI file. matplotlib reports the height including the
+    depth, in the units usetex glyph outlines are laid out in
+    (:func:`_tex_to_path`).
     """
-    return _tex_font_lines_from_dvi(TexManager().make_dvi(_TEX_LINE_PROBE, size), size)
-
-
-@functools.cache
-def _tex_font_lines_from_dvi(dvi_path: str, size: float) -> _FontLines:
-    """The height and depth TeX gave ``_TEX_LINE_PROBE``, read from its DVI file.
-
-    TeX takes them from the font's metrics at the size it draws the font, so a
-    font the preamble loads scaled (``helvet`` with ``scaled=0.92``) yields
-    lines scaled with its glyphs. Read at 72 dpi, the page is in the units usetex
-    glyph outlines are laid out in (:func:`_tex_to_path`), so rescaling by the
-    size gives layout units.
-    """
-    with dviread.Dvi(dvi_path, 72) as dvi:
-        page, = dvi
+    _, height, depth = TexManager().get_text_width_height_descent(
+        _TEX_LINE_PROBE, size)
     units = _text_to_path.FONT_SCALE / size
-    return _FontLines(page.height * units, -page.descent * units)
+    return _FontLines((height - depth) * units, -depth * units)
+
+
+def _valign_datum(valign: str, lines: _FontLines) -> float:
+    """Height above the baseline, in 1/100-em layout units, that rides the curve
+    for the given vertical alignment.
+
+    ``"baseline"`` returns 0, so the text baseline follows the curve unshifted.
+    The others shift every segment by the same font-metric constant -- the curve
+    passes through the vertical centre, the ascender line, or the descender line
+    -- so plain glyphs and mathtext stay aligned and no per-glyph step is
+    introduced (the shift is identical for every glyph).
+    """
+    if valign == "baseline":
+        return 0.0
+    if valign == "ascender":
+        return lines.ascender
+    if valign == "descender":
+        return lines.descender
+    return (lines.ascender + lines.descender) / 2.0  # "center"
 
 
 class _CurveFrame:
@@ -841,10 +831,17 @@ class CurvedText(mtext.Text):
 
         # The vertical-alignment datum is a font-metric constant, identical for
         # every segment, so derive it once here and hand it to each segment
-        # rather than re-deriving it per glyph.
+        # rather than re-deriving it per glyph. Every alignment but the baseline
+        # is a font line, and so is the box casing's centre, which follows the
+        # "center" line while the frame follows the chosen one. Measuring the
+        # lines runs LaTeX under usetex, so a baseline label without a casing
+        # never measures them.
         prop = self.get_fontproperties()
-        usetex = self.get_usetex()
-        datum = _valign_datum(self._valign, prop, usetex=usetex)
+        datum = band = 0.0
+        if self._valign != "baseline" or self._box is not None:
+            lines = _font_lines(prop, usetex=self.get_usetex())
+            datum = _valign_datum(self._valign, lines)
+            band = _valign_datum("center", lines) - datum
 
         # Measure each segment's unrotated advance width and height. Segments
         # render their own outlines and never set a Text rotation, so the window
@@ -880,10 +877,7 @@ class CurvedText(mtext.Text):
         if self._box is not None:
             ppu = (renderer.points_to_pixels(prop.get_size_in_points())
                    / _text_to_path.FONT_SCALE)
-            # The glyph band's ink centre rides the "center" datum; the frame
-            # rides the chosen ``valign`` datum, so shift the casing centreline by
-            # the gap between the two so it covers the ink, not the bare datum.
-            band_px = (_valign_datum("center", prop, usetex=usetex) - datum) * ppu
+            band_px = band * ppu
             s_box = np.linspace(cursor, cursor + total, _BOX_SAMPLES)
             bx, by, bang = frame.points_and_angles(s_box)
             bx = bx - band_px * np.sin(bang)

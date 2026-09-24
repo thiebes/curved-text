@@ -73,10 +73,12 @@ _CHAR_TO_TEX = {
 _TEX_SPACE = r"\rule{1sp}{1sp}\ \rule{1sp}{1sp}"
 
 # TeX source whose height and depth stand for the ascender and descender lines
-# under usetex. Parentheses span both lines in text fonts, and TeX sizes their
-# box from the font's own metrics, so the lines follow whichever font the
-# preamble, family, and size select, at the scale LaTeX draws it.
-_TEX_LINE_PROBE = "()"
+# under usetex. Parentheses reach the ascender line, and "g" and "y" reach the
+# descender line where the parentheses stop short of it, as in typewriter fonts
+# and Times. TeX sizes the box from the font's own metrics, so the lines follow
+# whichever font the preamble, family, and size select, at the scale LaTeX
+# draws it.
+_TEX_LINE_PROBE = "()gy"
 
 
 class _Run(NamedTuple):

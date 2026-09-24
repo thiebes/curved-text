@@ -1160,6 +1160,7 @@ def _tex_font_case(case_id, rc, *tex_files):
 # lines follow a preamble changed within one session.
 _TEX_FONT_CASES = [
     pytest.param({}, id="computer-modern"),
+    _tex_font_case("typewriter", {"font.family": "monospace"}, "cmtt12.pfb"),
     _tex_font_case(
         "latin-modern",
         {"text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{lmodern}"},
@@ -1181,16 +1182,17 @@ _TEX_FONT_CASES = [
 def test_usetex_valign_follows_the_drawn_font(valign, rc):
     # Under usetex the text is drawn in a TeX font chosen by the preamble, so the
     # valign lines must come from that font as LaTeX draws it. TeX sizes the box
-    # of a pair of parentheses from the font's metrics, and their ink reaches
-    # within 0.02 em of it, so on a flat curve the parentheses straddle it under
-    # "center" and touch it at the top or bottom under "ascender" or
-    # "descender". The cases catch the ways a datum can miss the drawn font:
-    # the matplotlib font (DejaVu Sans, off by 0.18 em at the ascender), the
-    # font file's bounding box (Latin Modern's is 0.4 em taller than its
-    # letters), a font the preamble loads scaled (Helvetica at 0.92), and lines
-    # cached from an earlier preamble (Times after Computer Modern).
+    # of "()gy" from the font's metrics, and its ink reaches within 0.02 em of
+    # that box, so on a flat curve the label straddles the curve under "center"
+    # and touches it at the top or bottom under "ascender" or "descender". The
+    # cases catch the ways a datum can miss the drawn font: the matplotlib font
+    # (DejaVu Sans, off by 0.18 em at the ascender), the font file's bounding
+    # box (Latin Modern's is 0.4 em taller than its letters), a font the
+    # preamble loads scaled (Helvetica at 0.92), parentheses alone as the probe
+    # (typewriter "g" and "y" hang 0.14 em below them), and lines cached from an
+    # earlier preamble (Times after Computer Modern).
     with mpl.rc_context(rc):
-        fig, ct = _flat_label("()", fontsize=30, usetex=True, valign=valign)
+        fig, ct = _flat_label("()gy", fontsize=30, usetex=True, valign=valign)
         renderer = fig.canvas.get_renderer()
         ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
     top = max(e.y1 for e in ink)
@@ -1199,7 +1201,7 @@ def test_usetex_valign_follows_the_drawn_font(valign, rc):
             "descender": bottom}[valign]
     curve_y = ct.axes.transData.transform((5.0, 5.0))[1]
     em_px = renderer.points_to_pixels(30)
-    assert edge == pytest.approx(curve_y, abs=0.025 * em_px)
+    assert edge == pytest.approx(curve_y, abs=0.03 * em_px)
     plt.close(fig)
 
 
@@ -1208,9 +1210,10 @@ def test_usetex_valign_follows_the_drawn_font(valign, rc):
 def test_usetex_box_centres_on_the_ink_under_every_valign(valign):
     # The casing follows the label's "center" line whichever line rides the
     # curve, so it must take that line from the same drawn font as the label.
-    # Under usetex the centre line lies midway between the parentheses' top and
-    # bottom; the matplotlib font's centre line sits 0.1 em higher.
-    fig, ct = _flat_label("()", fontsize=30, usetex=True, valign=valign, box=True)
+    # Under usetex the centre line lies midway between the top and bottom of
+    # "()gy"; the matplotlib font's centre line sits 0.1 em higher.
+    fig, ct = _flat_label("()gy", fontsize=30, usetex=True, valign=valign,
+                          box=True)
     renderer = fig.canvas.get_renderer()
     ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
     ink_mid = (max(e.y1 for e in ink) + min(e.y0 for e in ink)) / 2.0

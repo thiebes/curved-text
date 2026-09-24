@@ -90,8 +90,8 @@ Note the order of the axes argument. The `CurvedText` class takes it after `x,
 y, text`, matching `matplotlib.text.Text`. The `curved_text` function takes it
 first, matching matplotlib's axes-first helper functions.
 
-Any extra keyword arguments (`color`, `fontsize`, `alpha`, `fontfamily`, ...)
-pass through to each per-character glyph and each mathtext run.
+Any extra keyword arguments (`color`, `fontsize`, `alpha`, `fontfamily`,
+`usetex`, ...) pass through to each per-character glyph and each math run.
 
 ## Features
 
@@ -113,7 +113,7 @@ curved_text(ax, x, y, r"flux $\propto \sqrt{D_{\mathrm{eff}}}\,(L/L_0)^2$",
 
 Pass `parse_math=False` to treat dollar signs literally. Tall expressions
 compress vertically on the inside of tight bends, so choose the text size to
-suit the curvature. `text.usetex` is not supported.
+suit the curvature.
 
 Plain words and math runs in one label share a single baseline, so the math
 symbols sit level with the surrounding letters and a superscript lifts only the
@@ -124,6 +124,39 @@ curved_text(ax, x, y, r"mass $m$ and speed $c$ give $E = mc^2$")
 ```
 
 ![Plain words and math runs on one shared baseline along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/15_mixed_alignment.png)
+
+### LaTeX (usetex)
+
+With matplotlib's `text.usetex` rcParam set, or `usetex=True` passed to
+`curved_text`, LaTeX typesets the label, so it matches the figure's other
+usetex text. A LaTeX installation is required, as for any usetex figure.
+
+```python
+curved_text(ax, x, y, r"yield 50% at $\sqrt{\bar{\sigma}_G}$", usetex=True)
+```
+
+Plain text is typeset literally, one character at a time: `%`, `#`, `&`, and
+the other TeX markup characters print as themselves, and TeX commands work only
+inside `$...$`. This differs from matplotlib's own usetex text, where
+`r"50\%"` is needed for a percent sign. The first draw runs LaTeX once for each
+distinct character and math run, which can take several seconds; later draws
+are cached.
+
+Plain text is limited to characters the LaTeX preamble can typeset. A Greek
+letter in a math run (`$\lambda$`) is italic, as a variable should be. For an
+upright Greek letter in plain text, such as a name or a unit, declare it in your
+own preamble, one declaration per letter:
+
+```python
+mpl.rcParams["text.latex.preamble"] = (
+    r"\usepackage{upgreek}"
+    r"\DeclareUnicodeCharacter{03BB}{\ensuremath{\uplambda}}"
+)
+curved_text(ax, x, y, r"plain λ, math $\lambda$", usetex=True)
+```
+
+The library leaves the preamble to you. It is one global setting for every
+usetex text in the figure, including the layout passes that measure the label.
 
 ### Casing behind the label
 

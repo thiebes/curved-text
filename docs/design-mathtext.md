@@ -101,12 +101,12 @@ All code lives in `src/curved_text/_core.py`.
   outline-to-curve mapping; subclasses supply only the outline source
   (`_outline_units`) and the `_bend` flag.
   - `_outline_units()` returns the segment's outline `(vertices, codes)` in
-    1/100-em units, baseline at `v = 0`, memoized per text and font properties.
-    `_PlainGlyph` reads it from `TextToPath.get_text_path`; `_MathRun` from
-    `TextToPath.get_glyphs_mathtext`, subdividing rule boxes (fraction bars,
-    radical overlines) with `_densify` so the long straight runs follow the
-    curve. Glyph units are resolution independent; only the per-draw pixel scale
-    varies.
+    1/100-em units, baseline at `v = 0`, memoized per text, font properties, and
+    usetex setting. `_PlainGlyph` reads it from `TextToPath.get_text_path`;
+    `_MathRun` from `TextToPath.get_glyphs_mathtext` (or `get_glyphs_tex` under
+    usetex, see below), subdividing rule boxes (fraction bars, radical
+    overlines) with `_densify` so the long straight runs follow the curve. Glyph
+    units are resolution independent; only the per-draw pixel scale varies.
   - `_placed_path(renderer)` builds the placed compound path in display pixels.
     For a math run (`_bend = True`) every outline point is bent through the
     frame, bezier control points mapped directly (the approximation vector
@@ -146,6 +146,42 @@ the segment's own extent. Pinned by tests: a math `x` shares the baseline of a
 plain `x`, an exponent extends the run upward without moving its body, and
 `valign` shifts the whole label by one constant with no per-glyph step.
 
+## LaTeX (`usetex`)
+
+When a segment's usetex setting is on (the `text.usetex` rcParam, or
+`usetex=True` passed through the kwargs), LaTeX lays out both segment kinds, so
+a curved label matches the figure's other usetex text. The run architecture
+carries over unchanged; three details make the outline agree with the advance
+matplotlib measures.
+
+- **Layout at the label size.** matplotlib measures a usetex advance by running
+  LaTeX at the label's own size, and TeX fonts change design with size (cmss8 at
+  8 pt, cmss12 at 12 pt). `TextToPath` runs LaTeX at its fixed 100 pt
+  `FONT_SCALE`, which would draw a different design from the one measured:
+  thinner letters with loose tracking on small labels. `_tex_to_path(size)`
+  returns a converter whose public `FONT_SCALE` is the label size, and the
+  outline is rescaled to 1/100-em units. The measurement and the outline then
+  share one cached LaTeX run.
+- **Plain text is literal.** Each plain character is its own segment, so TeX
+  commands cannot span plain text anyway. A plain glyph's text is the
+  character's literal TeX source (`_tex_source`): markup characters are escaped,
+  and `<`, `>`, and `|`, which the default OT1 encoding typesets as other
+  glyphs, are spelled out by name. The escaped text is set once at
+  construction, when matplotlib also fixes the artist's usetex setting, so
+  matplotlib's own measurement, figure layout (`bbox_inches="tight"`), and the
+  outline all read the same string. Overriding matplotlib's private
+  `Text._preprocess_math` hook would escape the text without changing
+  `get_text()`, and was rejected under the public-API constraint below.
+- **Whitespace advances.** matplotlib's DVI reader sizes its output from the
+  glyphs and rules TeX sets, and glue alone sets neither, so a bare space
+  measures zero wide. Whitespace (TeX reads a tab as a space) is typeset as an
+  interword space between two 1sp rules, which measures the true interword
+  width.
+
+The `valign` datum still comes from the matplotlib font's metrics, so under
+LaTeX the alignments other than `"baseline"` are approximate by a small,
+uniform shift; plain and math stay level with each other.
+
 ## Path effects
 
 Keyword arguments reach every child, so `path_effects` flow to every segment.
@@ -182,9 +218,20 @@ reads on top.
 - `parse_math=False` (kwarg or rcParam) disables splitting entirely.
 - A string with an odd count of unescaped `$` renders literally, character by
   character, as matplotlib itself would.
-- `usetex` is unsupported and documented as such. The run architecture
-  accepts a TeX backend later through `TextToPath.get_glyphs_tex` without
-  redesign.
+- Under `usetex`, plain text is typeset literally, one character at a time; TeX
+  commands work only inside `$...$`. This differs from matplotlib's own usetex
+  `Text`, which passes the whole string to TeX.
+- Under `usetex`, plain text is limited to characters the LaTeX preamble can
+  typeset. By default a Greek letter in plain text is a LaTeX error, as it is in
+  matplotlib's own usetex text. Math-run Greek (`$\lambda$`) is italic, the
+  convention for variables; plain Greek, like the rest of plain text, should be
+  upright, and lowercase upright Greek needs a LaTeX package. The README gives
+  a preamble recipe (`upgreek` plus `\DeclareUnicodeCharacter`). The library
+  does not load packages itself: the preamble is one global rcParam that also
+  governs layout passes outside the library's draw, so injecting a package only
+  during its own draws would measure and draw with different preambles, and
+  setting it globally would change the user's other usetex text. A straight `"`
+  typesets as a closing curly quote, as it does in matplotlib's own usetex text.
 - Tall constructs degrade by vertical compression on the inside of bends;
   the docstring states this and leaves label-size-to-curvature judgment to the
   user.
@@ -203,11 +250,15 @@ fontsize pass-through), two tests carry the design:
   Pins that bending actually happens.
 - No per-glyph step: on a slanted straight guide the cap tops of mixed plain
   glyphs are collinear to sub-pixel. Pins the shared-baseline placement.
-- Plain/math alignment: a math `x` and a plain `x` land on the same baseline.
+- Plain/math alignment: a math `x` and a plain `x` land on the same baseline,
+  under mathtext and under usetex.
+- Usetex design match: the ink-to-advance ratio of a plain glyph is the same at
+  8 pt and 30 pt, which fails if the outline is laid out at a size other than
+  the one measured.
 
 ## Deferred
 
-- `usetex` support via `get_glyphs_tex`.
+- The `valign` datum from the TeX font's metrics under usetex.
 - Hinted outlines via `FT2Font.get_path` (recovers grid-fit stem weight, which
   rotation largely defeats anyway); marginal gain, not pursued.
 - Inter-character kerning for plain runs. Each plain character is laid out and

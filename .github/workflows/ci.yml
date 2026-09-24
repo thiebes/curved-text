@@ -50,8 +50,10 @@ jobs:
         run: pytest -q
 
   # The matplotlib floor declared in pyproject.toml. Mathtext support relies on
-  # get_glyphs_mathtext, Path.code_type, and the parse_math kwarg, all present
-  # since 3.5; pin the floor and prove the suite passes against it.
+  # get_glyphs_mathtext, Path.code_type, and the parse_math kwarg, and usetex
+  # support on TextToPath.get_glyphs_tex and the TextToPath.FONT_SCALE
+  # attribute, all present since 3.5; pin the floor and prove the suite passes
+  # against it.
   floor:
     runs-on: ubuntu-latest
     steps:

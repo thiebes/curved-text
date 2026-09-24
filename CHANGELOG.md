@@ -3,6 +3,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- LaTeX support: with the `text.usetex` rcParam set, or `usetex=True` passed as
+  a keyword, LaTeX typesets both math runs and plain text, so a curved label
+  matches the figure's other usetex text. Plain text is typeset literally, one
+  character at a time, so TeX markup characters such as `%` and `#` print as
+  themselves and TeX commands work only inside `$...$`. Contributed by Andrey
+  Latyshev in #5.
+
 ## 0.5.0
 
 ### Added

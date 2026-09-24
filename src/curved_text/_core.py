@@ -3,6 +3,7 @@
 # "Development and AI use" section of the README.
 from __future__ import annotations
 
+import functools
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -51,6 +52,23 @@ _BOX_SAMPLES = 64
 
 # Shared converter from text to glyph outlines; it caches font faces internally.
 _text_to_path = TextToPath()
+
+# TeX source for a plain character under usetex. A plain glyph is one literal
+# character, so characters TeX reads as markup are escaped, and characters the
+# default OT1 encoding typesets as a different glyph ("<" as an inverted "!")
+# are spelled out by name.
+_CHAR_TO_TEX = {
+    "#": r"\#", "$": r"\$", "%": r"\%", "&": r"\&", "_": r"\_",
+    "{": r"\{", "}": r"\}", "\\": r"\textbackslash{}",
+    "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
+    "<": r"\textless{}", ">": r"\textgreater{}", "|": r"\textbar{}",
+}
+
+# TeX source for any whitespace character under usetex: an interword space
+# between two 1sp (1/65536 pt) rules. matplotlib's DVI reader sizes the output
+# from the glyphs and rules TeX sets, and glue alone sets neither, so a bare
+# space would advance zero. TeX itself reads a tab as a space.
+_TEX_SPACE = r"\rule{1sp}{1sp}\ \rule{1sp}{1sp}"
 
 
 class _Run(NamedTuple):
@@ -272,15 +290,38 @@ def _densify(verts: np.ndarray, codes: np.ndarray,
     return np.asarray(out_verts), np.asarray(out_codes, dtype=Path.code_type)
 
 
+def _tex_source(char: str) -> str:
+    """The literal TeX source for one plain character under usetex."""
+    if char.isspace():
+        return _TEX_SPACE
+    return _CHAR_TO_TEX.get(char, char)
+
+
+@functools.cache
+def _tex_to_path(size: float) -> TextToPath:
+    """A converter that runs LaTeX at ``size`` points.
+
+    matplotlib measures a usetex advance by running LaTeX at the label's own
+    size, and TeX fonts change design with size (cmss8 at 8 pt, cmss12 at
+    12 pt). The shared converter runs LaTeX at its fixed 100 pt ``FONT_SCALE``,
+    which selects a different design from the one measured. Laying the outline
+    out at the label size draws the measured design, and matplotlib's
+    measurement and the outline share one cached LaTeX run.
+    """
+    converter = TextToPath()
+    converter.FONT_SCALE = size
+    return converter
+
+
 class _OutlineSegment(mtext.Text):
     """A curved-label segment drawn by mapping a baseline-relative glyph outline
     through the curve frame.
 
-    One segment is either a plain character (:class:`_PlainGlyph`) or a mathtext
-    run (:class:`_MathRun`). Both subclass :class:`~matplotlib.text.Text` so the
+    One segment is either a plain character (:class:`_PlainGlyph`) or a math run
+    (:class:`_MathRun`). Both subclass :class:`~matplotlib.text.Text` so the
     parent's cursor walk measures every segment the same way -- by window-extent
     width -- and, crucially, both keep the text baseline as the shared datum
-    (``v = 0``), so plain glyphs and mathtext sit on one baseline by construction.
+    (``v = 0``), so plain glyphs and math runs sit on one baseline by construction.
 
     Placement maps an outline point ``(u, v)`` -- arc length from the segment's
     left edge and height above the baseline, both in 1/100-em layout units -- into
@@ -392,48 +433,74 @@ class _OutlineSegment(mtext.Text):
 
 class _PlainGlyph(_OutlineSegment):
     """One plain character, drawn as a rigid (undistorted) glyph outline whose
-    baseline rides the curve. Inherits ``_bend = False`` from the base."""
+    baseline rides the curve. Inherits ``_bend = False`` from the base.
+
+    Under usetex the glyph's text is the character's literal TeX source
+    (:func:`_tex_source`). It is set once at construction, which is also when
+    matplotlib fixes the artist's usetex setting, so matplotlib's measurement,
+    figure layout, and the outline all read the same string."""
+
+    def __init__(self, char: str, **kwargs: Any) -> None:
+        super().__init__(char, **kwargs)
+        self._char = char
+        if self.get_usetex():
+            self.set_text(_tex_source(char))
 
     def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
         prop = self.get_fontproperties()
-        key = (self.get_text(), hash(prop))
+        text = self.get_text()
+        usetex = self.get_usetex()
+        key = (text, hash(prop), usetex)
         if self._outline_cache is not None and self._outline_cache[0] == key:
             return self._outline_cache[1]
-        text = self.get_text()
-        if not text.strip():  # whitespace advances the cursor but draws nothing
-            outline = (np.empty((0, 2)), np.empty(0, dtype=Path.code_type))
+        if not self._char.strip():  # whitespace advances the cursor but draws nothing
+            verts, codes = np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
+        elif usetex:
+            size = prop.get_size_in_points()
+            verts, codes = _tex_to_path(size).get_text_path(prop, text, ismath="TeX")
+            verts = np.asarray(verts, float) * (_text_to_path.FONT_SCALE / size)
         else:
             verts, codes = _text_to_path.get_text_path(prop, text, ismath=False)
-            outline = (np.asarray(verts, float),
-                       np.asarray(codes, dtype=Path.code_type))
+        outline = (np.asarray(verts, float), np.asarray(codes, dtype=Path.code_type))
         self._outline_cache = (key, outline)
         return outline
 
 
 class _MathRun(_OutlineSegment):
-    """One mathtext run, drawn by bending the expression's glyph outlines and rule
-    boxes through the curve so radicals, fractions, and sized delimiters stay
-    connected at any curvature. Its baseline is the same shared datum as the plain
-    glyphs, so the run's main symbols sit level with neighbouring characters."""
+    """One ``$...$`` math run, laid out by mathtext or, under usetex, by LaTeX,
+    and drawn by bending the expression's glyph outlines and rule boxes through
+    the curve so radicals, fractions, and sized delimiters stay connected at any
+    curvature. Its baseline is the same shared datum as the plain glyphs, so the
+    run's main symbols sit level with neighbouring characters."""
 
     _bend = True
 
     def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
         prop = self.get_fontproperties()
-        key = (self.get_text(), hash(prop))
+        text = self.get_text()
+        usetex = self.get_usetex()
+        key = (text, hash(prop), usetex)
         if self._outline_cache is not None and self._outline_cache[0] == key:
             return self._outline_cache[1]
-        glyph_info, glyph_map, rects = _text_to_path.get_glyphs_mathtext(
-            prop, self.get_text())
+        # Lay out with the artist's own usetex setting, the one matplotlib
+        # measures the advance with. LaTeX runs at the label size (see
+        # ``_tex_to_path``), so its output is rescaled to 1/100-em layout units.
+        if usetex:
+            converter = _tex_to_path(prop.get_size_in_points())
+            glyph_info, glyph_map, rects = converter.get_glyphs_tex(prop, text)
+        else:
+            converter = _text_to_path
+            glyph_info, glyph_map, rects = converter.get_glyphs_mathtext(prop, text)
+        units = _text_to_path.FONT_SCALE / converter.FONT_SCALE
         pieces = []
         for glyph_id, x_pen, y_pen, scale in glyph_info:
             outline_verts, outline_codes = glyph_map[glyph_id]
             if len(outline_verts) == 0:  # whitespace glyphs have no outline
                 continue
-            placed = np.asarray(outline_verts, float) * scale + [x_pen, y_pen]
+            placed = (np.asarray(outline_verts, float) * scale + [x_pen, y_pen]) * units
             pieces.append(_densify(placed, np.asarray(outline_codes)))
         for rect_verts, rect_codes in rects:
-            pieces.append(_densify(np.asarray(rect_verts, float),
+            pieces.append(_densify(np.asarray(rect_verts, float) * units,
                                    np.asarray(rect_codes)))
         if pieces:
             verts = np.concatenate([p[0] for p in pieces])
@@ -503,14 +570,24 @@ class CurvedText(mtext.Text):
     get solid coverage under plain text.
 
     Mathtext is supported: each ``$...$`` run in ``text`` is laid out by
-    matplotlib's mathtext engine and bent continuously along the curve --
-    every glyph outline and rule box is mapped through the curve's arc-length
-    frame, so radicals, fractions, and sized delimiters stay connected at any
-    curvature. The run rides the same baseline as the surrounding plain glyphs, so
-    its main symbols sit level with them. Pass ``parse_math=False`` to treat
-    dollar signs literally. ``text.usetex`` is not supported. Tall expressions
-    compress vertically on the inside of tight bends, so choose label size
-    relative to curvature accordingly.
+    matplotlib's mathtext engine and bent continuously along the curve -- every
+    glyph outline and rule box is mapped through the curve's arc-length frame, so
+    radicals, fractions, and sized delimiters stay connected at any curvature.
+    The run rides the same baseline as the surrounding plain glyphs, so its main
+    symbols sit level with them. Pass ``parse_math=False`` to treat dollar signs
+    literally. Tall expressions compress vertically on the inside of tight bends,
+    so choose label size relative to curvature accordingly.
+
+    LaTeX is used instead when ``text.usetex`` is set or ``usetex=True`` is
+    passed, so the label matches the figure's other usetex text. Math runs are
+    then typeset by LaTeX, and so is plain text, one literal character at a time:
+    characters that are TeX markup (such as ``%``, ``#``, and the backslash) are
+    escaped, so TeX commands work only inside ``$...$``. Plain text is limited to
+    characters the LaTeX preamble can typeset; the README shows how to declare
+    upright Greek letters there. The ``valign`` datum comes from the matplotlib
+    font's metrics, so alignments other than ``"baseline"`` are approximate under
+    LaTeX. The first draw runs LaTeX once for each distinct character and math
+    run, which can take seconds; later draws reuse matplotlib's cache.
 
     Both plain glyphs and mathtext runs are rendered from their glyph outlines
     rather than as hinted ``Text`` artists. On a rotated label this is what lets a
@@ -553,8 +630,8 @@ class CurvedText(mtext.Text):
         body sits above the curve; the others ride the ascender or descender line.
         Each is a constant font-metric shift applied to the whole label.
     **kwargs
-        Passed to each per-character glyph and each mathtext run (for example
-        ``color``, ``fontsize``, ``alpha``, ``fontfamily``).
+        Passed to each per-character glyph and each math run (for example
+        ``color``, ``fontsize``, ``alpha``, ``fontfamily``, ``usetex``).
     """
 
     def __init__(self, x: ArrayLike, y: ArrayLike, text: str, axes: Axes, *,

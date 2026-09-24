@@ -4,13 +4,21 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 """
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
+import shutil
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from curved_text import CurvedText, curved_text
 from curved_text._core import (
-    _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
+    _CHAR_TO_TEX, _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
+
+# usetex outline extraction runs latex and reads the DVI, which needs kpsewhich
+# to locate the fonts.
+needs_latex = pytest.mark.skipif(
+    shutil.which("latex") is None or shutil.which("kpsewhich") is None,
+    reason="usetex needs a LaTeX installation")
 
 
 def _draw(fig):
@@ -536,19 +544,23 @@ def test_math_run_straight_line_reduces_to_affine():
     plt.close(fig)
 
 
-def test_math_run_aligns_to_plain_baseline():
+@pytest.mark.parametrize("usetex", [False, pytest.param(True, marks=needs_latex)])
+def test_math_run_aligns_to_plain_baseline(usetex):
     # Plain glyphs and math runs share one baseline by construction (the v=0
     # datum), so a math "x" and a plain "x" placed identically land on the same
     # baseline. On a straight line their ink bottoms (the baseline, neither glyph
     # has a descender) coincide tightly -- the alignment is structural, not the
-    # tuned 2px tolerance the superseded x-height datum needed.
+    # tuned 2px tolerance the superseded x-height datum needed. It holds for
+    # LaTeX layout under usetex as it does for mathtext.
     fig, ax = plt.subplots()
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 100)
     y = np.full_like(x, 5.0)
-    math_x = curved_text(ax, x, y, "$x$", pos=0.5, anchor="center", fontsize=16)
-    plain_x = curved_text(ax, x, y, "x", pos=0.5, anchor="center", fontsize=16)
+    math_x = curved_text(ax, x, y, "$x$", pos=0.5, anchor="center", fontsize=16,
+                         usetex=usetex)
+    plain_x = curved_text(ax, x, y, "x", pos=0.5, anchor="center", fontsize=16,
+                          usetex=usetex)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     mb = math_x._segments[0]._placed_path(renderer).get_extents()
@@ -1005,3 +1017,117 @@ def test_crowding_curvature_is_negligible_on_a_gentle_bend():
     _draw(fig)
     assert _end_to_end(bent) == pytest.approx(_end_to_end(flat), rel=0.01)
     plt.close(fig)
+
+
+def _flat_label(text, fontsize=16, **kwargs):
+    """Draw ``text`` centred on a flat line; return the figure and the label."""
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    # Under the text.usetex rcParam the tick labels would be usetex too, and
+    # Agg rasterizes those through dvipng, which curved-text itself never needs.
+    ax.set_axis_off()
+    x = np.linspace(0, 10, 100)
+    ct = curved_text(ax, x, np.full_like(x, 5.0), text, pos=0.5,
+                     anchor="center", fontsize=fontsize, **kwargs)
+    _draw(fig)
+    return fig, ct
+
+
+def _ink(ct, renderer, char):
+    """Extents of the drawn outline of the plain glyph for ``char``."""
+    seg = next(s for s in ct._segments if s._char == char)
+    return seg._placed_path(renderer).get_extents()
+
+
+@needs_latex
+def test_usetex_outline_matches_measured_design_at_any_size():
+    # TeX fonts change design with size, and matplotlib measures a usetex
+    # advance at the label's own size. Laying the outline out at a fixed size
+    # instead draws a different design than the one measured: thinner letters
+    # with loose tracking on small labels. With both at the label size, the
+    # ink-to-advance ratio is the same at every size.
+    ratios = []
+    for fontsize in (8, 30):
+        fig, ct = _flat_label("m", fontsize=fontsize, usetex=True)
+        seg = ct._segments[0]
+        ink = seg._placed_path(fig.canvas.get_renderer()).get_extents()
+        ratios.append(ink.width / seg._width_px)
+        plt.close(fig)
+    assert ratios[0] == pytest.approx(ratios[1], rel=0.02)
+
+
+@needs_latex
+@pytest.mark.parametrize("ws", [" ", "\t"])
+def test_usetex_whitespace_advances_by_interword_space(ws):
+    # matplotlib's DVI reader sizes its output from the glyphs and rules TeX
+    # sets, so bare glue would advance zero and words would run together. TeX
+    # reads a tab as a space, and its interword space is about a third of an em.
+    fig, ct = _flat_label(f"a{ws}b", usetex=True)
+    em_px = fig.canvas.get_renderer().points_to_pixels(16)
+    assert ct._segments[1]._width_px == pytest.approx(em_px / 3, rel=0.1)
+    plt.close(fig)
+
+
+@needs_latex
+def test_usetex_keyword_matches_rcparam():
+    # A usetex keyword is forwarded to every segment and must select the same
+    # layout, for both advance and outline, as the global rcParam. Paths are
+    # read inside each label's own rcParam context, as a draw would.
+    import matplotlib as mpl
+
+    def placed(fig, ct):
+        renderer = fig.canvas.get_renderer()
+        paths = [seg._placed_path(renderer) for seg in ct._segments]
+        return [p.vertices for p in paths if p is not None]
+
+    fig_kw, by_kwarg = _flat_label("ab $x$", usetex=True)
+    kw_paths = placed(fig_kw, by_kwarg)
+    with mpl.rc_context({"text.usetex": True}):
+        fig_rc, by_rc = _flat_label("ab $x$")
+        rc_paths = placed(fig_rc, by_rc)
+    # "a", "b", and "$x$" draw; the space does not.
+    assert len(kw_paths) == len(rc_paths) == 3
+    for kw, rc in zip(kw_paths, rc_paths):
+        np.testing.assert_allclose(kw, rc)
+    plt.close(fig_kw)
+    plt.close(fig_rc)
+
+
+@needs_latex
+def test_usetex_plain_text_is_literal():
+    # A plain glyph is one literal character, so every TeX markup character
+    # must advance and draw instead of vanishing as a comment or stopping the
+    # LaTeX run. The label holds a single "$", so it stays plain text. A
+    # dollar sign drawn from a fixed-size layout came out about a third of its
+    # height, so its ink is also checked against a plain "S".
+    fig, ct = _flat_label("S" + "".join(_CHAR_TO_TEX), usetex=True)
+    for seg in ct._segments:
+        assert seg._width_px > 0, seg._char
+        assert len(seg._outline_units()[0]) > 0, seg._char
+    renderer = fig.canvas.get_renderer()
+    dollar, s = _ink(ct, renderer, "$"), _ink(ct, renderer, "S")
+    assert dollar.height == pytest.approx(s.height, rel=0.25)
+    plt.close(fig)
+
+
+@needs_latex
+@pytest.mark.parametrize("char, ot1_twin", [("<", "!"), (">", "?")])
+def test_usetex_relation_sign_is_not_ot1_punctuation(char, ot1_twin):
+    # In TeX's default OT1 encoding "<" and ">" typeset as an inverted "!" and
+    # "?", as narrow as their twins; escaped, they are full-width relation signs.
+    fig, ct = _flat_label(char + ot1_twin, usetex=True)
+    sign, twin = ct._segments
+    assert sign._width_px > 1.3 * twin._width_px
+    plt.close(fig)
+
+
+@needs_latex
+def test_usetex_bar_is_not_ot1_dash():
+    # In OT1 "|" typesets as an em dash, which is wide and flat; the escaped
+    # \textbar is a tall vertical bar.
+    fig, ct = _flat_label("|", usetex=True)
+    ink = _ink(ct, fig.canvas.get_renderer(), "|")
+    assert ink.height > 2 * ink.width
+    plt.close(fig)
+

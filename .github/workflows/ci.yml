@@ -10,8 +10,10 @@ env:
   # TeX packages for the usetex tests, defined once for every job that installs
   # LaTeX so the jobs cannot drift apart. matplotlib's usetex preamble loads
   # type1cm (texlive-latex-extra) and type1ec (cm-super). Outlines are read from
-  # the DVI file, so dvipng and dvips are not needed.
-  TEX_PACKAGES: texlive-latex-extra cm-super
+  # the DVI file, so dvipng and dvips are not needed. lmodern and
+  # texlive-fonts-recommended (Times and Helvetica) let the valign tests run
+  # their preamble-font cases.
+  TEX_PACKAGES: texlive-latex-extra cm-super lmodern texlive-fonts-recommended
 
 jobs:
   lint:
@@ -58,9 +60,9 @@ jobs:
 
   # The matplotlib floor declared in pyproject.toml. Mathtext support relies on
   # get_glyphs_mathtext, Path.code_type, and the parse_math kwarg, and usetex
-  # support on TextToPath.get_glyphs_tex and the TextToPath.FONT_SCALE
-  # attribute, all present since 3.5; pin the floor and prove the suite passes
-  # against it.
+  # support on TextToPath.get_glyphs_tex, the TextToPath.FONT_SCALE attribute,
+  # and TexManager.get_text_width_height_descent, all present since 3.5; pin the
+  # floor and prove the suite passes against it.
   floor:
     runs-on: ubuntu-latest
     steps:
@@ -90,14 +92,23 @@ jobs:
       - name: Check the usetex toolchain
         # Render through the same TextToPath call the library uses, including
         # the escaped markup characters it emits, so a missing TeX package fails
-        # here rather than only in the usetex tests.
+        # here rather than only in the usetex tests. The valign tests skip a
+        # preamble font whose files are missing, so check those files here too,
+        # where a missing one fails instead of turning its cases into skips.
         run: |
           python - <<'EOF'
+          import subprocess
           from matplotlib.font_manager import FontProperties
           from matplotlib.textpath import TextToPath
           s = r"a\% \textless{}\textgreater{}\textbar{}\textbackslash{}\textasciitilde{} $\sqrt{x}$"
           verts, _ = TextToPath().get_text_path(FontProperties(), s, ismath="TeX")
           assert len(verts) > 0
+          files = ["cmtt12.pfb", "lmodern.sty", "lmss17.pfb", "times.sty",
+                   "utmr8a.pfb", "helvet.sty", "uhvr8a.pfb"]
+          for name in files:
+              found = subprocess.run(["kpsewhich", name], capture_output=True,
+                                     text=True).stdout.strip()
+              assert found, f"kpsewhich cannot find {name}"
           EOF
       - name: Run tests
         run: pytest -q
@@ -126,9 +137,9 @@ jobs:
       - name: Install LaTeX
         # The usetex path goes through TextToPath.get_glyphs_tex and
         # matplotlib's DVI reader, whose behavior changes between releases, so
-        # run the usetex tests against the newest matplotlib too. A package
-        # missing here fails the usetex tests rather than skipping them, so the
-        # floor job's toolchain check is not repeated.
+        # run the usetex tests against the newest matplotlib too. The package
+        # list is shared with the floor job, whose toolchain check proves it,
+        # so the check is not repeated here.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $TEX_PACKAGES

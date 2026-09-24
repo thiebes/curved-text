@@ -15,6 +15,7 @@ import matplotlib.text as mtext
 import numpy as np
 from matplotlib.patheffects import PathEffectRenderer
 from matplotlib.path import Path
+from matplotlib.texmanager import TexManager
 from matplotlib.textpath import TextToPath
 from matplotlib.transforms import IdentityTransform
 
@@ -70,10 +71,25 @@ _CHAR_TO_TEX = {
 # space would advance zero. TeX itself reads a tab as a space.
 _TEX_SPACE = r"\rule{1sp}{1sp}\ \rule{1sp}{1sp}"
 
+# TeX source whose height and depth stand for the ascender and descender lines
+# under usetex. Parentheses reach the ascender line, and "g" and "y" reach the
+# descender line where the parentheses stop short of it, as in typewriter fonts
+# and Times. TeX sizes the box from the font's own metrics, so the lines follow
+# whichever font the preamble, family, and size select, at the scale LaTeX
+# draws it.
+_TEX_LINE_PROBE = "()gy"
+
 
 class _Run(NamedTuple):
     is_math: bool
     text: str
+
+
+class _FontLines(NamedTuple):
+    """Ascender and descender heights above the baseline, in 1/100-em layout
+    units. The descender lies below the baseline, so it is negative."""
+    ascender: float
+    descender: float
 
 
 def _split_runs(text: str) -> list[_Run]:
@@ -120,7 +136,41 @@ def _box_config(box: bool | str | dict) -> dict | None:
     return config
 
 
-def _valign_datum(valign: str, prop: font_manager.FontProperties) -> float:
+def _font_lines(prop: font_manager.FontProperties, *,
+                usetex: bool) -> _FontLines:
+    """The ascender and descender lines of the font the text is drawn in.
+
+    Without usetex that is the matplotlib font ``prop`` names, whose lines are
+    the ascender and descender FreeType reports. Under usetex it is the TeX font
+    LaTeX sets the text in (:func:`_tex_font_lines`).
+    """
+    if usetex:
+        return _tex_font_lines(prop.get_size_in_points())
+    font = font_manager.get_font(font_manager.findfont(prop))
+    units = _text_to_path.FONT_SCALE / font.units_per_EM
+    return _FontLines(font.ascender * units, font.descender * units)
+
+
+def _tex_font_lines(size: float) -> _FontLines:
+    """The ascender and descender lines of the TeX font LaTeX sets text in at
+    ``size`` points: the height and depth TeX gives ``_TEX_LINE_PROBE``.
+
+    LaTeX chooses that font from the preamble, the font family, and the size
+    (cmss8 at 8 pt, cmss17 at 30 pt), and TeX takes the box from the font's
+    metrics at the size it draws the font, so a font the preamble loads scaled
+    (``helvet`` with ``scaled=0.92``) yields lines scaled with its glyphs. The
+    measurement is matplotlib's own for usetex text, and after the first draw it
+    reads LaTeX's cached DVI file. matplotlib reports the height including the
+    depth, in the units usetex glyph outlines are laid out in
+    (:func:`_tex_to_path`).
+    """
+    _, height, depth = TexManager().get_text_width_height_descent(
+        _TEX_LINE_PROBE, size)
+    units = _text_to_path.FONT_SCALE / size
+    return _FontLines((height - depth) * units, -depth * units)
+
+
+def _valign_datum(valign: str, lines: _FontLines) -> float:
     """Height above the baseline, in 1/100-em layout units, that rides the curve
     for the given vertical alignment.
 
@@ -132,18 +182,11 @@ def _valign_datum(valign: str, prop: font_manager.FontProperties) -> float:
     """
     if valign == "baseline":
         return 0.0
-    font = font_manager.get_font(font_manager.findfont(prop))
-    upm = font.units_per_EM
-    # FreeType reports the ascender above the baseline (positive) and the
-    # descender below it (negative); both keep their sign, so "center" is the
-    # signed midpoint and "descender" returns a negative datum.
-    ascender = font.ascender / upm * _text_to_path.FONT_SCALE
-    descender = font.descender / upm * _text_to_path.FONT_SCALE
     if valign == "ascender":
-        return ascender
+        return lines.ascender
     if valign == "descender":
-        return descender
-    return (ascender + descender) / 2.0  # "center"
+        return lines.descender
+    return (lines.ascender + lines.descender) / 2.0  # "center"
 
 
 class _CurveFrame:
@@ -584,10 +627,12 @@ class CurvedText(mtext.Text):
     characters that are TeX markup (such as ``%``, ``#``, and the backslash) are
     escaped, so TeX commands work only inside ``$...$``. Plain text is limited to
     characters the LaTeX preamble can typeset; the README shows how to declare
-    upright Greek letters there. The ``valign`` datum comes from the matplotlib
-    font's metrics, so alignments other than ``"baseline"`` are approximate under
-    LaTeX. The first draw runs LaTeX once for each distinct character and math
-    run, which can take seconds; later draws reuse matplotlib's cache.
+    upright Greek letters there. The ``valign`` ascender and descender lines are
+    the height and depth TeX gives ``()gy`` in the font it sets the text in. The
+    first draw runs LaTeX once for each distinct character and math run, and
+    once more to measure those lines, which every ``valign`` but ``"baseline"``
+    and the ``box`` casing use; this can take seconds, and later draws
+    reuse matplotlib's cache.
 
     Both plain glyphs and mathtext runs are rendered from their glyph outlines
     rather than as hinted ``Text`` artists. On a rotated label this is what lets a
@@ -784,11 +829,19 @@ class CurvedText(mtext.Text):
             return
         inv = axes.transData.inverted()
 
-        # The vertical-alignment datum is a font-metric constant (size
-        # independent) and identical for every segment, so derive it once here
-        # and hand it to each segment rather than re-deriving it per glyph.
+        # The vertical-alignment datum is a font-metric constant, identical for
+        # every segment, so derive it once here and hand it to each segment
+        # rather than re-deriving it per glyph. Every alignment but the baseline
+        # is a font line, and so is the box casing's centre, which follows the
+        # "center" line while the frame follows the chosen one. Measuring the
+        # lines runs LaTeX under usetex, so a baseline label without a casing
+        # never measures them.
         prop = self.get_fontproperties()
-        datum = _valign_datum(self._valign, prop)
+        datum = band = 0.0
+        if self._valign != "baseline" or self._box is not None:
+            lines = _font_lines(prop, usetex=self.get_usetex())
+            datum = _valign_datum(self._valign, lines)
+            band = _valign_datum("center", lines) - datum
 
         # Measure each segment's unrotated advance width and height. Segments
         # render their own outlines and never set a Text rotation, so the window
@@ -824,10 +877,7 @@ class CurvedText(mtext.Text):
         if self._box is not None:
             ppu = (renderer.points_to_pixels(prop.get_size_in_points())
                    / _text_to_path.FONT_SCALE)
-            # The glyph band's ink centre rides the "center" datum; the frame
-            # rides the chosen ``valign`` datum, so shift the casing centreline by
-            # the gap between the two so it covers the ink, not the bare datum.
-            band_px = (_valign_datum("center", prop) - datum) * ppu
+            band_px = band * ppu
             s_box = np.linspace(cursor, cursor + total, _BOX_SAMPLES)
             bx, by, bang = frame.points_and_angles(s_box)
             bx = bx - band_px * np.sin(bang)

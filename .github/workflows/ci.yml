@@ -61,8 +61,8 @@ jobs:
   # The matplotlib floor declared in pyproject.toml. Mathtext support relies on
   # get_glyphs_mathtext, Path.code_type, and the parse_math kwarg, and usetex
   # support on TextToPath.get_glyphs_tex, the TextToPath.FONT_SCALE attribute,
-  # TexManager.make_dvi, and the height and descent of a dviread.Dvi page, all
-  # present since 3.5; pin the floor and prove the suite passes against it.
+  # and TexManager.get_text_width_height_descent, all present since 3.5; pin the
+  # floor and prove the suite passes against it.
   floor:
     runs-on: ubuntu-latest
     steps:
@@ -137,9 +137,9 @@ jobs:
       - name: Install LaTeX
         # The usetex path goes through TextToPath.get_glyphs_tex and
         # matplotlib's DVI reader, whose behavior changes between releases, so
-        # run the usetex tests against the newest matplotlib too. A package
-        # missing here fails the usetex tests rather than skipping them, so the
-        # floor job's toolchain check is not repeated.
+        # run the usetex tests against the newest matplotlib too. The package
+        # list is shared with the floor job, whose toolchain check proves it,
+        # so the check is not repeated here.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $TEX_PACKAGES

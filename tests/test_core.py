@@ -4,6 +4,7 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 """
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
+import functools
 import shutil
 import subprocess
 
@@ -1143,44 +1144,37 @@ def test_usetex_bar_is_not_ot1_dash():
     plt.close(fig)
 
 
+@functools.cache
 def _has_tex_files(*names):
-    """Whether kpsewhich finds every one of the TeX files ``names``."""
-    if shutil.which("kpsewhich") is None:
-        return False
+    """Whether kpsewhich finds every one of the TeX files ``names``. Called from
+    inside tests, so collecting the module never runs kpsewhich."""
     found = subprocess.run(["kpsewhich", *names], capture_output=True,
                            text=True).stdout.splitlines()
     return len([path for path in found if path]) == len(names)
 
 
-def _tex_font_case(case_id, rc, *tex_files):
-    """A usetex font setup, skipped when its TeX packages are not installed."""
-    marks = pytest.mark.skipif(not _has_tex_files(*tex_files),
-                               reason=f"needs {', '.join(tex_files)}")
-    return pytest.param(rc, id=case_id, marks=marks)
-
-
+# Usetex font setups, each with the TeX files its package draws from.
 _TEX_FONT_CASES = [
-    pytest.param({}, id="computer-modern"),
-    _tex_font_case("typewriter", {"font.family": "monospace"}, "cmtt12.pfb"),
-    _tex_font_case(
-        "latin-modern",
+    pytest.param({}, (), id="computer-modern"),
+    pytest.param({"font.family": "monospace"}, ("cmtt12.pfb",), id="typewriter"),
+    pytest.param(
         {"text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{lmodern}"},
-        "lmodern.sty", "lmss17.pfb"),
-    _tex_font_case(
-        "times", {"text.latex.preamble": r"\usepackage{times}",
-                  "font.family": "serif"},
-        "times.sty", "utmr8a.pfb"),
-    _tex_font_case(
-        "helvetica-scaled",
+        ("lmodern.sty", "lmss17.pfb"), id="latin-modern"),
+    pytest.param(
+        {"text.latex.preamble": r"\usepackage{times}", "font.family": "serif"},
+        ("times.sty", "utmr8a.pfb"), id="times"),
+    pytest.param(
         {"text.latex.preamble": r"\usepackage[scaled=0.92]{helvet}"},
-        "helvet.sty", "uhvr8a.pfb"),
+        ("helvet.sty", "uhvr8a.pfb"), id="helvetica-scaled"),
 ]
 
 
 @needs_latex
-@pytest.mark.parametrize("rc", _TEX_FONT_CASES)
+@pytest.mark.parametrize("rc, tex_files", _TEX_FONT_CASES)
 @pytest.mark.parametrize("valign", ["center", "ascender", "descender"])
-def test_usetex_valign_follows_the_drawn_font(valign, rc):
+def test_usetex_valign_follows_the_drawn_font(valign, rc, tex_files):
+    if tex_files and not _has_tex_files(*tex_files):
+        pytest.skip(f"needs {', '.join(tex_files)}")
     # Under usetex the text is drawn in a TeX font chosen by the preamble, so the
     # valign lines must come from that font as LaTeX draws it. TeX sizes the box
     # of "()gy" from the font's metrics, and its ink reaches within 0.02 em of

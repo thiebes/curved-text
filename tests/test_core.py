@@ -5,7 +5,9 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
 import shutil
+import subprocess
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -531,7 +533,7 @@ def test_math_run_straight_line_reduces_to_affine():
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
     verts, _ = run._outline_units()
-    datum = _valign_datum(ct._valign, run.get_fontproperties())
+    datum = _valign_datum(ct._valign, run.get_fontproperties(), usetex=False)
     per_unit = renderer.points_to_pixels(14.0) / 100.0
     # A horizontal curve maps data x to pixels linearly, so arc length s lands
     # at first_px + s; the run's left edge is at arc length run._s_left.
@@ -617,7 +619,7 @@ def test_math_run_follows_tight_arc():
     # different reference frame (the box midpoint, not the baseline) and only
     # happened to sit just above the true reach.
     verts, _ = run._outline_units()
-    datum = _valign_datum(ct._valign, run.get_fontproperties())
+    datum = _valign_datum(ct._valign, run.get_fontproperties(), usetex=False)
     px_per_unit = (renderer.points_to_pixels(run.get_fontsize())
                    / _text_to_path.FONT_SCALE)
     reach = np.abs(verts[:, 1] - datum).max() * px_per_unit
@@ -912,26 +914,34 @@ def test_valign_rejects_unknown_value():
     plt.close(fig)
 
 
-def test_valign_shifts_label_perpendicular_uniformly():
+@pytest.mark.parametrize("family, ascender_em", [
+    ("DejaVu Sans", 1901 / 2048),
+    ("STIXGeneral", 1055 / 1000),
+])
+def test_valign_shifts_label_perpendicular_uniformly(family, ascender_em):
     # valign picks which line rides the curve. On a straight horizontal guide,
     # "ascender" puts the label below "baseline" (its ascender line is pulled down
     # onto the curve), and the shift is the same constant for every glyph -- the
-    # datum is a font metric, not a per-glyph box, so it introduces no step.
+    # datum is a font metric, not a per-glyph box, so it introduces no step. The
+    # shift is the ascender of the font the label names, which differs between
+    # the default DejaVu Sans and STIXGeneral.
     fig, ax = plt.subplots()
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 100)
     y = np.full_like(x, 5.0)
-    base = curved_text(ax, x, y, "nnnn", pos=0.5, fontsize=20, valign="baseline")
-    asc = curved_text(ax, x, y, "nnnn", pos=0.5, fontsize=20, valign="ascender")
+    kwargs = dict(pos=0.5, fontsize=20, fontfamily=family)
+    base = curved_text(ax, x, y, "nnnn", valign="baseline", **kwargs)
+    asc = curved_text(ax, x, y, "nnnn", valign="ascender", **kwargs)
     _draw(fig)
     r = fig.canvas.get_renderer()
     shifts = np.array([
         sa._placed_path(r).vertices.mean(axis=0)[1]
         - sb._placed_path(r).vertices.mean(axis=0)[1]
         for sb, sa in zip(base._segments, asc._segments)])
-    assert np.all(shifts < 0.0)        # ascender placement sits lower
     assert shifts.std() < 0.5          # identical shift per glyph: no step
+    em_px = r.points_to_pixels(20)
+    assert shifts.mean() == pytest.approx(-ascender_em * em_px, abs=0.005 * em_px)
     plt.close(fig)
 
 
@@ -1074,8 +1084,6 @@ def test_usetex_keyword_matches_rcparam():
     # A usetex keyword is forwarded to every segment and must select the same
     # layout, for both advance and outline, as the global rcParam. Paths are
     # read inside each label's own rcParam context, as a draw would.
-    import matplotlib as mpl
-
     def placed(fig, ct):
         renderer = fig.canvas.get_renderer()
         paths = [seg._placed_path(renderer) for seg in ct._segments]
@@ -1132,22 +1140,65 @@ def test_usetex_bar_is_not_ot1_dash():
     plt.close(fig)
 
 
+def _has_tex_files(*names):
+    """Whether kpsewhich finds every one of the TeX files ``names``."""
+    if shutil.which("kpsewhich") is None:
+        return False
+    found = subprocess.run(["kpsewhich", *names], capture_output=True,
+                           text=True).stdout.splitlines()
+    return len([path for path in found if path]) == len(names)
+
+
+def _tex_font_case(case_id, rc, *tex_files):
+    """A usetex font setup, skipped when its TeX packages are not installed."""
+    marks = pytest.mark.skipif(not _has_tex_files(*tex_files),
+                               reason=f"needs {', '.join(tex_files)}")
+    return pytest.param(rc, id=case_id, marks=marks)
+
+
+# Computer Modern runs first, so the later cases also show that the measured
+# lines follow a preamble changed within one session.
+_TEX_FONT_CASES = [
+    pytest.param({}, id="computer-modern"),
+    _tex_font_case(
+        "latin-modern",
+        {"text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{lmodern}"},
+        "lmodern.sty", "lmss17.pfb"),
+    _tex_font_case(
+        "times", {"text.latex.preamble": r"\usepackage{times}",
+                  "font.family": "serif"},
+        "times.sty", "utmr8a.pfb"),
+    _tex_font_case(
+        "helvetica-scaled",
+        {"text.latex.preamble": r"\usepackage[scaled=0.92]{helvet}"},
+        "helvet.sty", "uhvr8a.pfb"),
+]
+
+
 @needs_latex
-@pytest.mark.parametrize("valign", ["center", "ascender"])
-def test_usetex_valign_follows_the_drawn_font(valign):
-    # Under usetex the text is drawn in a TeX font, whose proportions differ
-    # from the matplotlib font's. Computer Modern parentheses span that font's
-    # ascender and descender lines, so on a flat curve they straddle it evenly
-    # under "center" and reach it at the top under "ascender". A datum taken
-    # from the matplotlib font (DejaVu Sans) misses by 0.09 em and 0.18 em.
-    fig, ct = _flat_label("()", fontsize=30, usetex=True, valign=valign)
-    renderer = fig.canvas.get_renderer()
-    ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
+@pytest.mark.parametrize("rc", _TEX_FONT_CASES)
+@pytest.mark.parametrize("valign", ["center", "ascender", "descender"])
+def test_usetex_valign_follows_the_drawn_font(valign, rc):
+    # Under usetex the text is drawn in a TeX font chosen by the preamble, so the
+    # valign lines must come from that font as LaTeX draws it. TeX sizes the box
+    # of a pair of parentheses from the font's metrics, and their ink reaches
+    # within 0.02 em of it, so on a flat curve the parentheses straddle it under
+    # "center" and touch it at the top or bottom under "ascender" or
+    # "descender". The cases catch the ways a datum can miss the drawn font:
+    # the matplotlib font (DejaVu Sans, off by 0.18 em at the ascender), the
+    # font file's bounding box (Latin Modern's is 0.4 em taller than its
+    # letters), a font the preamble loads scaled (Helvetica at 0.92), and lines
+    # cached from an earlier preamble (Times after Computer Modern).
+    with mpl.rc_context(rc):
+        fig, ct = _flat_label("()", fontsize=30, usetex=True, valign=valign)
+        renderer = fig.canvas.get_renderer()
+        ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
     top = max(e.y1 for e in ink)
     bottom = min(e.y0 for e in ink)
-    edge = {"center": (top + bottom) / 2.0, "ascender": top}[valign]
+    edge = {"center": (top + bottom) / 2.0, "ascender": top,
+            "descender": bottom}[valign]
     curve_y = ct.axes.transData.transform((5.0, 5.0))[1]
     em_px = renderer.points_to_pixels(30)
-    assert edge == pytest.approx(curve_y, abs=0.02 * em_px)
+    assert edge == pytest.approx(curve_y, abs=0.025 * em_px)
     plt.close(fig)
 

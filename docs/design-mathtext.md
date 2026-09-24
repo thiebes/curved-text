@@ -177,22 +177,27 @@ matplotlib measures, and a fourth puts the `valign` lines on the drawn font.
   measures zero wide. Whitespace (TeX reads a tab as a space) is typeset as an
   interword space between two 1sp rules, which measures the true interword
   width.
-- **`valign` reads the drawn font.** The datum is the FreeType ascender and
-  descender of the font the text is drawn in, under usetex as without it.
-  Under usetex that is the Type 1 TeX font LaTeX sets plain text in, chosen by
-  the preamble, font family, and size; the matplotlib font that the label's
-  font properties name is never drawn. `_drawn_font` typesets one letter and follows its DVI font
-  to the file through the pdfTeX font map, using public `dviread` API
-  (`Dvi`, `PsfontsMap`, `find_tex_file`) that behaves alike from matplotlib 3.5
-  on. The result is cached on `TexManager.get_basefile`, a hash of the full
-  LaTeX source, so it is looked up once per preamble, family, and size. The
-  TeX-reported height and depth of a reference string such as `()` were
-  considered instead. They agree with the font file for Computer Modern (0.747
-  and -0.249 em against 0.759 and -0.250 em) but not for fonts loaded through
-  the preamble: for Times, Helvetica, and Palatino the parentheses give an
-  ascender of 0.68 to 0.73 em where the font file gives 0.92 to 0.95 em. Reading
-  the font file keeps one definition for every font, so a Helvetica label under
-  usetex rides the curve like a DejaVu Sans label without it.
+- **`valign` reads the drawn font.** The `valign` lines must come from the
+  font the text is drawn in, and under usetex that is a TeX font chosen by the
+  preamble, font family, and size; the matplotlib font that the label's font
+  properties name is never drawn. The ascender and descender lines are the
+  height and depth TeX gives a pair of parentheses (`_tex_font_lines`), read
+  from the DVI page with public `dviread` API that behaves alike from
+  matplotlib 3.5 on. TeX takes that box from the font's metrics at the size it
+  draws the font, so a font the preamble loads scaled (`helvet` with
+  `scaled=0.92`) gets lines scaled with its glyphs, and the page is in the same
+  units as the usetex glyph outlines. The DVI file is named by a hash of the
+  full LaTeX source, so caching on its path measures once per preamble,
+  family, and size. The parentheses' box tracks each font's designed
+  ascender: 0.675 em for Times and 0.728 em for Helvetica, against 0.683 and
+  0.729 em in their AFM files. Reading the Type 1 font file through FreeType
+  was considered instead and rejected. FreeType reports a Type 1 font's
+  bounding box as its ascender and descender, which depends on the glyphs the
+  file contains, not on the letters' design: Latin Modern Sans draws the same
+  letters as Computer Modern Sans, but its file reports an ascender of 1.159 em
+  against 0.758 em. Without usetex the lines stay the ascender and descender
+  FreeType reads from the matplotlib font, which for a TrueType font such as
+  DejaVu Sans is the designed value, not the bounding box.
 
 ## Path effects
 
@@ -267,10 +272,14 @@ fontsize pass-through), two tests carry the design:
 - Usetex design match: the ink-to-advance ratio of a plain glyph is the same at
   8 pt and 30 pt, which fails if the outline is laid out at a size other than
   the one measured.
-- Usetex `valign`: Computer Modern parentheses span the font's ascender and
-  descender lines, so they straddle the curve under `"center"` and touch it at
-  the top under `"ascender"`. Both fail when the datum comes from the
-  matplotlib font.
+- Usetex `valign`: parentheses straddle a flat curve under `"center"` and touch
+  it at the top or bottom under `"ascender"` or `"descender"`, for Computer
+  Modern, Latin Modern, Times, and Helvetica loaded at `scaled=0.92`. The cases
+  fail when the lines come from the matplotlib font, from a Type 1 font file's
+  bounding box, from the unscaled font, or from a cache that misses a preamble
+  change.
+- `valign` without usetex: the `"ascender"` shift equals the ascender of the
+  font the label names, for DejaVu Sans and for STIXGeneral.
 
 ## Deferred
 

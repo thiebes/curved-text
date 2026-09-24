@@ -159,9 +159,13 @@ matplotlib measures, and a fourth puts the `valign` lines on the drawn font.
   8 pt, cmss12 at 12 pt). `TextToPath` runs LaTeX at its fixed 100 pt
   `FONT_SCALE`, which would draw a different design from the one measured:
   thinner letters with loose tracking on small labels. `_tex_to_path(size)`
-  returns a converter whose public `FONT_SCALE` is the label size, and the
-  outline is rescaled to 1/100-em units. The measurement and the outline then
-  share one cached LaTeX run.
+  returns a converter whose public `FONT_SCALE` is the label size. The
+  measurement and the outline then share one cached LaTeX run. The converter
+  loads usetex glyphs with FreeType hinting on a grid of `FONT_SCALE` points at
+  its public `DPI`, and at the default 72 dpi a 10 pt label is hinted on a
+  10-pixel em, which snaps an x-height of 0.44 em to 0.50 em. The converter's
+  `DPI` is therefore set so the em spans 100 pixels at every size. The hinting
+  is then negligible, and the outline comes out in 1/100-em layout units.
 - **Plain text is literal.** Each plain character is its own segment, so TeX
   commands cannot span plain text anyway. A plain glyph's text is the
   character's literal TeX source (`_tex_source`): markup characters are escaped,

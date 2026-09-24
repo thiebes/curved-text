@@ -135,6 +135,11 @@ usetex text. A LaTeX installation is required, as for any usetex figure.
 curved_text(ax, x, y, r"yield 50% at $\sqrt{\bar{\sigma}_G}$", usetex=True)
 ```
 
+The figure below sets the rcParam, so the tick labels, the axis labels, and the
+labels along the curves share one LaTeX face.
+
+![Cooling curves labelled along their paths, with every text typeset by LaTeX](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
+
 Plain text is typeset literally, one character at a time: `%`, `#`, `&`, and
 the other TeX markup characters print as themselves, and TeX commands work only
 inside `$...$`. This differs from matplotlib's own usetex text, where

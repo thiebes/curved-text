@@ -56,6 +56,18 @@ stay connected and follow the curve. Plain and math runs mix in one string.
 
 [example_10_mathtext.py](example_10_mathtext.py)
 
+### LaTeX typesets the labels under usetex
+
+With matplotlib's `text.usetex` rcParam on, LaTeX typesets the curved labels as
+it does the tick and axis labels, so the whole figure reads in one face. This is
+the direct-labeling figure drawn under usetex. The script needs `latex`, and
+`dvipng` for the tick and axis labels, as any matplotlib usetex figure does, and
+skips the figure without them.
+
+![Cooling curves labelled along their paths, with every text typeset by LaTeX](images/16_usetex.png)
+
+[example_16_usetex.py](example_16_usetex.py)
+
 ## The three placement controls
 
 `pos`, `anchor`, and `offset` are independent. Each small-multiple below varies

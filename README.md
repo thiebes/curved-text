@@ -139,8 +139,9 @@ Plain text is typeset literally, one character at a time: `%`, `#`, `&`, and
 the other TeX markup characters print as themselves, and TeX commands work only
 inside `$...$`. This differs from matplotlib's own usetex text, where
 `r"50\%"` is needed for a percent sign. The first draw runs LaTeX once for each
-distinct character and math run, which can take several seconds; later draws
-are cached.
+distinct character and math run, and once more to measure the font's ascender
+and descender lines, which every `valign` but `"baseline"` and the `box` casing
+use. This can take several seconds; later draws are cached.
 
 Plain text is limited to characters the LaTeX preamble can typeset. A Greek
 letter in a math run (`$\lambda$`) is italic, as a variable should be. For an

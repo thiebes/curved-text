@@ -918,6 +918,7 @@ def test_valign_rejects_unknown_value():
     plt.close(fig)
 
 
+# Ascender over units per em, from the font files matplotlib bundles.
 @pytest.mark.parametrize("family, ascender_em", [
     ("DejaVu Sans", 1901 / 2048),
     ("STIXGeneral", 1055 / 1000),

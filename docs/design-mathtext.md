@@ -177,27 +177,33 @@ matplotlib measures, and a fourth puts the `valign` lines on the drawn font.
   measures zero wide. Whitespace (TeX reads a tab as a space) is typeset as an
   interword space between two 1sp rules, which measures the true interword
   width.
-- **`valign` reads the drawn font.** The `valign` lines must come from the
-  font the text is drawn in, and under usetex that is a TeX font chosen by the
-  preamble, font family, and size; the matplotlib font that the label's font
-  properties name is never drawn. The ascender and descender lines are the
-  height and depth TeX gives a pair of parentheses (`_tex_font_lines`), read
-  from the DVI page with public `dviread` API that behaves alike from
-  matplotlib 3.5 on. TeX takes that box from the font's metrics at the size it
-  draws the font, so a font the preamble loads scaled (`helvet` with
-  `scaled=0.92`) gets lines scaled with its glyphs, and the page is in the same
-  units as the usetex glyph outlines. The DVI file is named by a hash of the
-  full LaTeX source, so caching on its path measures once per preamble,
-  family, and size. The parentheses' box tracks each font's designed
-  ascender: 0.675 em for Times and 0.728 em for Helvetica, against 0.683 and
-  0.729 em in their AFM files. Reading the Type 1 font file through FreeType
-  was considered instead and rejected. FreeType reports a Type 1 font's
-  bounding box as its ascender and descender, which depends on the glyphs the
-  file contains, not on the letters' design: Latin Modern Sans draws the same
-  letters as Computer Modern Sans, but its file reports an ascender of 1.159 em
-  against 0.758 em. Without usetex the lines stay the ascender and descender
-  FreeType reads from the matplotlib font, which for a TrueType font such as
-  DejaVu Sans is the designed value, not the bounding box.
+- **`valign` reads the drawn font.** Under usetex the text is drawn in a TeX
+  font chosen by the preamble, font family, and size, never in the matplotlib
+  font the label's font properties name, so the `valign` lines come from TeX.
+  The ascender and descender lines are the height and depth TeX gives `()gy`
+  (`_tex_font_lines`), measured once per draw with matplotlib's own
+  `TexManager.get_text_width_height_descent`. The parentheses reach the
+  ascender line, and `g` and `y` reach the descender line in fonts whose
+  parentheses stop short of it, such as typewriter fonts and Times. TeX takes
+  the box from the font's metrics at the size it draws the font, so a font the
+  preamble loads scaled (`helvet` with `scaled=0.92`) gets lines scaled with
+  its glyphs.
+
+The box of `()gy` tracks each font's designed lines. For Times and Helvetica it
+gives ascenders of 0.675 and 0.728 em and descenders of -0.216 and -0.212 em,
+against 0.683, 0.729, -0.217, and -0.218 em in their AFM files. Reading the
+Type 1 font file through FreeType was rejected. FreeType reports a Type 1 font's
+bounding box as its ascender and descender, which depends on the glyphs the
+file contains, not on the letters' design: Latin Modern Sans draws the same
+letters as Computer Modern Sans, but its file reports an ascender of 1.159 em
+against 0.758 em.
+
+Without usetex the lines are the ascender and descender FreeType reads from the
+matplotlib font. For a TrueType font such as DejaVu Sans that is the ascender
+the font's designer set for line spacing (0.928 em), about 0.17 em above the
+tops of its letters. The two modes therefore place `"ascender"` differently
+against the letters: without usetex the curve runs a little above the tallest
+letters, and under usetex it touches them.
 
 ## Path effects
 
@@ -257,7 +263,7 @@ reads on top.
 
 Beyond ports of the existing behavioral suite (ordering, offset, dpi
 invariance, overrun, idempotent redraw, degenerate curve, zorder, remove,
-fontsize pass-through), two tests carry the design:
+fontsize pass-through), these tests carry the design:
 
 - Straight-line equivalence: the placed path of a math run on a straight
   horizontal curve reduces to a plain affine reconstructed from its own layout.
@@ -272,15 +278,15 @@ fontsize pass-through), two tests carry the design:
 - Usetex design match: the ink-to-advance ratio of a plain glyph is the same at
   8 pt and 30 pt, which fails if the outline is laid out at a size other than
   the one measured.
-- Usetex `valign`: parentheses straddle a flat curve under `"center"` and touch
-  it at the top or bottom under `"ascender"` or `"descender"`, for Computer
-  Modern, Latin Modern, Times, and Helvetica loaded at `scaled=0.92`. The cases
-  fail when the lines come from the matplotlib font, from a Type 1 font file's
-  bounding box, from the unscaled font, or from a cache that misses a preamble
-  change.
-- Usetex `box`: the casing centreline sits midway between the parentheses' top
-  and bottom under every `valign`, which fails when the casing takes its centre
-  line from the matplotlib font instead of the drawn one.
+- Usetex `valign`: a `()gy` label straddles a flat curve under `"center"` and
+  touches it at the top or bottom under `"ascender"` or `"descender"`, for
+  Computer Modern, its typewriter font, Latin Modern, Times, and Helvetica
+  loaded at `scaled=0.92`. The cases fail when the lines come from the
+  matplotlib font, from a Type 1 font file's bounding box, from the unscaled
+  font, or from parentheses alone.
+- Usetex `box`: the casing centreline sits midway between the top and bottom of
+  `()gy` under every `valign`, which fails when the casing takes its centre line
+  from the matplotlib font instead of the drawn one.
 - `valign` without usetex: the `"ascender"` shift equals the ascender of the
   font the label names, for DejaVu Sans and for STIXGeneral.
 

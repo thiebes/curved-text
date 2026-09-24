@@ -628,10 +628,10 @@ class CurvedText(mtext.Text):
     escaped, so TeX commands work only inside ``$...$``. Plain text is limited to
     characters the LaTeX preamble can typeset; the README shows how to declare
     upright Greek letters there. The ``valign`` ascender and descender lines are
-    the height and depth TeX gives a pair of parentheses in the font it sets the
-    text in. The first draw runs LaTeX once for each distinct character and math
-    run, and once more to measure those lines when ``valign`` is not
-    ``"baseline"`` or ``box`` is set; this can take seconds, and later draws
+    the height and depth TeX gives ``()gy`` in the font it sets the text in. The
+    first draw runs LaTeX once for each distinct character and math run, and
+    once more to measure those lines, which every ``valign`` but ``"baseline"``
+    and the ``box`` casing use; this can take seconds, and later draws
     reuse matplotlib's cache.
 
     Both plain glyphs and mathtext runs are rendered from their glyph outlines

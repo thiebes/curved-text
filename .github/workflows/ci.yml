@@ -92,14 +92,23 @@ jobs:
       - name: Check the usetex toolchain
         # Render through the same TextToPath call the library uses, including
         # the escaped markup characters it emits, so a missing TeX package fails
-        # here rather than only in the usetex tests.
+        # here rather than only in the usetex tests. The valign tests skip a
+        # preamble font whose files are missing, so check those files here too,
+        # where a missing one fails instead of turning its cases into skips.
         run: |
           python - <<'EOF'
+          import subprocess
           from matplotlib.font_manager import FontProperties
           from matplotlib.textpath import TextToPath
           s = r"a\% \textless{}\textgreater{}\textbar{}\textbackslash{}\textasciitilde{} $\sqrt{x}$"
           verts, _ = TextToPath().get_text_path(FontProperties(), s, ismath="TeX")
           assert len(verts) > 0
+          files = ["cmtt12.pfb", "lmodern.sty", "lmss17.pfb", "times.sty",
+                   "utmr8a.pfb", "helvet.sty", "uhvr8a.pfb"]
+          for name in files:
+              found = subprocess.run(["kpsewhich", name], capture_output=True,
+                                     text=True).stdout.strip()
+              assert found, f"kpsewhich cannot find {name}"
           EOF
       - name: Run tests
         run: pytest -q

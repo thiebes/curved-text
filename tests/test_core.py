@@ -1202,3 +1202,21 @@ def test_usetex_valign_follows_the_drawn_font(valign, rc):
     assert edge == pytest.approx(curve_y, abs=0.025 * em_px)
     plt.close(fig)
 
+
+@needs_latex
+@pytest.mark.parametrize("valign", ["baseline", "center", "ascender", "descender"])
+def test_usetex_box_centres_on_the_ink_under_every_valign(valign):
+    # The casing follows the label's "center" line whichever line rides the
+    # curve, so it must take that line from the same drawn font as the label.
+    # Under usetex the centre line lies midway between the parentheses' top and
+    # bottom; the matplotlib font's centre line sits 0.1 em higher.
+    fig, ct = _flat_label("()", fontsize=30, usetex=True, valign=valign, box=True)
+    renderer = fig.canvas.get_renderer()
+    ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
+    ink_mid = (max(e.y1 for e in ink) + min(e.y0 for e in ink)) / 2.0
+    casing = np.column_stack([ct._box.get_xdata(), ct._box.get_ydata()])
+    casing_y = ct.axes.transData.transform(casing)[:, 1]
+    em_px = renderer.points_to_pixels(30)
+    assert casing_y == pytest.approx(ink_mid, abs=0.025 * em_px)
+    plt.close(fig)
+

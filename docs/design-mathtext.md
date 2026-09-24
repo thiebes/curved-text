@@ -278,6 +278,9 @@ fontsize pass-through), two tests carry the design:
   fail when the lines come from the matplotlib font, from a Type 1 font file's
   bounding box, from the unscaled font, or from a cache that misses a preamble
   change.
+- Usetex `box`: the casing centreline sits midway between the parentheses' top
+  and bottom under every `valign`, which fails when the casing takes its centre
+  line from the matplotlib font instead of the drawn one.
 - `valign` without usetex: the `"ascender"` shift equals the ascender of the
   font the label names, for DejaVu Sans and for STIXGeneral.
 

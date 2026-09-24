@@ -55,6 +55,14 @@ jobs:
           cache-dependency-glob: "pyproject.toml"
       - name: Install
         run: uv pip install --system -e ".[test]"
+      - name: Install LaTeX
+        # The newest Python resolves the newest stable matplotlib, the one most
+        # users run, so install TeX there and a usetex break on that release
+        # fails the build. The prerelease job only warns.
+        if: matrix.python-version == '3.13'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $TEX_PACKAGES
       - name: Run tests
         run: pytest -q
 
@@ -85,7 +93,8 @@ jobs:
       - name: Install LaTeX
         # The usetex tests skip without latex and kpsewhich, so install TeX
         # here, where it proves the usetex path against the oldest matplotlib,
-        # and in the prerelease job for the newest.
+        # in the Python 3.13 test job for the newest stable release, and in the
+        # prerelease job for pre-releases.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $TEX_PACKAGES

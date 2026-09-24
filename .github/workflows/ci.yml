@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # TeX packages for the usetex tests, defined once for every job that installs
+  # LaTeX so the jobs cannot drift apart. matplotlib's usetex preamble loads
+  # type1cm (texlive-latex-extra) and type1ec (cm-super). Outlines are read from
+  # the DVI file, so dvipng and dvips are not needed.
+  TEX_PACKAGES: texlive-latex-extra cm-super
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -74,14 +81,12 @@ jobs:
         # works with either numpy major version.
         run: uv pip install --system -e ".[test]" "matplotlib==3.5.*" "numpy<2"
       - name: Install LaTeX
-        # The usetex tests skip without latex and kpsewhich, so install TeX here
-        # only, where it proves the usetex path against the oldest matplotlib.
-        # matplotlib's usetex preamble loads type1cm (texlive-latex-extra) and
-        # type1ec (cm-super). Outlines are read from the DVI file, so dvipng and
-        # dvips are not needed.
+        # The usetex tests skip without latex and kpsewhich, so install TeX
+        # here, where it proves the usetex path against the oldest matplotlib,
+        # and in the prerelease job for the newest.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends texlive-latex-extra cm-super
+          sudo apt-get install -y --no-install-recommends $TEX_PACKAGES
       - name: Check the usetex toolchain
         # Render through the same TextToPath call the library uses, including
         # the escaped markup characters it emits, so a missing TeX package fails
@@ -118,5 +123,14 @@ jobs:
         run: |
           uv pip install --system -e ".[test]"
           uv pip install --system --upgrade --prerelease=allow matplotlib
+      - name: Install LaTeX
+        # The usetex path goes through TextToPath.get_glyphs_tex and
+        # matplotlib's DVI reader, whose behavior changes between releases, so
+        # run the usetex tests against the newest matplotlib too. A package
+        # missing here fails the usetex tests rather than skipping them, so the
+        # floor job's toolchain check is not repeated.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $TEX_PACKAGES
       - name: Run tests
         run: pytest -q

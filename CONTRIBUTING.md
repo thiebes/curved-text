@@ -66,7 +66,9 @@ python examples/generate_all.py
 ```
 
 This needs the `examples` extra (seaborn and pandas) for the one integration
-figure.
+figure, and a LaTeX installation with `dvipng` for the usetex figure. Each of
+those scripts skips its figure when its requirement is missing, so the other
+figures still regenerate.
 
 ## Building the documentation
 

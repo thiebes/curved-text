@@ -29,6 +29,7 @@ MODULES = [
     "example_13_crowding",
     "example_14_valign",
     "example_15_mixed_alignment",
+    "example_16_usetex",
 ]
 
 

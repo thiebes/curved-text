@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import functools
+import math
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -161,8 +162,8 @@ def _tex_font_lines(size: float) -> _FontLines:
     (``helvet`` with ``scaled=0.92``) yields lines scaled with its glyphs. The
     measurement is matplotlib's own for usetex text, and after the first draw it
     reads LaTeX's cached DVI file. matplotlib reports the height including the
-    depth, in the units usetex glyph outlines are laid out in
-    (:func:`_tex_to_path`).
+    depth, in points, so scaling by ``FONT_SCALE / size`` gives the 1/100-em
+    layout units the usetex outlines are brought to (:func:`_layout_units`).
     """
     _, height, depth = TexManager().get_text_width_height_descent(
         _TEX_LINE_PROBE, size)
@@ -342,7 +343,8 @@ def _tex_source(char: str) -> str:
 
 @functools.cache
 def _tex_to_path(size: float) -> TextToPath:
-    """A converter that runs LaTeX at ``size`` points.
+    """A converter that runs LaTeX at ``size`` points and lays the outline out
+    in 1/100-em layout units, as the shared converter does.
 
     matplotlib measures a usetex advance by running LaTeX at the label's own
     size, and TeX fonts change design with size (cmss8 at 8 pt, cmss12 at
@@ -350,10 +352,31 @@ def _tex_to_path(size: float) -> TextToPath:
     which selects a different design from the one measured. Laying the outline
     out at the label size draws the measured design, and matplotlib's
     measurement and the outline share one cached LaTeX run.
+
+    The converter loads usetex glyphs with FreeType hinting at ``FONT_SCALE``
+    points and ``DPI`` dots per inch. At the default 72 dpi a 10 pt glyph is
+    hinted on a 10-pixel em, which snaps an x-height of 0.44 em to 0.50 em.
+    Raising ``DPI`` so the em spans at least 100 pixels makes the hinting
+    negligible. FreeType takes the DPI as a whole number while matplotlib places
+    the glyphs at the exact value, so ``DPI`` is rounded up to a whole number,
+    and :func:`_layout_units` absorbs the rest.
     """
     converter = TextToPath()
     converter.FONT_SCALE = size
+    converter.DPI = math.ceil(
+        _text_to_path.DPI * _text_to_path.FONT_SCALE / size)
     return converter
+
+
+def _layout_units(converter: TextToPath) -> float:
+    """1/100-em layout units per unit of ``converter``'s outline.
+
+    A converter lays out ``FONT_SCALE * DPI / 72`` pixels per em. That is 100
+    for the shared converter, so the factor is 1 there, and within 1.4% of 1
+    for a :func:`_tex_to_path` converter at any size up to 72 pt.
+    """
+    em_px = converter.FONT_SCALE * converter.DPI / _text_to_path.DPI
+    return _text_to_path.FONT_SCALE / em_px
 
 
 class _OutlineSegment(mtext.Text):
@@ -499,9 +522,9 @@ class _PlainGlyph(_OutlineSegment):
         if not self._char.strip():  # whitespace advances the cursor but draws nothing
             verts, codes = np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
         elif usetex:
-            size = prop.get_size_in_points()
-            verts, codes = _tex_to_path(size).get_text_path(prop, text, ismath="TeX")
-            verts = np.asarray(verts, float) * (_text_to_path.FONT_SCALE / size)
+            converter = _tex_to_path(prop.get_size_in_points())
+            verts, codes = converter.get_text_path(prop, text, ismath="TeX")
+            verts = np.asarray(verts, float) * _layout_units(converter)
         else:
             verts, codes = _text_to_path.get_text_path(prop, text, ismath=False)
         outline = (np.asarray(verts, float), np.asarray(codes, dtype=Path.code_type))
@@ -526,15 +549,16 @@ class _MathRun(_OutlineSegment):
         if self._outline_cache is not None and self._outline_cache[0] == key:
             return self._outline_cache[1]
         # Lay out with the artist's own usetex setting, the one matplotlib
-        # measures the advance with. LaTeX runs at the label size (see
-        # ``_tex_to_path``), so its output is rescaled to 1/100-em layout units.
+        # measures the advance with. Under usetex LaTeX runs at the label size
+        # (see ``_tex_to_path``), and either way the output is brought to
+        # 1/100-em layout units.
         if usetex:
             converter = _tex_to_path(prop.get_size_in_points())
             glyph_info, glyph_map, rects = converter.get_glyphs_tex(prop, text)
         else:
             converter = _text_to_path
             glyph_info, glyph_map, rects = converter.get_glyphs_mathtext(prop, text)
-        units = _text_to_path.FONT_SCALE / converter.FONT_SCALE
+        units = _layout_units(converter)
         pieces = []
         for glyph_id, x_pen, y_pen, scale in glyph_info:
             outline_verts, outline_codes = glyph_map[glyph_id]

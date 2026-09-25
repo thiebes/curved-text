@@ -12,6 +12,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.texmanager import TexManager
 
 from curved_text import CurvedText, curved_text
 from curved_text._core import (
@@ -1070,6 +1071,24 @@ def test_usetex_outline_matches_measured_design_at_any_size():
         ratios.append(ink.width / seg._width_px)
         plt.close(fig)
     assert ratios[0] == pytest.approx(ratios[1], rel=0.02)
+
+
+@needs_latex
+@pytest.mark.parametrize("fontsize", [8, 10, 30, 190])
+def test_usetex_glyph_height_does_not_snap_to_the_pixel_grid(fontsize):
+    # FreeType hints usetex glyphs on the converter's pixel grid. With a
+    # 10-pixel em at 10 pt, the x-height snaps from 0.44 em to 0.50 em. With
+    # the em spanning at least 100 pixels, the ink of "x" is as tall as the
+    # height TeX gives it, which is the font's x-height at that size. At 190 pt
+    # the exact DPI is 37.9, which FreeType would truncate to 37 and shrink the
+    # glyph 2.8%, unless the DPI is a whole number.
+    fig, ct = _flat_label("x", fontsize=fontsize, usetex=True)
+    renderer = fig.canvas.get_renderer()
+    ink = _ink(ct, renderer, "x")
+    _, height, depth = TexManager().get_text_width_height_descent("x", fontsize)
+    assert ink.height / renderer.points_to_pixels(fontsize) == pytest.approx(
+        (height - depth) / fontsize, rel=0.015)
+    plt.close(fig)
 
 
 @needs_latex

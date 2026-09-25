@@ -6,8 +6,9 @@ link under each panel points to the script that drew it.
 
 Most scripts need only matplotlib and numpy (already installed with the
 package). The one integration example also needs seaborn and pandas; install
-those with the `examples` extra. Then regenerate everything into
-[images/](images/):
+those with the `examples` extra. The usetex example also needs a LaTeX
+installation with `dvipng`, which pip does not install; without it that script
+skips its figure. Then regenerate everything into [images/](images/):
 
 ```bash
 pip install -e ".[examples]"
@@ -23,8 +24,8 @@ python examples/example_02_sine_hello.py
 The scripts follow the repository's plot conventions (colorblind-safe palette,
 white background, sizes in centimetres, explicit dpi). Most panels hide their
 axes on purpose: the subject is the text-on-curve geometry, so quantitative
-ticks would only get in the way. The one true data figure -- direct labeling --
-keeps its axes and units.
+ticks would only get in the way. The data figures -- direct labeling and its
+usetex version -- keep their axes and units.
 
 ## The case for the tool
 
@@ -58,9 +59,9 @@ stay connected and follow the curve. Plain and math runs mix in one string.
 
 ### LaTeX typesets the labels under usetex
 
-With matplotlib's `text.usetex` rcParam on, LaTeX typesets the curved labels as
-it does the tick and axis labels, so the whole figure reads in one face. This is
-the direct-labeling figure drawn under usetex. The script needs `latex`, and
+With matplotlib's `text.usetex` rcParam on and the serif font family, LaTeX
+typesets the curved labels as it does the tick and axis labels, so the whole
+figure reads in one face. This is the direct-labeling figure drawn under usetex. The script needs `latex`, and
 `dvipng` for the tick and axis labels, as any matplotlib usetex figure does, and
 skips the figure without them.
 

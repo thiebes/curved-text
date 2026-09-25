@@ -4,7 +4,8 @@ Follows the repo's plot conventions: colorblind-safe palette, white opaque
 background, constrained layout, sizes in centimetres, explicit dpi. Most panels
 here are diagrams whose subject is the text-on-curve geometry, so they hide
 their axes -- the curve is the data, and bare quantitative ticks would be
-chartjunk. The one true data figure (direct labeling) keeps axes with units.
+chartjunk. The data figures (direct labeling and its usetex version) keep axes
+with units.
 """
 from __future__ import annotations
 

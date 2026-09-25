@@ -1,4 +1,4 @@
-"""Tier 2: curved labels typeset by LaTeX.
+"""Tier 1: curved labels typeset by LaTeX.
 
 With matplotlib's ``text.usetex`` rcParam on, LaTeX typesets every text in the
 figure -- tick labels, axis labels, and the curved labels alike -- so the labels

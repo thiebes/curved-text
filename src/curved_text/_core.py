@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import functools
+import math
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -161,9 +162,8 @@ def _tex_font_lines(size: float) -> _FontLines:
     (``helvet`` with ``scaled=0.92``) yields lines scaled with its glyphs. The
     measurement is matplotlib's own for usetex text, and after the first draw it
     reads LaTeX's cached DVI file. matplotlib reports the height including the
-    depth, in points at 72 dpi, the same scale the usetex glyph outlines are
-    laid out at (:func:`_tex_to_path`), so rescaling by the size gives layout
-    units.
+    depth, in points, so scaling by ``FONT_SCALE / size`` gives the 1/100-em
+    layout units the usetex outlines are brought to (:func:`_layout_units`).
     """
     _, height, depth = TexManager().get_text_width_height_descent(
         _TEX_LINE_PROBE, size)
@@ -355,14 +355,28 @@ def _tex_to_path(size: float) -> TextToPath:
 
     The converter loads usetex glyphs with FreeType hinting at ``FONT_SCALE``
     points and ``DPI`` dots per inch. At the default 72 dpi a 10 pt glyph is
-    hinted on a 10-pixel em, which snaps its heights to whole pixels and makes
-    letters up to 15% too tall. Raising ``DPI`` so the em spans 100 pixels
-    makes the hinting negligible, and lays the outline out in layout units.
+    hinted on a 10-pixel em, which snaps an x-height of 0.44 em to 0.50 em.
+    Raising ``DPI`` so the em spans at least 100 pixels makes the hinting
+    negligible. FreeType takes the DPI as a whole number while matplotlib places
+    the glyphs at the exact value, so ``DPI`` is rounded up to a whole number,
+    and :func:`_layout_units` absorbs the rest.
     """
     converter = TextToPath()
     converter.FONT_SCALE = size
-    converter.DPI = 72.0 * _text_to_path.FONT_SCALE / size
+    converter.DPI = math.ceil(
+        _text_to_path.DPI * _text_to_path.FONT_SCALE / size)
     return converter
+
+
+def _layout_units(converter: TextToPath) -> float:
+    """1/100-em layout units per unit of ``converter``'s outline.
+
+    A converter lays out ``FONT_SCALE * DPI / 72`` pixels per em. That is 100
+    for the shared converter, so the factor is 1 there, and within 1.4% of 1
+    for a :func:`_tex_to_path` converter at any size up to 72 pt.
+    """
+    em_px = converter.FONT_SCALE * converter.DPI / _text_to_path.DPI
+    return _text_to_path.FONT_SCALE / em_px
 
 
 class _OutlineSegment(mtext.Text):
@@ -510,6 +524,7 @@ class _PlainGlyph(_OutlineSegment):
         elif usetex:
             converter = _tex_to_path(prop.get_size_in_points())
             verts, codes = converter.get_text_path(prop, text, ismath="TeX")
+            verts = np.asarray(verts, float) * _layout_units(converter)
         else:
             verts, codes = _text_to_path.get_text_path(prop, text, ismath=False)
         outline = (np.asarray(verts, float), np.asarray(codes, dtype=Path.code_type))
@@ -534,23 +549,25 @@ class _MathRun(_OutlineSegment):
         if self._outline_cache is not None and self._outline_cache[0] == key:
             return self._outline_cache[1]
         # Lay out with the artist's own usetex setting, the one matplotlib
-        # measures the advance with. Both converters lay out in 1/100-em layout
-        # units; under usetex LaTeX runs at the label size (see ``_tex_to_path``).
+        # measures the advance with. Under usetex LaTeX runs at the label size
+        # (see ``_tex_to_path``), and either way the output is brought to
+        # 1/100-em layout units.
         if usetex:
             converter = _tex_to_path(prop.get_size_in_points())
             glyph_info, glyph_map, rects = converter.get_glyphs_tex(prop, text)
         else:
-            glyph_info, glyph_map, rects = _text_to_path.get_glyphs_mathtext(
-                prop, text)
+            converter = _text_to_path
+            glyph_info, glyph_map, rects = converter.get_glyphs_mathtext(prop, text)
+        units = _layout_units(converter)
         pieces = []
         for glyph_id, x_pen, y_pen, scale in glyph_info:
             outline_verts, outline_codes = glyph_map[glyph_id]
             if len(outline_verts) == 0:  # whitespace glyphs have no outline
                 continue
-            placed = np.asarray(outline_verts, float) * scale + [x_pen, y_pen]
+            placed = (np.asarray(outline_verts, float) * scale + [x_pen, y_pen]) * units
             pieces.append(_densify(placed, np.asarray(outline_codes)))
         for rect_verts, rect_codes in rects:
-            pieces.append(_densify(np.asarray(rect_verts, float),
+            pieces.append(_densify(np.asarray(rect_verts, float) * units,
                                    np.asarray(rect_codes)))
         if pieces:
             verts = np.concatenate([p[0] for p in pieces])

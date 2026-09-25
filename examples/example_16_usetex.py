@@ -41,7 +41,9 @@ def make(images_dir):
         for tau, color, pos in SERIES:
             temp = 100.0 * np.exp(-t / tau)
             ax.plot(t, temp, color=color, linewidth=2)
-            curved_text(ax, t, temp, rf"$\tau = {tau:g}\,\mathrm{{s}}$",
+            # A math run for the symbol and plain text for the rest, as in
+            # example 01, so the label shows both paths LaTeX typesets.
+            curved_text(ax, t, temp, rf"$\tau$ = {tau:g} s",
                         pos=pos, anchor="center", offset=7.0,
                         color=color, fontsize=10)
         ax.set_xlim(0, 10)

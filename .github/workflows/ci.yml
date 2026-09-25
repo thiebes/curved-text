@@ -41,7 +41,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.11", "3.13"]
+        # The newest Python resolves the newest stable matplotlib, the one most
+        # users run, so that entry also runs the usetex tests. Keep the usetex
+        # flag on the newest entry when the versions change.
+        include:
+          - python-version: "3.9"
+          - python-version: "3.11"
+          - python-version: "3.13"
+            usetex: true
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
       - name: Set up Python ${{ matrix.python-version }}
@@ -56,10 +63,9 @@ jobs:
       - name: Install
         run: uv pip install --system -e ".[test]"
       - name: Install LaTeX
-        # The newest Python resolves the newest stable matplotlib, the one most
-        # users run, so install TeX there and a usetex break on that release
-        # fails the build. The prerelease job only warns.
-        if: matrix.python-version == '3.13'
+        # A usetex break on the newest stable matplotlib fails the build here;
+        # the prerelease job only warns.
+        if: matrix.usetex
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $TEX_PACKAGES
@@ -93,8 +99,8 @@ jobs:
       - name: Install LaTeX
         # The usetex tests skip without latex and kpsewhich, so install TeX
         # here, where it proves the usetex path against the oldest matplotlib,
-        # in the Python 3.13 test job for the newest stable release, and in the
-        # prerelease job for pre-releases.
+        # in the test entry flagged usetex for the newest stable release, and in
+        # the prerelease job for pre-releases.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $TEX_PACKAGES

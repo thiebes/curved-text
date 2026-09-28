@@ -166,6 +166,19 @@ curved_text(ax, x, y, r"plain λ, math $\lambda$", usetex=True)
 The library leaves the preamble to you. It is one global setting for every
 usetex text in the figure, including the layout passes that measure the label.
 
+A few details differ from the default renderer:
+
+- The usetex setting is fixed when the label is created, as matplotlib fixes it
+  for each text. Set the rcParam or pass `usetex=True` before creating the
+  label.
+- LaTeX takes the font family from the `font.family` rcParam, as for
+  matplotlib's own usetex text, so the `fontfamily` keyword has no effect.
+- The `valign` lines come from the TeX font as LaTeX draws it. Under usetex,
+  `valign="ascender"` meets the tops of the letters; without usetex it sits a
+  little above them, on the line the font reserves for line spacing.
+- Math runs go to LaTeX as written, so they can run TeX commands, including ones
+  that read local files. Do not pass untrusted text with usetex on.
+
 ### Casing behind the label
 
 Set `box` to draw a casing behind the label. The casing is a band that follows

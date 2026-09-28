@@ -1,4 +1,4 @@
-# Design: mathtext support
+# Design: mathtext and LaTeX support
 
 ## Decision
 
@@ -9,7 +9,8 @@ follows the curve. A plain character is placed rigidly (one rotation, shape
 undistorted); a math run bends its glyph outlines through the curve's arc-length
 frame so radicals and fractions stay connected. Mathtext arrives through the
 existing `text` argument, and `pos`, `anchor`, `offset`, `valign`, and the kwargs
-pass-through keep their meaning.
+pass-through keep their meaning. Under usetex LaTeX lays out the same segments;
+the LaTeX section below covers what changes.
 
 Two existing design invariants are preserved and remain load-bearing: all
 geometry is computed per draw in display space, and children are independent
@@ -117,9 +118,9 @@ All code lives in `src/curved_text/_core.py`.
     using the artist's color and alpha, clipping set through public
     `GraphicsContext` methods, wrapping the renderer in a `PathEffectRenderer`
     when effects are set. With no frame assigned it draws nothing.
-  - `_set_placement(frame, s_left, width_px)` is the per-draw handoff the parent
-    calls. Any perpendicular offset is already baked into `frame` (it is the
-    parallel curve), so a segment needs no offset of its own.
+  - `_set_placement(frame, s_left, width_px, datum)` is the per-draw handoff the
+    parent calls. Any perpendicular offset is already baked into `frame` (it is
+    the parallel curve), so a segment needs no offset of its own.
 - `CurvedText` builds children from `_split_runs` (honoring `parse_math`), and
   its draw walks one cursor over the segments, handing each its placement. The
   child list is named `_segments`, since elements are characters and runs alike.
@@ -138,6 +139,8 @@ font metric, not a per-glyph box, it is identical for every glyph and introduces
 no step. The default is `"center"` because it reproduces the placement of the
 superseded `va="center"` per-character design, keeping the `offset` reference
 backward compatible -- minus the per-glyph step, which was that design's bug.
+The font lines come from the font the text is drawn in, so under usetex they
+come from TeX; the LaTeX section below explains how, and how the two differ.
 
 Centering on a segment's *own* layout box was rejected: a superscript or tall
 delimiter inflates the box, so centering on it dropped the body below the plain
@@ -231,11 +234,12 @@ full-coverage case with a different mechanism -- a single `Line2D` casing
 following the offset curve across the label's span, its linewidth set to the
 tallest glyph's height scaled by `pad` (default 1.1), drawn as one fill so
 nothing cannibalizes. Its centreline is shifted off the curve by the glyph
-band's offset (the text rides its baseline, so the ink sits to one side of the
-bare curve) so the band covers the ink. It is a child artist positioned per draw
-in `CurvedText.draw`, like the glyphs. When `draw` bails out early (no segments,
-detached axes, or a degenerate curve) it hides the casing, so a stale band is
-never left painted.
+band's offset (the text rides its `valign` datum, so the ink band is centred off
+the bare curve) so the band covers the ink. The band's centre line comes from
+the same font lines as the label, under usetex the TeX ones. It is a child
+artist positioned per draw in `CurvedText.draw`, like the glyphs. When `draw`
+bails out early (no segments, detached axes, or a degenerate curve) it hides the
+casing, so a stale band is never left painted.
 
 Layering is by zorder, applied once in `__init__` and maintained by
 `set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at
@@ -300,8 +304,10 @@ fontsize pass-through), these tests carry the design:
 
 ## Deferred
 
-- Hinted outlines via `FT2Font.get_path` (recovers grid-fit stem weight, which
-  rotation largely defeats anyway); marginal gain, not pursued.
+- Hinted outlines via `FT2Font.get_path` for non-usetex text (recovers grid-fit
+  stem weight, which rotation largely defeats anyway); marginal gain, not
+  pursued. Usetex glyphs are hinted by matplotlib, at a resolution where it is
+  negligible (see the LaTeX section).
 - Inter-character kerning for plain runs. Each plain character is laid out and
   advanced on its own, so kerning pairs between adjacent glyphs are not applied.
   The per-character placement that rides the curve is what makes this hard:

@@ -156,14 +156,15 @@ def _tex_font_lines(size: float) -> _FontLines:
     """The ascender and descender lines of the TeX font LaTeX sets text in at
     ``size`` points: the height and depth TeX gives ``_TEX_LINE_PROBE``.
 
-    LaTeX chooses that font from the preamble, the font family, and the size
-    (cmss8 at 8 pt, cmss17 at 30 pt), and TeX takes the box from the font's
-    metrics at the size it draws the font, so a font the preamble loads scaled
-    (``helvet`` with ``scaled=0.92``) yields lines scaled with its glyphs. The
-    measurement is matplotlib's own for usetex text, and after the first draw it
-    reads LaTeX's cached DVI file. matplotlib reports the height including the
-    depth, in points, so scaling by ``FONT_SCALE / size`` gives the 1/100-em
-    layout units the usetex outlines are brought to (:func:`_layout_units`).
+    LaTeX chooses that font from the preamble, the ``font.family`` rcParam,
+    and the size (cmss8 at 8 pt, cmss17 at 30 pt), and TeX takes the box from
+    the font's metrics at the size it draws the font, so a font the preamble
+    loads scaled (``helvet`` with ``scaled=0.92``) yields lines scaled with its
+    glyphs. The measurement is matplotlib's own for usetex text, and after the
+    first draw it reads LaTeX's cached DVI file. matplotlib reports the height
+    including the depth, in points, so scaling by ``FONT_SCALE / size`` gives
+    the 1/100-em layout units the usetex outlines are brought to
+    (:func:`_layout_units`).
     """
     _, height, depth = TexManager().get_text_width_height_descent(
         _TEX_LINE_PROBE, size)

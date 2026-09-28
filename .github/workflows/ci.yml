@@ -14,6 +14,9 @@ env:
   # texlive-fonts-recommended (Times and Helvetica) let the valign tests run
   # their preamble-font cases.
   TEX_PACKAGES: texlive-latex-extra cm-super lmodern texlive-fonts-recommended
+  # The uv release every setup-uv step installs. Pinned so the action checks it
+  # against its bundled checksums instead of fetching whatever is latest.
+  UV_VERSION: "0.12.19"
 
 jobs:
   lint:
@@ -27,6 +30,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
       - name: Install with linting tools
@@ -37,15 +41,18 @@ jobs:
         run: mypy src
 
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.python-version }}${{ matrix.usetex && ', usetex' || '' }})
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         # The newest Python resolves the newest stable matplotlib, the one most
         # users run, so that entry also runs the usetex tests. Keep the usetex
-        # flag on the newest entry when the versions change.
+        # flag on the newest entry when the versions change. Python 3.9 has no
+        # build for the Ubuntu release after 24.04, so its entry stays on 24.04.
         include:
           - python-version: "3.9"
+            runner: ubuntu-24.04
           - python-version: "3.11"
           - python-version: "3.13"
             usetex: true
@@ -58,6 +65,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
       - name: Install
@@ -77,8 +85,10 @@ jobs:
   # support on TextToPath.get_glyphs_tex, the TextToPath.FONT_SCALE and
   # TextToPath.DPI attributes, and TexManager.get_text_width_height_descent,
   # all present since 3.5; pin the floor and prove the suite passes against it.
+  # The floor runs on Python 3.9, which has no build for the Ubuntu release
+  # after 24.04, so the job stays on 24.04.
   floor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
       - name: Set up Python 3.9
@@ -88,6 +98,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
       - name: Install with floor matplotlib
@@ -143,12 +154,15 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
       - name: Install with pre-release matplotlib
+        # Upgrade matplotlib alone, so a pre-release of another dependency
+        # such as numpy does not decide what this job tests.
         run: |
           uv pip install --system -e ".[test]"
-          uv pip install --system --upgrade --prerelease=allow matplotlib
+          uv pip install --system --upgrade-package matplotlib --prerelease=allow matplotlib
       - name: Install LaTeX
         # The usetex path goes through TextToPath.get_glyphs_tex and
         # matplotlib's DVI reader, whose behavior changes between releases, so

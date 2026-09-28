@@ -9,5 +9,5 @@
 :maxdepth: 2
 
 API reference <api>
-Design: mathtext <design-mathtext>
+Design: mathtext and LaTeX <design-mathtext>
 ```

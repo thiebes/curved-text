@@ -156,14 +156,15 @@ def _tex_font_lines(size: float) -> _FontLines:
     """The ascender and descender lines of the TeX font LaTeX sets text in at
     ``size`` points: the height and depth TeX gives ``_TEX_LINE_PROBE``.
 
-    LaTeX chooses that font from the preamble, the font family, and the size
-    (cmss8 at 8 pt, cmss17 at 30 pt), and TeX takes the box from the font's
-    metrics at the size it draws the font, so a font the preamble loads scaled
-    (``helvet`` with ``scaled=0.92``) yields lines scaled with its glyphs. The
-    measurement is matplotlib's own for usetex text, and after the first draw it
-    reads LaTeX's cached DVI file. matplotlib reports the height including the
-    depth, in points, so scaling by ``FONT_SCALE / size`` gives the 1/100-em
-    layout units the usetex outlines are brought to (:func:`_layout_units`).
+    LaTeX chooses that font from the preamble, the ``font.family`` rcParam,
+    and the size (cmss8 at 8 pt, cmss17 at 30 pt), and TeX takes the box from
+    the font's metrics at the size it draws the font, so a font the preamble
+    loads scaled (``helvet`` with ``scaled=0.92``) yields lines scaled with its
+    glyphs. The measurement is matplotlib's own for usetex text, and after the
+    first draw it reads LaTeX's cached DVI file. matplotlib reports the height
+    including the depth, in points, so scaling by ``FONT_SCALE / size`` gives
+    the 1/100-em layout units the usetex outlines are brought to
+    (:func:`_layout_units`).
     """
     _, height, depth = TexManager().get_text_width_height_descent(
         _TEX_LINE_PROBE, size)
@@ -656,13 +657,20 @@ class CurvedText(mtext.Text):
     first draw runs LaTeX once for each distinct character and math run, and
     once more to measure those lines, which every ``valign`` but ``"baseline"``
     and the ``box`` casing use; this can take seconds, and later draws
-    reuse matplotlib's cache.
+    reuse matplotlib's cache. The usetex setting is fixed when the label is
+    constructed, as matplotlib fixes it for each glyph; pass ``usetex`` or set
+    the rcParam before creating the label. Under usetex the font family comes
+    from the ``font.family`` rcParam, as for matplotlib's own usetex text, and
+    the ``fontfamily`` keyword has no effect. Math runs are passed to LaTeX as
+    written, so they can run TeX commands, including ones that read local
+    files; do not pass untrusted text with usetex on.
 
     Both plain glyphs and mathtext runs are rendered from their glyph outlines
     rather than as hinted ``Text`` artists. On a rotated label this is what lets a
     single baseline be pinned exactly; the only cost is the loss of pixel-grid
     hinting, which is marginal on rotated text and matches how mathtext has always
-    rendered.
+    rendered. Under usetex matplotlib loads the glyphs with light hinting, laid
+    out at a resolution where it is negligible.
 
     Parameters
     ----------
@@ -859,11 +867,14 @@ class CurvedText(mtext.Text):
         # is a font line, and so is the box casing's centre, which follows the
         # "center" line while the frame follows the chosen one. Measuring the
         # lines runs LaTeX under usetex, so a baseline label without a casing
-        # never measures them.
-        prop = self.get_fontproperties()
+        # never measures them. The font and the usetex setting are read from a
+        # segment, the artist that is drawn, so a setter called on this
+        # container after construction cannot measure one font and draw another.
+        first_segment = self._segments[0]
+        prop = first_segment.get_fontproperties()
         datum = band = 0.0
         if self._valign != "baseline" or self._box is not None:
-            lines = _font_lines(prop, usetex=self.get_usetex())
+            lines = _font_lines(prop, usetex=first_segment.get_usetex())
             datum = _valign_datum(self._valign, lines)
             band = _valign_datum("center", lines) - datum
 

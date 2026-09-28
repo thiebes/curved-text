@@ -12,7 +12,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   matches the figure's other usetex text. Plain text is typeset literally, one
   character at a time, so TeX markup characters such as `%` and `#` print as
   themselves and TeX commands work only inside `$...$`. Contributed by Andrey
-  Latyshev in #5.
+  Latyshev in [#5](https://github.com/thiebes/curved-text/pull/5).
+
+  A LaTeX installation is required, as for any matplotlib usetex text. Plain
+  text is limited to the characters the LaTeX preamble can typeset; the README
+  shows how to declare upright Greek letters. The `valign` lines and the `box`
+  casing come from the TeX font as LaTeX draws it, so `valign="ascender"` meets
+  the tops of the letters, where without usetex it sits a little above them.
+  The first draw runs LaTeX once for each distinct character and math run,
+  which can take several seconds; later draws are cached. Math runs go to LaTeX
+  as written and can run TeX commands, so do not pass untrusted text with
+  usetex on.
+
+### Changed
+
+- With the `text.usetex` rcParam already on, curved labels are now typeset by
+  LaTeX in the figure's usetex font. Before, they were drawn in the matplotlib
+  font with the letters run together, and a `%`, `&`, or `#` in the label
+  raised an error.
 
 ## 0.5.0
 

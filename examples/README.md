@@ -61,9 +61,9 @@ stay connected and follow the curve. Plain and math runs mix in one string.
 
 With matplotlib's `text.usetex` rcParam on and the serif font family, LaTeX
 typesets the curved labels as it does the tick and axis labels, so the whole
-figure reads in one face. This is the direct-labeling figure drawn under usetex. The script needs `latex`, and
-`dvipng` for the tick and axis labels, as any matplotlib usetex figure does, and
-skips the figure without them.
+figure reads in one face. This is the direct-labeling figure drawn under
+usetex. The script needs `latex`, and `dvipng` for the tick and axis labels, as
+any matplotlib usetex figure does, and skips the figure without them.
 
 ![Cooling curves labelled along their paths, with every text typeset by LaTeX](images/16_usetex.png)
 

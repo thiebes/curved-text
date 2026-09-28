@@ -36,6 +36,12 @@ public API: placement (`pos`, `anchor`, `offset`), mathtext, the box casing,
 redraw stability, and error handling for bad input. Add to this file when you
 change behaviour.
 
+The usetex tests need a LaTeX installation and skip without one, so a run with
+no LaTeX can pass while testing less. To run them, install LaTeX with the
+packages named in `TEX_PACKAGES` in
+[.github/workflows/ci.yml](.github/workflows/ci.yml); the tests for fonts
+loaded through the preamble also skip when their font packages are missing.
+
 The same suite runs in continuous integration across the supported Python
 versions and against the lowest supported matplotlib version. If your change
 touches anything version-sensitive, test it against that lowest version too,
@@ -97,4 +103,6 @@ GitHub Pages on every push to `main`.
 Releases are cut by the maintainer. A version tag (`vX.Y.Z`) pushed to GitHub
 triggers the publish workflow, which builds the distribution, publishes it to
 PyPI through trusted publishing, and creates the matching GitHub release from
-the CHANGELOG section for that version.
+the CHANGELOG section for that version. The workflow stops if the tag does not
+match the version in `pyproject.toml`, so bump the version and rename the
+CHANGELOG heading to `## X.Y.Z` in the release commit, before tagging.

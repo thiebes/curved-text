@@ -1127,6 +1127,23 @@ def test_usetex_keyword_matches_rcparam():
 
 
 @needs_latex
+def test_container_set_usetex_does_not_move_the_label():
+    # The usetex setting is fixed when the segments are built. Calling
+    # set_usetex on the container afterwards changes nothing that is drawn, so
+    # the valign lines must not switch to TeX's either; if they did, the label
+    # would shift while its glyphs stayed in the matplotlib font.
+    fig, ct = _flat_label("nnnn", fontsize=30, valign="ascender")
+    renderer = fig.canvas.get_renderer()
+    before = [seg._placed_path(renderer).vertices for seg in ct._segments]
+    ct.set_usetex(True)
+    _draw(fig)
+    after = [seg._placed_path(renderer).vertices for seg in ct._segments]
+    for b, a in zip(before, after):
+        np.testing.assert_allclose(a, b)
+    plt.close(fig)
+
+
+@needs_latex
 def test_usetex_plain_text_is_literal():
     # A plain glyph is one literal character, so every TeX markup character
     # must advance and draw instead of vanishing as a comment or stopping the

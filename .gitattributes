@@ -1,0 +1,3 @@
+# Store text files with LF line endings in the repository, whatever the
+# platform that edits them, so a Windows editor cannot convert a file to CRLF.
+* text=auto eol=lf

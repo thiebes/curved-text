@@ -6,14 +6,16 @@ authors:
   - given-names: Joseph J.
     family-names: Thiebes
     email: joseph@thiebes.org
+  - given-names: Andrey
+    family-names: Latyshev
 abstract: >-
   Draw text along an arbitrary curve in matplotlib, with arc-length positioning
   and a perpendicular offset.
 repository-code: https://github.com/thiebes/curved-text
 url: https://thiebes.github.io/curved-text/
 license: MIT
-version: 0.4.0
-date-released: "2026-06-18"
+version: 0.6.0
+date-released: "2026-09-28"
 keywords:
   - matplotlib
   - text

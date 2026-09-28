@@ -656,13 +656,20 @@ class CurvedText(mtext.Text):
     first draw runs LaTeX once for each distinct character and math run, and
     once more to measure those lines, which every ``valign`` but ``"baseline"``
     and the ``box`` casing use; this can take seconds, and later draws
-    reuse matplotlib's cache.
+    reuse matplotlib's cache. The usetex setting is fixed when the label is
+    constructed, as matplotlib fixes it for each glyph; pass ``usetex`` or set
+    the rcParam before creating the label. Under usetex the font family comes
+    from the ``font.family`` rcParam, as for matplotlib's own usetex text, and
+    the ``fontfamily`` keyword has no effect. Math runs are passed to LaTeX as
+    written, so they can run TeX commands, including ones that read local
+    files; do not pass untrusted text with usetex on.
 
     Both plain glyphs and mathtext runs are rendered from their glyph outlines
     rather than as hinted ``Text`` artists. On a rotated label this is what lets a
     single baseline be pinned exactly; the only cost is the loss of pixel-grid
     hinting, which is marginal on rotated text and matches how mathtext has always
-    rendered.
+    rendered. Under usetex matplotlib loads the glyphs with light hinting, laid
+    out at a resolution where it is negligible.
 
     Parameters
     ----------
@@ -859,11 +866,14 @@ class CurvedText(mtext.Text):
         # is a font line, and so is the box casing's centre, which follows the
         # "center" line while the frame follows the chosen one. Measuring the
         # lines runs LaTeX under usetex, so a baseline label without a casing
-        # never measures them.
-        prop = self.get_fontproperties()
+        # never measures them. The font and the usetex setting are read from a
+        # segment, the artist that is drawn, so a setter called on this
+        # container after construction cannot measure one font and draw another.
+        first_segment = self._segments[0]
+        prop = first_segment.get_fontproperties()
         datum = band = 0.0
         if self._valign != "baseline" or self._box is not None:
-            lines = _font_lines(prop, usetex=self.get_usetex())
+            lines = _font_lines(prop, usetex=first_segment.get_usetex())
             datum = _valign_datum(self._valign, lines)
             band = _valign_datum("center", lines) - datum
 

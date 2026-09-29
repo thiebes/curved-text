@@ -1,10 +1,11 @@
 # Documentation build dependencies for the docs workflow, which publishes the
 # site to GitHub Pages, pinned with hashes: the docs extra, the library's
-# runtime dependencies, and the setuptools build backend. The workflow installs
-# the project itself with --no-deps and --no-build-isolation, so it builds with
-# this pinned setuptools. To regenerate, list `setuptools>=77.0.0` in
-# docs-build.in and run from the repository root:
-#   uv pip compile pyproject.toml docs-build.in --extra docs --generate-hashes
+# runtime dependencies, and the setuptools build backend. The workflows install
+# the project itself with --no-index and --no-build-isolation, so it builds with
+# this pinned setuptools and fails if this file no longer satisfies the docs
+# extra. To regenerate, list `setuptools>=77.0.0` in docs.in and run from the
+# repository root:
+#   uv pip compile pyproject.toml docs.in --extra docs --generate-hashes
 #     --universal --python-version 3.13 --no-header --no-annotate
 #     -o .github/requirements/docs.txt
 accessible-pygments==0.0.5 \

@@ -28,11 +28,16 @@ jobs:
         # This job publishes the site, so its dependencies and the setuptools
         # build backend come pinned with hashes from
         # .github/requirements/docs.txt. The project itself has no hash, so it
-        # is installed without dependencies and without build isolation, which
-        # builds it with that pinned setuptools instead of fetching one.
+        # is installed in a second step with --no-index, which downloads
+        # nothing: pip must satisfy the docs extra and the runtime dependencies
+        # from the pinned set, and fails if the lock no longer does.
+        # --no-build-isolation builds with the pinned setuptools, and
+        # --check-build-dependencies fails if it no longer meets the
+        # [build-system] floor. The docs job in ci.yml runs the same install
+        # on pull requests; keep the two in step.
         run: |
           python -m pip install --require-hashes -r .github/requirements/docs.txt
-          python -m pip install --no-deps --no-build-isolation -e .
+          python -m pip install --no-index --no-build-isolation --check-build-dependencies -e ".[docs]"
       - name: Build the documentation
         # Treat warnings as errors so a broken reference fails the build.
         run: sphinx-build -W --keep-going -b html docs docs/_build/html

@@ -99,11 +99,12 @@ All code lives in `src/curved_text/_core.py`.
   kinds. Subclassing `Text` inherits kwargs handling identically across
   segments, and `get_window_extent` measures both plain text and mathtext, so
   the parent's measurement loop has no special case. It owns `draw` and the
-  outline-to-curve mapping; subclasses supply only the outline source
-  (`_outline_units`) and the `_bend` flag.
+  outline-to-curve mapping and the outline cache; subclasses supply only the
+  outline source (`_build_outline`) and the `_bend` flag.
   - `_outline_units()` returns the segment's outline `(vertices, codes)` in
     1/100-em units, baseline at `v = 0`, memoized per text, font properties, and
-    usetex setting. `_PlainGlyph` reads it from `TextToPath.get_text_path`;
+    usetex setting. It calls the subclass's `_build_outline` on a cache miss.
+    `_PlainGlyph` reads the outline from `TextToPath.get_text_path`;
     `_MathRun` from `TextToPath.get_glyphs_mathtext` (or `get_glyphs_tex` under
     usetex, see below), subdividing rule boxes (fraction bars, radical
     overlines) with `_densify` so the long straight runs follow the curve. Glyph

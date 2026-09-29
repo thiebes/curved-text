@@ -14,16 +14,19 @@ import numpy as np
 import pytest
 from matplotlib.texmanager import TexManager
 
-from curved_text import CurvedText, curved_text
+from curved_text import CurvedText, _core, curved_text
 from curved_text._core import (
-    _CHAR_TO_TEX, _font_lines, _MathRun, _PlainGlyph, _split_runs, _text_to_path,
-    _valign_datum)
+    _font_lines, _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
 
 # usetex outline extraction runs latex and reads the DVI, which needs kpsewhich
 # to locate the fonts.
 needs_latex = pytest.mark.skipif(
     shutil.which("latex") is None or shutil.which("kpsewhich") is None,
     reason="usetex needs a LaTeX installation")
+
+# TeX's ten special characters, plus the three that the default OT1 encoding
+# typesets as other glyphs ("<" as an inverted "!").
+_TEX_MARKUP = r"#$%&~_^\{}<>|"
 
 
 def _draw(fig):
@@ -951,6 +954,30 @@ def test_valign_shifts_label_perpendicular_uniformly(family, ascender_em):
     plt.close(fig)
 
 
+@pytest.mark.parametrize("valign, box, measurements", [
+    ("baseline", False, 0),
+    ("baseline", True, 1),
+    ("center", False, 1),
+    ("ascender", True, 1),
+])
+def test_font_lines_are_measured_only_when_needed(monkeypatch, valign, box,
+                                                  measurements):
+    # Under usetex, measuring the font lines runs LaTeX. A draw therefore
+    # measures them only when a line other than the baseline or the box casing
+    # needs them, and then once, however many of the two need them.
+    calls = []
+    measure = _core._font_lines
+
+    def counting(prop, *, usetex):
+        calls.append(usetex)
+        return measure(prop, usetex=usetex)
+
+    monkeypatch.setattr(_core, "_font_lines", counting)
+    fig, _ = _flat_label("label", valign=valign, box=box)
+    assert len(calls) == measurements
+    plt.close(fig)
+
+
 def test_crowding_rejects_unknown_value():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)
@@ -1051,8 +1078,9 @@ def _flat_label(text, fontsize=16, **kwargs):
 
 
 def _ink(ct, renderer, char):
-    """Extents of the drawn outline of the plain glyph for ``char``."""
-    seg = next(s for s in ct._segments if s._char == char)
+    """Extents of the drawn outline of the plain glyph for ``char``. Math runs
+    have no ``_char``, so they are passed over."""
+    seg = next(s for s in ct._segments if getattr(s, "_char", None) == char)
     return seg._placed_path(renderer).get_extents()
 
 
@@ -1149,8 +1177,11 @@ def test_usetex_plain_text_is_literal():
     # must advance and draw instead of vanishing as a comment or stopping the
     # LaTeX run. The label holds a single "$", so it stays plain text. A
     # dollar sign drawn from a fixed-size layout came out about a third of its
-    # height, so its ink is also checked against a plain "S".
-    fig, ct = _flat_label("S" + "".join(_CHAR_TO_TEX), usetex=True)
+    # height, so its ink is also checked against a plain "S". The characters are
+    # TeX's ten special characters plus the three that the OT1 encoding sets as
+    # other glyphs, listed here rather than read from the escape table, so a
+    # character missing from the table fails instead of dropping out.
+    fig, ct = _flat_label("S" + _TEX_MARKUP, usetex=True)
     for seg in ct._segments:
         assert seg._width_px > 0, seg._char
         assert len(seg._outline_units()[0]) > 0, seg._char

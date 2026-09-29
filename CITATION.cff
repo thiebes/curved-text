@@ -13,6 +13,7 @@ abstract: >-
   and a perpendicular offset.
 repository-code: https://github.com/thiebes/curved-text
 url: https://thiebes.github.io/curved-text/
+doi: 10.5281/zenodo.20725006
 license: MIT
 version: 0.6.0
 date-released: "2026-09-29"

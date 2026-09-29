@@ -25,7 +25,10 @@ needs_latex = pytest.mark.skipif(
     reason="usetex needs a LaTeX installation")
 
 # TeX's ten special characters, plus the three that the default OT1 encoding
-# typesets as other glyphs ("<" as an inverted "!").
+# typesets as other glyphs ("<" as an inverted "!"). Listed here, not read from
+# the escape table, so a special character missing from the table makes the
+# literal test fail. The three OT1 characters still draw without escaping, so
+# the relation-sign and bar tests check that they are the right glyphs.
 _TEX_MARKUP = r"#$%&~_^\{}<>|"
 
 
@@ -966,15 +969,14 @@ def test_font_lines_are_measured_only_when_needed(monkeypatch, valign, box,
     # measures them only when a line other than the baseline or the box casing
     # needs them, and then once, however many of the two need them.
     calls = []
-    measure = _core._font_lines
 
     def counting(prop, *, usetex):
         calls.append(usetex)
-        return measure(prop, usetex=usetex)
+        return _font_lines(prop, usetex=usetex)
 
     monkeypatch.setattr(_core, "_font_lines", counting)
     fig, _ = _flat_label("label", valign=valign, box=box)
-    assert len(calls) == measurements
+    assert calls == [False] * measurements  # the label is not usetex
     plt.close(fig)
 
 
@@ -1078,9 +1080,9 @@ def _flat_label(text, fontsize=16, **kwargs):
 
 
 def _ink(ct, renderer, char):
-    """Extents of the drawn outline of the plain glyph for ``char``. Math runs
-    have no ``_char``, so they are passed over."""
-    seg = next(s for s in ct._segments if getattr(s, "_char", None) == char)
+    """Extents of the drawn outline of the plain glyph for ``char``."""
+    seg = next(s for s in ct._segments
+               if isinstance(s, _PlainGlyph) and s._char == char)
     return seg._placed_path(renderer).get_extents()
 
 
@@ -1177,10 +1179,8 @@ def test_usetex_plain_text_is_literal():
     # must advance and draw instead of vanishing as a comment or stopping the
     # LaTeX run. The label holds a single "$", so it stays plain text. A
     # dollar sign drawn from a fixed-size layout came out about a third of its
-    # height, so its ink is also checked against a plain "S". The characters are
-    # TeX's ten special characters plus the three that the OT1 encoding sets as
-    # other glyphs, listed here rather than read from the escape table, so a
-    # character missing from the table fails instead of dropping out.
+    # height, so its ink is also checked against a plain "S". The characters
+    # come from _TEX_MARKUP.
     fig, ct = _flat_label("S" + _TEX_MARKUP, usetex=True)
     for seg in ct._segments:
         assert seg._width_px > 0, seg._char

@@ -528,7 +528,9 @@ class _PlainGlyph(_OutlineSegment):
 
     def _build_outline(self, prop: font_manager.FontProperties, text: str,
                        usetex: bool) -> tuple[np.ndarray, np.ndarray]:
-        if not self._char.strip():  # whitespace advances the cursor but draws nothing
+        # Whitespace advances the cursor but draws nothing. Test the character,
+        # not ``text``: under usetex a space's text is TeX source, not whitespace.
+        if not self._char.strip():
             return np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
         if usetex:
             converter = _tex_to_path(prop.get_size_in_points())

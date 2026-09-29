@@ -399,7 +399,7 @@ class _OutlineSegment(mtext.Text):
     there is no per-glyph step, and plain and math are identical by construction.
 
     Subclasses differ only in where the outline comes from
-    (:meth:`_outline_units`) and whether it is placed rigidly or bent along the
+    (:meth:`_build_outline`) and whether it is placed rigidly or bent along the
     curve (:attr:`_bend`). Any perpendicular offset is already baked into the
     frame (it is the parallel curve), so a segment rides it with no offset
     handling of its own.
@@ -494,7 +494,20 @@ class _OutlineSegment(mtext.Text):
 
     def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
         """Outline ``(vertices, codes)`` in 1/100-em layout units, baseline at
-        ``v = 0`` and left edge at ``u = 0``. Implemented by subclasses."""
+        ``v = 0`` and left edge at ``u = 0``, cached on the text, font, and
+        usetex setting it is built from."""
+        prop = self.get_fontproperties()
+        text = self.get_text()
+        usetex = self.get_usetex()
+        key = (text, hash(prop), usetex)
+        if self._outline_cache is None or self._outline_cache[0] != key:
+            self._outline_cache = (key, self._build_outline(prop, text, usetex))
+        return self._outline_cache[1]
+
+    def _build_outline(self, prop: font_manager.FontProperties, text: str,
+                       usetex: bool) -> tuple[np.ndarray, np.ndarray]:
+        """Build the outline that :meth:`_outline_units` caches. Implemented by
+        subclasses."""
         raise NotImplementedError
 
 
@@ -513,24 +526,18 @@ class _PlainGlyph(_OutlineSegment):
         if self.get_usetex():
             self.set_text(_tex_source(char))
 
-    def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
-        prop = self.get_fontproperties()
-        text = self.get_text()
-        usetex = self.get_usetex()
-        key = (text, hash(prop), usetex)
-        if self._outline_cache is not None and self._outline_cache[0] == key:
-            return self._outline_cache[1]
+    def _build_outline(self, prop: font_manager.FontProperties, text: str,
+                       usetex: bool) -> tuple[np.ndarray, np.ndarray]:
         if not self._char.strip():  # whitespace advances the cursor but draws nothing
-            verts, codes = np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
-        elif usetex:
+            return np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
+        if usetex:
             converter = _tex_to_path(prop.get_size_in_points())
             verts, codes = converter.get_text_path(prop, text, ismath="TeX")
-            verts = np.asarray(verts, float) * _layout_units(converter)
         else:
-            verts, codes = _text_to_path.get_text_path(prop, text, ismath=False)
-        outline = (np.asarray(verts, float), np.asarray(codes, dtype=Path.code_type))
-        self._outline_cache = (key, outline)
-        return outline
+            converter = _text_to_path
+            verts, codes = converter.get_text_path(prop, text, ismath=False)
+        verts = np.asarray(verts, float) * _layout_units(converter)
+        return verts, np.asarray(codes, dtype=Path.code_type)
 
 
 class _MathRun(_OutlineSegment):
@@ -542,13 +549,8 @@ class _MathRun(_OutlineSegment):
 
     _bend = True
 
-    def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
-        prop = self.get_fontproperties()
-        text = self.get_text()
-        usetex = self.get_usetex()
-        key = (text, hash(prop), usetex)
-        if self._outline_cache is not None and self._outline_cache[0] == key:
-            return self._outline_cache[1]
+    def _build_outline(self, prop: font_manager.FontProperties, text: str,
+                       usetex: bool) -> tuple[np.ndarray, np.ndarray]:
         # Lay out with the artist's own usetex setting, the one matplotlib
         # measures the advance with. Under usetex LaTeX runs at the label size
         # (see ``_tex_to_path``), and either way the output is brought to
@@ -570,15 +572,10 @@ class _MathRun(_OutlineSegment):
         for rect_verts, rect_codes in rects:
             pieces.append(_densify(np.asarray(rect_verts, float) * units,
                                    np.asarray(rect_codes)))
-        if pieces:
-            verts = np.concatenate([p[0] for p in pieces])
-            codes = np.concatenate([p[1] for p in pieces])
-        else:
-            verts = np.empty((0, 2))
-            codes = np.empty(0, dtype=Path.code_type)
-        outline = (verts, codes)
-        self._outline_cache = (key, outline)
-        return outline
+        if not pieces:
+            return np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
+        return (np.concatenate([p[0] for p in pieces]),
+                np.concatenate([p[1] for p in pieces]))
 
 
 class CurvedText(mtext.Text):

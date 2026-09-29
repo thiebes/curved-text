@@ -1,0 +1,29 @@
+# Keep the pinned build tools and GitHub Actions current. The publishing
+# workflows pin their tools with hashes and every action to a commit SHA, so
+# without updates the pins stay at the versions of the day they were written.
+#
+# Not covered: uv, pinned by UV_VERSION in ci.yml, is a workflow variable that
+# Dependabot does not read, so bump it by hand. The library's own dependency
+# ranges in pyproject.toml are lower bounds, not pins, and need no updates.
+version: 2
+updates:
+  # .github/requirements/publish.txt and docs.txt, hash-pinned requirement
+  # files. Dependabot updates each pin together with its hashes. Grouped into
+  # one monthly pull request, which the docs job in ci.yml builds before merge.
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: monthly
+    groups:
+      requirements:
+        patterns: ["*"]
+
+  # Actions in .github/workflows, pinned to commit SHAs with version comments.
+  # Dependabot moves the SHA and the comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

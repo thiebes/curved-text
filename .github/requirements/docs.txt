@@ -1,9 +1,11 @@
 # Documentation build dependencies for the docs workflow, which publishes the
-# site to GitHub Pages, pinned with hashes: the docs extra and the library's
-# runtime dependencies. The workflow installs the project itself separately,
-# with --no-deps. To regenerate, run from the repository root:
-#   uv pip compile pyproject.toml --extra docs --generate-hashes --universal
-#     --python-version 3.13 --no-header --no-annotate
+# site to GitHub Pages, pinned with hashes: the docs extra, the library's
+# runtime dependencies, and the setuptools build backend. The workflow installs
+# the project itself with --no-deps and --no-build-isolation, so it builds with
+# this pinned setuptools. To regenerate, list `setuptools>=77.0.0` in
+# docs-build.in and run from the repository root:
+#   uv pip compile pyproject.toml docs-build.in --extra docs --generate-hashes
+#     --universal --python-version 3.13 --no-header --no-annotate
 #     -o .github/requirements/docs.txt
 accessible-pygments==0.0.5 \
     --hash=sha256:40918d3e6a2b619ad424cb91e556bd3bd8865443d9f22f1dcdf79e33c8046872 \
@@ -889,6 +891,9 @@ requests==2.34.2 \
 roman-numerals==4.1.0 \
     --hash=sha256:1af8b147eb1405d5839e78aeb93131690495fe9da5c91856cb33ad55a7f1e5b2 \
     --hash=sha256:647ba99caddc2cc1e55a51e4360689115551bf4476d90e8162cf8c345fe233c7
+setuptools==84.0.0 \
+    --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670 \
+    --hash=sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81

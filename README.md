@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/thiebes/curved-text/actions/workflows/ci.yml/badge.svg)](https://github.com/thiebes/curved-text/actions/workflows/ci.yml)
 [![Docs](https://github.com/thiebes/curved-text/actions/workflows/docs.yml/badge.svg)](https://thiebes.github.io/curved-text/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20725006.svg)](https://doi.org/10.5281/zenodo.20725006)
 
 Draw text that follows an arbitrary curve in [matplotlib](https://matplotlib.org/).
 

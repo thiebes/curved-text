@@ -5,11 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Allow the deploy job to publish to GitHub Pages via OIDC.
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# No permissions by default; each job asks for only what it needs.
+permissions: {}
 
 # One Pages deployment at a time; let a newer run finish rather than cancelling.
 concurrency:
@@ -17,38 +14,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Build with read access only, through the same reusable workflow the docs
+  # job in ci.yml uses, so the build that publishes is the one pull requests
+  # check.
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
-        with:
-          python-version: "3.13"
-      - name: Install with docs dependencies
-        # This job publishes the site, so its dependencies and the setuptools
-        # build backend come pinned with hashes from
-        # .github/requirements/docs.txt. The project itself has no hash, so it
-        # is installed in a second step with --no-index, which downloads
-        # nothing: pip must satisfy the docs extra and the runtime dependencies
-        # from the pinned set, and fails if the lock no longer does.
-        # --no-build-isolation builds with the pinned setuptools, and
-        # --check-build-dependencies fails if it no longer meets the
-        # [build-system] floor. The docs job in ci.yml runs the same install
-        # on pull requests; keep the two in step.
-        run: |
-          python -m pip install --require-hashes -r .github/requirements/docs.txt
-          python -m pip install --no-index --no-build-isolation --check-build-dependencies -e ".[docs]"
-      - name: Build the documentation
-        # Treat warnings as errors so a broken reference fails the build.
-        run: sphinx-build -W --keep-going -b html docs docs/_build/html
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
-        with:
-          path: docs/_build/html
+    uses: ./.github/workflows/docs-build.yml
+    permissions:
+      contents: read
+    with:
+      upload-pages-artifact: true
 
+  # Only this job holds the Pages credentials. It runs no project code: it
+  # deploys the artifact the build job uploaded.
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

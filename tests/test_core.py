@@ -27,8 +27,9 @@ needs_latex = pytest.mark.skipif(
 # TeX's ten special characters, plus the three that the default OT1 encoding
 # typesets as other glyphs ("<" as an inverted "!"). Listed here, not read from
 # the escape table, so a special character missing from the table makes the
-# literal test fail. The three OT1 characters still draw without escaping, so
-# the relation-sign and bar tests check that they are the right glyphs.
+# literal test fail. Unescaped, the three OT1 characters still draw, but as the
+# wrong glyphs, so the literal test cannot catch a missing entry for them; the
+# relation-sign and bar tests do.
 _TEX_MARKUP = r"#$%&~_^\{}<>|"
 
 
@@ -984,7 +985,9 @@ def test_outline_is_cached_until_its_font_changes(monkeypatch):
     # Each segment caches its outline on its text, font, and usetex setting.
     # A redraw reuses every outline, and a change to one glyph's font rebuilds
     # that glyph alone. A broken cache key would either rebuild on every draw
-    # or keep drawing the old outline.
+    # or keep drawing the old outline. The change is to the weight: outlines
+    # are in em units, so without usetex a size change leaves them identical
+    # and could not show a stale one.
     builds = []
     build = _PlainGlyph._build_outline
 
@@ -997,9 +1000,12 @@ def test_outline_is_cached_until_its_font_changes(monkeypatch):
     assert builds == ["a", "b"]
     _draw(fig)
     assert builds == ["a", "b"]
-    ct._segments[0].set_fontsize(30)
+    regular = ct._segments[0]._outline_units()[0]
+    ct._segments[0].set_fontweight("bold")
     _draw(fig)
     assert builds == ["a", "b", "a"]
+    bold = ct._segments[0]._outline_units()[0]
+    assert bold.shape != regular.shape or not np.array_equal(bold, regular)
     plt.close(fig)
 
 
@@ -1202,8 +1208,7 @@ def test_usetex_plain_text_is_literal():
     # must advance and draw instead of vanishing as a comment or stopping the
     # LaTeX run. The label holds a single "$", so it stays plain text. A
     # dollar sign drawn from a fixed-size layout came out about a third of its
-    # height, so its ink is also checked against a plain "S". The characters
-    # come from _TEX_MARKUP.
+    # height, so its ink is also checked against a plain "S".
     fig, ct = _flat_label("S" + _TEX_MARKUP, usetex=True)
     for seg in ct._segments:
         assert seg._width_px > 0, seg._char

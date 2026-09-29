@@ -980,6 +980,29 @@ def test_font_lines_are_measured_only_when_needed(monkeypatch, valign, box,
     plt.close(fig)
 
 
+def test_outline_is_cached_until_its_font_changes(monkeypatch):
+    # Each segment caches its outline on its text, font, and usetex setting.
+    # A redraw reuses every outline, and a change to one glyph's font rebuilds
+    # that glyph alone. A broken cache key would either rebuild on every draw
+    # or keep drawing the old outline.
+    builds = []
+    build = _PlainGlyph._build_outline
+
+    def counting(self, prop, text, usetex):
+        builds.append(text)
+        return build(self, prop, text, usetex)
+
+    monkeypatch.setattr(_PlainGlyph, "_build_outline", counting)
+    fig, ct = _flat_label("ab")
+    assert builds == ["a", "b"]
+    _draw(fig)
+    assert builds == ["a", "b"]
+    ct._segments[0].set_fontsize(30)
+    _draw(fig)
+    assert builds == ["a", "b", "a"]
+    plt.close(fig)
+
+
 def test_crowding_rejects_unknown_value():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)

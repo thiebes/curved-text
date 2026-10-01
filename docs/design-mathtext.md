@@ -68,7 +68,7 @@ Plain characters and math runs share one baseline and one outline-placement
 mechanism, differing only in rigidity:
 
 - Plain characters are placed rigidly, each rotated to the chord across its own
-  advance, so the glyph shape is undistorted.
+  width, so the glyph shape is undistorted.
 - Math runs bend continuously through the frame.
 
 The two regimes are the same frame at different scales of discretization: a

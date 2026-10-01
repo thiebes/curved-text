@@ -299,7 +299,7 @@ class _CurveFrame:
     def chord_angles(self, s, span):
         """Angle of the chord across ``[s, s + span]``, elementwise.
 
-        This is the rotation a glyph of advance ``span`` takes: it follows the
+        This is the rotation a glyph of width ``span`` takes: it follows the
         local tangent but averages over the glyph's own width, so it stays
         smooth across the vertices of a coarsely sampled polyline instead of
         snapping to each segment's angle. Degenerate chords (zero ``span`` or a
@@ -555,7 +555,7 @@ class _OutlineSegment(mtext.Text):
                                       y + v * np.cos(angle)])
         else:
             # Place the glyph rigidly: one rotation, by the chord across its own
-            # advance, about its centre on the curve. A single isometry preserves
+            # width, about its centre on the curve. A single isometry preserves
             # the glyph's shape (no distortion) while the baseline datum still
             # lands on the curve, so spacing and rotation match the bent runs.
             w = self._width_px
@@ -661,7 +661,7 @@ class CurvedText(mtext.Text):
 
     Every glyph -- plain character or mathtext run -- is laid out on one shared
     text baseline and mapped onto the curve from its glyph outline: a plain
-    character rigidly (one rotation by the chord across its own advance, so its
+    character rigidly (one rotation by the chord across its own width, so its
     shape is undistorted), a mathtext run by bending its outlines so radicals and
     fractions stay connected. ``valign`` chooses which line of the text rides the
     curve -- the vertical centre by default. Because both kinds share the baseline,
@@ -773,12 +773,13 @@ class CurvedText(mtext.Text):
         ``1.1``), and ``alpha``. The band has rounded ends, so it extends about
         half its height past the first and last glyph.
     crowding : {"none", "curvature"}, default "none"
-        How to space glyphs around bends. ``"none"`` advances each glyph by its
-        own width, so on the concave side of a tight bend the rotated glyph
-        boxes can overlap. ``"curvature"`` opens an even letterspacing gap that
-        grows with the local curvature and the glyph height, so the inside edges
-        stop colliding; the gap is the same between every pair of letters, and a
-        deadband leaves gentle bends and straight runs unchanged.
+        How to space glyphs around bends. ``"none"`` spaces them as ordinary
+        text does, by width and kerning, so on the concave side of a tight bend
+        the rotated glyph boxes can overlap. ``"curvature"`` opens an even
+        letterspacing gap that grows with the local curvature and the glyph
+        height, so the inside edges stop colliding; the gap is the same between
+        every pair of letters, and a deadband leaves gentle bends and straight
+        runs unchanged.
     valign : {"center", "baseline", "ascender", "descender"}, default "center"
         Which line of the text rides the curve. ``"center"`` straddles the text on
         the curve (the default); ``"baseline"`` follows the text baseline so the
@@ -903,10 +904,10 @@ class CurvedText(mtext.Text):
         """Arc-length advance for each segment along ``frame``.
 
         In the default ``"none"`` mode the advance is the segment's flat span
-        (its width plus its kern toward the next glyph), so the layout is
-        unchanged. In ``"curvature"`` mode each advance is widened
-        where the curve bends, to keep the concave edges of adjacent rigid glyph
-        boxes from overlapping on the inside of the bend. A box of height ``h``
+        (its width plus its kern toward the next glyph), with no widening. In
+        ``"curvature"`` mode each advance is widened where the curve bends, to
+        keep the concave edges of adjacent rigid glyph boxes from overlapping on
+        the inside of the bend. A box of height ``h``
         whose center rides a curve of local curvature ``kappa`` has its concave
         edge, a distance ``h/2`` toward the center of curvature, lose roughly
         ``(h/2)*|kappa|`` of arc length per unit advance to its neighbor; the
@@ -921,10 +922,9 @@ class CurvedText(mtext.Text):
         of the glyph's own width: multiplying by the width would give wide
         glyphs a proportionally larger trailing gap, which reads as uneven
         tracking on an arc, whereas a constant gap keeps the spacing even where
-        the curvature is uniform. The center sits in the middle of its widened
-        slot, so the gap is split evenly before and after each glyph. The
-        curvature is sampled along the un-widened layout starting at
-        ``flat_start``.
+        the curvature is uniform. Each span sits in the middle of its widened
+        slot, so the gap is split evenly around it. The curvature is sampled
+        along the un-widened layout starting at ``flat_start``.
         """
         if self._crowding == "none":
             return list(spans)
@@ -1030,7 +1030,7 @@ class CurvedText(mtext.Text):
 
         # ``cursor`` walks the label's left edge along the arc. Each segment maps
         # its baseline-relative outline onto the curve when it draws: a plain
-        # glyph rigidly (one rotation by the chord across its own advance, so it
+        # glyph rigidly (one rotation by the chord across its own width, so it
         # stays undistorted), a math run by bending its outlines. Centering each
         # segment's span in its (possibly widened) slot lets crowding space
         # plain glyphs and math runs alike, and the shared baseline datum keeps

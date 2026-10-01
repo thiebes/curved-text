@@ -458,8 +458,9 @@ class _OutlineSegment(mtext.Text):
     def _set_placement(self, frame: _CurveFrame, s_left: float,
                        width_px: float, datum: float) -> None:
         """Receive this draw's frame, the arc length of the segment's left edge on
-        it (already the parallel curve when offset), the segment's flat advance
-        width in pixels (the chord for a rigid glyph's rotation), and the
+        it (already the parallel curve when offset), the segment's own width in
+        pixels (the chord a rigid glyph is rotated by; its kern toward the next
+        glyph moves only the cursor, not the glyph), and the
         vertical-alignment datum (height in 1/100-em layout units that rides the
         curve), computed once by the container so every segment shares it."""
         self._frame = frame
@@ -861,12 +862,13 @@ class CurvedText(mtext.Text):
                             * px_per_unit)
         return kerns
 
-    def _advances(self, frame: _CurveFrame, widths: list[float],
+    def _advances(self, frame: _CurveFrame, spans: list[float],
                   heights: list[float], flat_start: float) -> list[float]:
         """Arc-length advance for each segment along ``frame``.
 
-        In the default ``"none"`` mode the advance is the flat glyph width, so
-        the layout is unchanged. In ``"curvature"`` mode each advance is widened
+        In the default ``"none"`` mode the advance is the segment's flat span
+        (its width plus its kern toward the next glyph), so the layout is
+        unchanged. In ``"curvature"`` mode each advance is widened
         where the curve bends, to keep the concave edges of adjacent rigid glyph
         boxes from overlapping on the inside of the bend. A box of height ``h``
         whose center rides a curve of local curvature ``kappa`` has its concave
@@ -889,14 +891,14 @@ class CurvedText(mtext.Text):
         ``flat_start``.
         """
         if self._crowding == "none":
-            return list(widths)
+            return list(spans)
         advances = []
         cursor = flat_start
-        for w, h in zip(widths, heights):
-            kappa = float(frame.curvature(cursor, w))
+        for span, h in zip(spans, heights):
+            kappa = float(frame.curvature(cursor, span))
             crowd = min(abs(kappa) * h / 2.0, _MAX_CROWD)
-            advances.append(w + max(0.0, crowd - _CROWD_SLACK) * h)
-            cursor += w
+            advances.append(span + max(0.0, crowd - _CROWD_SLACK) * h)
+            cursor += span
         return advances
 
     def draw(self, renderer, *args, **kwargs) -> None:

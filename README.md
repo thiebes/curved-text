@@ -172,6 +172,11 @@ A few details differ from the default renderer:
 - The usetex setting is fixed when the label is created, as matplotlib fixes it
   for each text. Set the rcParam or pass `usetex=True` before creating the
   label.
+- Set the LaTeX preamble and the font family before the figure is drawn. If
+  they change after a draw, redrawing the same figure keeps the old text
+  measurements, because matplotlib caches them per figure without the
+  preamble. Its own usetex text behaves the same way. Create the figure again
+  after changing them.
 - LaTeX takes the font family from the `font.family` rcParam, as for
   matplotlib's own usetex text, so the `fontfamily` keyword has no effect.
 - The `valign` lines come from the TeX font as LaTeX draws it. Under usetex,

@@ -658,7 +658,11 @@ class CurvedText(mtext.Text):
     and the ``box`` casing use; this can take seconds, and later draws
     reuse matplotlib's cache. The usetex setting is fixed when the label is
     constructed, as matplotlib fixes it for each glyph; pass ``usetex`` or set
-    the rcParam before creating the label. Under usetex the font family comes
+    the rcParam before creating the label. Set the LaTeX preamble and font
+    family before the figure is drawn, too: matplotlib caches text
+    measurements per figure without the preamble, so a change followed by a
+    redraw of the same figure keeps the old measurements, as it does for
+    matplotlib's own usetex text. Under usetex the font family comes
     from the ``font.family`` rcParam, as for matplotlib's own usetex text, and
     the ``fontfamily`` keyword has no effect. Math runs are passed to LaTeX as
     written, so they can run TeX commands, including ones that read local

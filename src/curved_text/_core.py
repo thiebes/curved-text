@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import math
 import re
 import unicodedata
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import matplotlib as mpl
 import matplotlib.artist as martist
 import matplotlib.colors as mcolors
 import matplotlib.font_manager as font_manager
@@ -55,6 +57,19 @@ _BOX_SAMPLES = 64
 
 # Shared converter from text to glyph outlines; it caches font faces internally.
 _text_to_path = TextToPath()
+
+# matplotlib 3.11 lays text out through HarfBuzz, which also shapes it, and its
+# layout takes OpenType features; earlier versions only kern.
+_LAYOUT_TAKES_FEATURES = "features" in inspect.signature(
+    TextToPath.get_glyphs_with_font).parameters
+
+# Kerns cached per font and character pair. A label's pairs recur on every draw
+# and across labels, but the pairs a session can meet are unbounded.
+_KERN_CACHE_SIZE = 4096
+
+# Bidirectional classes of right-to-left characters. Curved labels draw
+# characters in logical order, so a kern would land on the wrong pair.
+_RTL_CLASSES = ("R", "AL")
 
 # TeX source for a plain character under usetex. A plain glyph is one literal
 # character, so characters TeX reads as markup are escaped, and characters the
@@ -197,36 +212,57 @@ def _kern_units(prop: font_manager.FontProperties, left: str,
     """The kern between two characters of the matplotlib font ``prop`` names,
     in 1/100-em layout units, as matplotlib's own text layout applies it
     (:func:`_font_kern_units`)."""
-    return _font_kern_units(font_manager.findfont(prop), left, right)
+    return _font_kern_units(font_manager.findfont(prop), left, right,
+                            mpl.rcParams["text.hinting_factor"],
+                            mpl.rcParams["text.kerning_factor"])
 
 
-@functools.lru_cache(maxsize=4096)
-def _font_kern_units(fname: str, left: str, right: str) -> float:
+@functools.lru_cache(maxsize=_KERN_CACHE_SIZE)
+def _font_kern_units(fname: str, left: str, right: str, hinting_factor: Any,
+                     kerning_factor: Any) -> float:
     """The kern between two characters of the font file ``fname``, in 1/100-em
-    layout units: how far matplotlib's layout of the pair sets the right glyph
-    from where the left glyph's advance alone would put it.
+    layout units: how far kerning alone moves the right glyph in matplotlib's
+    own layout of the pair.
 
     Taking it from matplotlib's layout, rather than from the font's ``kern``
     table, follows whichever source matplotlib kerns from: the ``kern`` table up
     to 3.10, and the GPOS table through HarfBuzz from 3.11, where many fonts
-    keep their only kerning or a different one. Zero when the font lacks either
-    character, when either is a combining mark (HarfBuzz attaches a mark over
-    its base, which is placement, not kerning), and when the layout does not
-    yield one glyph per character, as for a ligature.
+    keep their only kerning or a different one. Before 3.11 the layout sets the
+    right glyph at the left glyph's unhinted advance plus the kern. From 3.11
+    the layout also shapes the pair (it reorders right-to-left text, picks
+    Arabic joining forms, attaches combining marks, hides format characters
+    such as the soft hyphen, and rounds advances), so the kern is the
+    difference between the pair laid out with and without the ``kern``
+    feature, which cancels the rest.
+
+    Zero when the font lacks either character, when the layout does not yield
+    one glyph per character (a ligature), and for right-to-left characters.
+    ``hinting_factor`` and ``kerning_factor`` are the rcParams of those names:
+    matplotlib keys its font objects on them and, before 3.11, kerns through
+    them, so they key this cache too.
     """
-    if any(unicodedata.category(c).startswith("M") for c in (left, right)):
+    if any(unicodedata.bidirectional(c) in _RTL_CLASSES for c in (left, right)):
         return 0.0
     font = font_manager.get_font(fname)
     if not font.get_char_index(ord(left)) or not font.get_char_index(ord(right)):
         return 0.0
     font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
-    glyphs = _text_to_path.get_glyphs_with_font(font, left + right)[0]
-    if len(glyphs) != 2:
+    pair = left + right
+    kerned = _text_to_path.get_glyphs_with_font(font, pair)[0]
+    if _LAYOUT_TAKES_FEATURES:
+        unkerned = _text_to_path.get_glyphs_with_font(  # type: ignore[call-arg]
+            font, pair, features=("-kern",))[0]
+    else:
+        unkerned = kerned
+    if len(kerned) != 2 or len(unkerned) != 2:
         return 0.0
-    # At FONT_SCALE and the converter's DPI an em spans 100 pixels, so layout
-    # positions are already in layout units. The linear advance is unhinted.
-    advance = font.load_char(ord(left)).linearHoriAdvance / 65536
-    return glyphs[1][1] - advance
+    _, x_kerned, _, _ = kerned[1]
+    if _LAYOUT_TAKES_FEATURES:
+        _, x_unkerned, _, _ = unkerned[1]
+    else:
+        # FreeType's linear advance is unhinted, in 16.16 fixed point.
+        x_unkerned = font.load_char(ord(left)).linearHoriAdvance / 65536
+    return (x_kerned - x_unkerned) * _layout_units(_text_to_path)
 
 
 class _CurveFrame:

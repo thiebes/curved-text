@@ -161,22 +161,31 @@ glyph keeps its own width as the chord it is rotated by. Crowding's gap is
 centred on the span, so the kern stays between the pair it belongs to. Usetex
 glyphs are not kerned here; see the deferred list.
 
-The kern is read from matplotlib's layout of the pair (`_font_kern_units`):
-how far `TextToPath.get_glyphs_with_font` sets the right glyph from where the
-left glyph's unhinted advance alone would put it, cached per font file and
-pair. Reading FreeType's `get_kerning` directly was rejected. It reads only the
-font's `kern` table, which matplotlib uses up to 3.10. From 3.11 matplotlib
-lays out text through HarfBuzz, which reads the GPOS table instead, and many
-fonts keep their only kerning there (STIXGeneral, Calibri) or a different one
-(Segoe UI). The direct reading missed matplotlib 3.11 by up to 6.6 px at 30
-pt. The layout also does more than kern, so three cases take no kern:
+The kern is read from matplotlib's layout of the pair (`_font_kern_units`),
+cached per font file, pair, and the `text.hinting_factor` and
+`text.kerning_factor` rcParams that select matplotlib's font object. Reading
+FreeType's `get_kerning` directly was rejected. It reads only the font's `kern`
+table, which matplotlib uses up to 3.10. From 3.11 matplotlib lays out text
+through HarfBuzz, which reads the GPOS table instead, and many fonts keep their
+only kerning there (STIXGeneral, Calibri) or a different one (Segoe UI). The
+direct reading missed matplotlib 3.11 by up to 6.6 px at 30 pt.
 
-- A combining mark. HarfBuzz attaches the mark over its base letter, which
-  would read as a kern of nearly the base's full width and pull every later
-  glyph back.
-- A pair the layout does not set as two glyphs, such as an `fi` ligature or a
-  mark HarfBuzz composes with its base.
-- A pair whose font lacks either character.
+How the kern is isolated depends on the version:
+
+- Up to 3.10 the layout sets the right glyph at the left glyph's unhinted
+  advance plus the kern, so the kern is the remainder.
+- From 3.11 HarfBuzz also shapes the pair: it reorders right-to-left text, picks
+  Arabic joining forms, attaches combining marks over their base, hides format
+  characters such as the soft hyphen, and rounds advances to 1/64 pixel. Each
+  of these would read as a kern under the remainder rule; the soft hyphen alone
+  pulled the next glyph back over the previous one. The kern is therefore the
+  difference between the pair laid out with and without the `kern` feature,
+  which cancels everything else exactly.
+
+Three cases take no kern: a pair the layout does not set as two glyphs (an
+`fi` ligature), a pair whose font lacks either character, and right-to-left
+characters, which curved labels draw in logical order, so even a real kern
+would land on the wrong pair.
 
 ## LaTeX (`usetex`)
 
@@ -334,8 +343,9 @@ fontsize pass-through), these tests carry the design:
   layout puts it, for DejaVu Sans and for STIXGeneral, which keeps its kerning
   only in the GPOS table. It fails if the kern is dropped, split around the
   glyph, or read from the `kern` table under matplotlib 3.11. The kern is zero
-  next to a math run, after a combining mark, within a ligature, and under
-  usetex.
+  next to a math run, after a combining mark, within a ligature, after a soft
+  hyphen, within a Hebrew pair, for an unkerned cmr10 pair (exactly, despite
+  HarfBuzz's rounding), and under usetex.
 
 ## Deferred
 

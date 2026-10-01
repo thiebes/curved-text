@@ -1017,20 +1017,26 @@ def test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text(family, pair,
     assert ours - ours_ref == pytest.approx(matplotlibs - matplotlibs_ref, abs=0.01)
 
 
-@pytest.mark.parametrize("text, usetex", [
-    ("A$V$", False),
-    ("$A$V", False),
-    # matplotlib 3.11 attaches the accent over the "q" and forms an "fi"
-    # ligature; neither is a kern between two glyphs.
-    ("q\u0301V", False),
-    ("fi", False),
-    pytest.param("AV", True, marks=needs_latex),
+@pytest.mark.parametrize("text, kwargs", [
+    ("A$V$", {}),
+    ("$A$V", {}),
+    # matplotlib 3.11 shapes text through HarfBuzz: it attaches the accent over
+    # the "q", forms an "fi" ligature, hides the soft hyphen, reorders the
+    # Hebrew pair, and rounds every advance. None of that is a kern, and cmr10
+    # has no kerning at all, so its pair must come out exactly zero.
+    ("q\u0301V", {}),
+    ("fi", {}),
+    ("A\u00adV", {}),
+    ("\u05d0\u05d1", {}),
+    ("Ba", {"fontfamily": "cmr10"}),
+    pytest.param("AV", {"usetex": True}, marks=needs_latex),
 ])
-def test_kern_is_zero_where_no_plain_pair_is_kerned(text, usetex):
-    # Only two consecutive plain glyphs set by matplotlib are kerned. A math
-    # run, a combining mark, a ligature, or a usetex glyph LaTeX sets one at a
-    # time takes no kern, so the label spaces exactly as without kerning.
-    fig, ct = _flat_label(text, usetex=usetex)
+def test_kern_is_zero_where_no_plain_pair_is_kerned(text, kwargs):
+    # Only two consecutive plain glyphs set by matplotlib are kerned, and only
+    # by the font's kerning. A math run, a usetex glyph LaTeX sets on its own,
+    # and every other effect of shaping take no kern, so the label spaces
+    # exactly as without kerning.
+    fig, ct = _flat_label(text, **kwargs)
     kerns = ct._kerns_px(fig.canvas.get_renderer())
     plt.close(fig)
     assert kerns == [0.0] * len(ct._segments)

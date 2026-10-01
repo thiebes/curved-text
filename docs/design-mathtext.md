@@ -150,6 +150,18 @@ the segment's own extent. Pinned by tests: a math `x` shares the baseline of a
 plain `x`, an exponent extends the run upward without moving its body, and
 `valign` shifts the whole label by one constant with no per-glyph step.
 
+## Kerning
+
+Each plain character is its own segment, so matplotlib never lays two of them
+out together and never applies the kern between them. `_kerns_px` adds it
+back: between two consecutive plain glyphs it is FreeType's unhinted kerning
+for the pair (`_kern_units`), the kern matplotlib's own text layout applies,
+and next to a math run it is zero. A segment's span, its width plus that kern,
+sets where the next segment starts, while the glyph keeps its own width as the
+chord it is rotated by. Crowding's gap is centred on the span, so the kern
+stays between the pair it belongs to. Usetex glyphs are not kerned here; see
+the deferred list.
+
 ## LaTeX (`usetex`)
 
 When a segment's usetex setting is on (the `text.usetex` rcParam, or
@@ -309,10 +321,9 @@ fontsize pass-through), these tests carry the design:
   stem weight, which rotation largely defeats anyway); marginal gain, not
   pursued. Usetex glyphs are hinted by matplotlib, at a resolution where it is
   negligible (see the LaTeX section).
-- Inter-character kerning for plain runs. Each plain character is laid out and
-  advanced on its own, so kerning pairs between adjacent glyphs are not applied.
-  The per-character placement that rides the curve is what makes this hard:
-  kerning is a pairwise shift, and the glyphs do not share one layout pass.
+- Kerning for usetex plain text. Each usetex character is typeset by its own
+  LaTeX run, so TeX's kerning between neighbours is not applied. Typesetting
+  each plain run once would restore it and cut the LaTeX runs (#20).
 
 ## Ecosystem constraints
 

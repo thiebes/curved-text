@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 import matplotlib as mpl
+import matplotlib.font_manager as font_manager
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -979,6 +980,32 @@ def test_font_lines_are_measured_only_when_needed(monkeypatch, valign, box,
     fig, _ = _flat_label("label", valign=valign, box=box)
     assert calls == [False] * measurements  # the label is not usetex
     plt.close(fig)
+
+
+@pytest.mark.parametrize("pair, reference", [("AV", "AB"), ("To", "Tx")])
+def test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text(pair, reference):
+    # matplotlib's own text layout kerns pairs such as "AV" and "To". Each plain
+    # glyph's advance includes the kern toward the next glyph, so the second
+    # glyph of a kerned pair starts closer than after a reference letter, by
+    # the same amount as in matplotlib's layout. Comparing against a reference
+    # pair cancels the glyph's own width, which some matplotlib versions round
+    # to whole pixels.
+    def second_glyph_offsets(text):
+        fig, ct = _flat_label(text, fontsize=30)
+        renderer = fig.canvas.get_renderer()
+        first, second = ct._segments
+        prop = first.get_fontproperties()
+        font = font_manager.get_font(font_manager.findfont(prop))
+        font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
+        glyphs = _text_to_path.get_glyphs_with_font(font, text)[0]
+        px_per_unit = renderer.points_to_pixels(30) / _text_to_path.FONT_SCALE
+        plt.close(fig)
+        return second._s_left - first._s_left, glyphs[1][1] * px_per_unit
+
+    ours, matplotlibs = second_glyph_offsets(pair)
+    ours_ref, matplotlibs_ref = second_glyph_offsets(reference)
+    assert ours - ours_ref < -1.0
+    assert ours - ours_ref == pytest.approx(matplotlibs - matplotlibs_ref, abs=0.25)
 
 
 def test_outline_is_cached_until_its_font_changes(monkeypatch):

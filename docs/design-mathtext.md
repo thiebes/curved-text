@@ -154,13 +154,29 @@ plain `x`, an exponent extends the run upward without moving its body, and
 
 Each plain character is its own segment, so matplotlib never lays two of them
 out together and never applies the kern between them. `_kerns_px` adds it
-back: between two consecutive plain glyphs it is FreeType's unhinted kerning
-for the pair (`_kern_units`), the kern matplotlib's own text layout applies,
-and next to a math run it is zero. A segment's span, its width plus that kern,
-sets where the next segment starts, while the glyph keeps its own width as the
-chord it is rotated by. Crowding's gap is centred on the span, so the kern
-stays between the pair it belongs to. Usetex glyphs are not kerned here; see
-the deferred list.
+back: between two consecutive plain glyphs it is the kern matplotlib's own text
+layout applies to the pair, and next to a math run it is zero. A segment's
+span, its width plus that kern, sets where the next segment starts, while the
+glyph keeps its own width as the chord it is rotated by. Crowding's gap is
+centred on the span, so the kern stays between the pair it belongs to. Usetex
+glyphs are not kerned here; see the deferred list.
+
+The kern is read from matplotlib's layout of the pair (`_font_kern_units`):
+how far `TextToPath.get_glyphs_with_font` sets the right glyph from where the
+left glyph's unhinted advance alone would put it, cached per font file and
+pair. Reading FreeType's `get_kerning` directly was rejected. It reads only the
+font's `kern` table, which matplotlib uses up to 3.10. From 3.11 matplotlib
+lays out text through HarfBuzz, which reads the GPOS table instead, and many
+fonts keep their only kerning there (STIXGeneral, Calibri) or a different one
+(Segoe UI). The direct reading missed matplotlib 3.11 by up to 6.6 px at 30
+pt. The layout also does more than kern, so three cases take no kern:
+
+- A combining mark. HarfBuzz attaches the mark over its base letter, which
+  would read as a kern of nearly the base's full width and pull every later
+  glyph back.
+- A pair the layout does not set as two glyphs, such as an `fi` ligature or a
+  mark HarfBuzz composes with its base.
+- A pair whose font lacks either character.
 
 ## LaTeX (`usetex`)
 
@@ -314,6 +330,12 @@ fontsize pass-through), these tests carry the design:
   from the matplotlib font instead of the drawn one.
 - `valign` without usetex: the `"ascender"` shift equals the ascender of the
   font the label names, for DejaVu Sans and for STIXGeneral.
+- Kerning: the second glyph of "AV" and "To" starts where matplotlib's own
+  layout puts it, for DejaVu Sans and for STIXGeneral, which keeps its kerning
+  only in the GPOS table. It fails if the kern is dropped, split around the
+  glyph, or read from the `kern` table under matplotlib 3.11. The kern is zero
+  next to a math run, after a combining mark, within a ligature, and under
+  usetex.
 
 ## Deferred
 

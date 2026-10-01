@@ -6,12 +6,12 @@ from __future__ import annotations
 import functools
 import math
 import re
+import unicodedata
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import matplotlib.artist as martist
 import matplotlib.colors as mcolors
 import matplotlib.font_manager as font_manager
-import matplotlib.ft2font as ft2font
 import matplotlib.lines as mlines
 import matplotlib.text as mtext
 import numpy as np
@@ -55,13 +55,6 @@ _BOX_SAMPLES = 64
 
 # Shared converter from text to glyph outlines; it caches font faces internally.
 _text_to_path = TextToPath()
-
-# FreeType's unhinted kerning: the font's design kern, scaled exactly, to match
-# the unhinted outlines. matplotlib 3.10 moved the constant into an enum.
-try:
-    _KERNING_UNFITTED = ft2font.Kerning.UNFITTED
-except AttributeError:  # matplotlib before 3.10
-    _KERNING_UNFITTED = ft2font.KERNING_UNFITTED  # type: ignore[attr-defined]
 
 # TeX source for a plain character under usetex. A plain glyph is one literal
 # character, so characters TeX reads as markup are escaped, and characters the
@@ -201,18 +194,39 @@ def _valign_datum(valign: str, lines: _FontLines) -> float:
 
 def _kern_units(prop: font_manager.FontProperties, left: str,
                 right: str) -> float:
-    """FreeType's kerning between two characters of the matplotlib font
-    ``prop`` names, in 1/100-em layout units, as matplotlib's own text layout
-    applies it. Zero when the font has no kern for the pair or lacks either
-    character."""
-    font = font_manager.get_font(font_manager.findfont(prop))
-    font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
-    left_index = font.get_char_index(ord(left))
-    right_index = font.get_char_index(ord(right))
-    if not left_index or not right_index:
+    """The kern between two characters of the matplotlib font ``prop`` names,
+    in 1/100-em layout units, as matplotlib's own text layout applies it
+    (:func:`_font_kern_units`)."""
+    return _font_kern_units(font_manager.findfont(prop), left, right)
+
+
+@functools.lru_cache(maxsize=4096)
+def _font_kern_units(fname: str, left: str, right: str) -> float:
+    """The kern between two characters of the font file ``fname``, in 1/100-em
+    layout units: how far matplotlib's layout of the pair sets the right glyph
+    from where the left glyph's advance alone would put it.
+
+    Taking it from matplotlib's layout, rather than from the font's ``kern``
+    table, follows whichever source matplotlib kerns from: the ``kern`` table up
+    to 3.10, and the GPOS table through HarfBuzz from 3.11, where many fonts
+    keep their only kerning or a different one. Zero when the font lacks either
+    character, when either is a combining mark (HarfBuzz attaches a mark over
+    its base, which is placement, not kerning), and when the layout does not
+    yield one glyph per character, as for a ligature.
+    """
+    if any(unicodedata.category(c).startswith("M") for c in (left, right)):
         return 0.0
-    # FreeType reports the kern in 26.6 fixed-point pixels, at 100 pixels per em.
-    return font.get_kerning(left_index, right_index, _KERNING_UNFITTED) / 64
+    font = font_manager.get_font(fname)
+    if not font.get_char_index(ord(left)) or not font.get_char_index(ord(right)):
+        return 0.0
+    font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
+    glyphs = _text_to_path.get_glyphs_with_font(font, left + right)[0]
+    if len(glyphs) != 2:
+        return 0.0
+    # At FONT_SCALE and the converter's DPI an em spans 100 pixels, so layout
+    # positions are already in layout units. The linear advance is unhinted.
+    advance = font.load_char(ord(left)).linearHoriAdvance / 65536
+    return glyphs[1][1] - advance
 
 
 class _CurveFrame:
@@ -829,22 +843,22 @@ class CurvedText(mtext.Text):
     def _kerns_px(self, renderer) -> list[float]:
         """The kern from each segment toward the next, in display pixels.
 
-        Between two consecutive plain glyphs it is FreeType's kerning for the
-        pair, as matplotlib's own text layout applies it, so pairs such as "AV"
-        and "To" sit as tightly as in ordinary text. Next to a math run, and at
-        the end of the label, it is zero. Usetex glyphs are typeset by LaTeX one
-        character at a time, and are not kerned here.
+        Between two consecutive plain glyphs it is the kern matplotlib's own
+        text layout applies to the pair (:func:`_kern_units`), so pairs such as
+        "AV" and "To" sit as tightly as in ordinary text. Next to a math run, and
+        at the end of the label, it is zero. Usetex glyphs are typeset by LaTeX
+        one character at a time, and are not kerned here.
         """
         kerns = [0.0] * len(self._segments)
         for i, (left, right) in enumerate(zip(self._segments,
                                               self._segments[1:])):
-            if (not isinstance(left, _PlainGlyph)
-                    or not isinstance(right, _PlainGlyph) or left.get_usetex()):
-                continue
-            prop = left.get_fontproperties()
-            px_per_unit = (renderer.points_to_pixels(prop.get_size_in_points())
-                           / _text_to_path.FONT_SCALE)
-            kerns[i] = _kern_units(prop, left._char, right._char) * px_per_unit
+            if (isinstance(left, _PlainGlyph) and isinstance(right, _PlainGlyph)
+                    and not left.get_usetex()):
+                prop = left.get_fontproperties()
+                px_per_unit = (renderer.points_to_pixels(prop.get_size_in_points())
+                               / _text_to_path.FONT_SCALE)
+                kerns[i] = (_kern_units(prop, left._char, right._char)
+                            * px_per_unit)
         return kerns
 
     def _advances(self, frame: _CurveFrame, widths: list[float],

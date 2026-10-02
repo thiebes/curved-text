@@ -8,11 +8,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 
 - Plain text is kerned. Each plain character's advance now includes the
-  font's kern toward the next character in the same run, as matplotlib's own
-  text layout applies it, so pairs such as "AV" and "To" sit as tightly as in
-  ordinary text. Labels that contain kerning pairs come out slightly tighter
-  than before. Usetex text is not kerned yet
+  font's kern toward the next character in the same run, as the text's own
+  layout applies it: matplotlib's, or under usetex TeX's. Pairs such as "AV"
+  and "To" sit as tightly as in ordinary text, so labels that contain kerning
+  pairs come out slightly tighter than before
   ([#20](https://github.com/thiebes/curved-text/issues/20)).
+- Under usetex, each run of plain text is typeset in one LaTeX pass, where
+  LaTeX used to run once for each distinct character. A label's first draw is
+  several times faster: 1.4 s instead of 9.0 s for a 37-character label with an
+  empty TeX cache. A run with a character TeX builds from several pieces, such
+  as an accented letter in the default encoding, is typeset one character at a
+  time, as before, without kerning.
 
 ### Fixed
 

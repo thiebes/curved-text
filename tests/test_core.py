@@ -5,6 +5,7 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
 import functools
+import inspect
 import shutil
 import subprocess
 
@@ -17,7 +18,8 @@ from matplotlib.texmanager import TexManager
 
 from curved_text import CurvedText, _core, curved_text
 from curved_text._core import (
-    _font_lines, _MathRun, _PlainGlyph, _split_runs, _text_to_path, _valign_datum)
+    _font_lines, _layout_units, _MathRun, _PlainGlyph, _split_runs, _tex_source,
+    _tex_to_path, _text_to_path, _valign_datum)
 
 # usetex outline extraction runs latex and reads the DVI, which needs kpsewhich
 # to locate the fonts.
@@ -76,9 +78,9 @@ def test_places_one_artist_per_character():
 def test_whitespace_glyph_draws_nothing(ws):
     # A whitespace glyph advances the cursor but contributes no outline; without
     # the guard a tab or newline would render a visible ".notdef" box.
-    verts, _ = _PlainGlyph(ws)._outline_units()
+    verts, _ = _PlainGlyph(ws, ws, 0)._outline_units()
     assert len(verts) == 0
-    assert len(_PlainGlyph("x")._outline_units()[0]) > 0
+    assert len(_PlainGlyph("x", "x", 0)._outline_units()[0]) > 0
 
 
 def test_plain_glyphs_share_one_baseline_on_a_slope():
@@ -1029,13 +1031,11 @@ def test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text(family, pair,
     ("A\u00adV", {}),
     ("\u05d0\u05d1", {}),
     ("Ba", {"fontfamily": "cmr10"}),
-    pytest.param("AV", {"usetex": True}, marks=needs_latex),
 ])
 def test_kern_is_zero_where_no_plain_pair_is_kerned(text, kwargs):
     # Only two consecutive plain glyphs set by matplotlib are kerned, and only
-    # by the font's kerning. A math run, a usetex glyph LaTeX sets on its own,
-    # and every other effect of shaping take no kern, so the label spaces
-    # exactly as without kerning.
+    # by the font's kerning. A math run and every other effect of shaping take
+    # no kern, so the label spaces exactly as without kerning.
     fig, ct = _flat_label(text, **kwargs)
     kerns = ct._kerns_px(fig.canvas.get_renderer())
     plt.close(fig)
@@ -1318,6 +1318,93 @@ def test_usetex_bar_is_not_ot1_dash():
     fig, ct = _flat_label("|", usetex=True)
     ink = _ink(ct, fig.canvas.get_renderer(), "|")
     assert ink.height > 2 * ink.width
+    plt.close(fig)
+
+
+@needs_latex
+def test_usetex_plain_run_is_typeset_in_one_latex_pass(monkeypatch, tmp_path):
+    # LaTeX typesets each plain run once, where it once ran for every distinct
+    # character and made a label's first draw take seconds. Figure layout must
+    # not measure the glyphs one at a time either, so saving with a tight
+    # bounding box asks LaTeX for nothing more, even for an unclipped label,
+    # whose glyphs layout would otherwise measure. What remains does not grow
+    # with the label: the run, the "lp" line box, the "()gy" font lines the
+    # default valign reads, and the container's own text, a single space.
+    sources = set()
+    make_dvi = TexManager.make_dvi
+
+    def recording(*args):
+        sources.add(args[-2])
+        if inspect.ismethod(make_dvi):  # a classmethod from matplotlib 3.6 on
+            return make_dvi(*args[-2:])
+        return make_dvi(*args)
+
+    monkeypatch.setattr(TexManager, "make_dvi", recording)
+    fig, _ = _flat_label("Typography AVA", usetex=True, clip_on=False)
+    fig.savefig(tmp_path / "label.png", bbox_inches="tight")
+    plt.close(fig)
+    assert not {_tex_source(char) for char in "Typography AV"} & sources
+    assert len(sources) == 4
+
+
+@needs_latex
+@pytest.mark.parametrize("pair, reference", [("AV", "AB"), ("To", "Tx")])
+def test_usetex_plain_glyphs_are_kerned_as_tex_sets_them(pair, reference):
+    # TeX kerns "AV" and "To" within a run. The second glyph of each pair
+    # starts where TeX's own layout of the pair puts it, closer than after a
+    # reference letter.
+    fontsize = 30
+
+    def second_glyph_offsets(text):
+        fig, ct = _flat_label(text, fontsize=fontsize, usetex=True)
+        first, second = ct._segments
+        converter = _tex_to_path(fontsize)
+        glyphs = converter.get_glyphs_tex(
+            font_manager.FontProperties(size=fontsize), text)[0]
+        px_per_unit = (fig.canvas.get_renderer().points_to_pixels(fontsize)
+                       / _text_to_path.FONT_SCALE * _layout_units(converter))
+        plt.close(fig)
+        return (second._s_left - first._s_left,
+                (glyphs[1][1] - glyphs[0][1]) * px_per_unit)
+
+    ours, tex = second_glyph_offsets(pair)
+    ours_ref, _ = second_glyph_offsets(reference)
+    assert ours - ours_ref < -1.0
+    assert ours == pytest.approx(tex, abs=0.01)
+
+
+@needs_latex
+@pytest.mark.parametrize("text", [
+    "office --- affluent",  # ligature pairs, kept one glyph per character
+    "S" + _TEX_MARKUP,  # "\_" sets a rule, not a glyph
+    " a  b ",  # spaces at either end and in a row
+])
+def test_usetex_run_sets_one_item_per_character(text):
+    # Each printing character of a run takes its own glyph or rule from the
+    # run's one LaTeX pass, and each space one interword space.
+    fig, ct = _flat_label(text, usetex=True)
+    em_px = fig.canvas.get_renderer().points_to_pixels(16)
+    for seg in ct._segments:
+        assert seg._tex_run() is not None
+        assert seg._width_px > 0, seg._char
+        if seg._char.isspace():
+            assert seg._width_px == pytest.approx(em_px / 3, rel=0.1)
+        else:
+            assert len(seg._outline_units()[0]) > 0, seg._char
+    plt.close(fig)
+
+
+@needs_latex
+def test_usetex_run_of_composite_characters_is_typeset_per_character():
+    # In the default OT1 encoding "\u00e9" sets an accent and a letter, two
+    # items for one character, so the run cannot be split per character and its
+    # characters are typeset one at a time, in order, as before.
+    fig, ct = _flat_label("caf\u00e9", usetex=True)
+    lefts = [seg._s_left for seg in ct._segments]
+    assert all(seg._tex_run() is None for seg in ct._segments)
+    assert all(seg._width_px > 0 for seg in ct._segments)
+    assert lefts == sorted(lefts)
+    assert len(ct._segments[-1]._outline_units()[0]) > 0
     plt.close(fig)
 
 

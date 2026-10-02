@@ -14,6 +14,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   than before. Usetex text is not kerned yet
   ([#20](https://github.com/thiebes/curved-text/issues/20)).
 
+### Fixed
+
+- A label drawn with `clip_on=False` no longer stretches a tight bounding box
+  (`bbox_inches="tight"`) to the data origin. Figure layout measured each glyph
+  at its unused `Text` position; glyphs now stay out of figure layout.
+
 ## 0.6.0
 
 ### Added

@@ -100,7 +100,11 @@ All code lives in `src/curved_text/_core.py`.
   segments, and `get_window_extent` measures both plain text and mathtext, so
   the parent's measurement loop has no special case. It owns `draw` and the
   outline-to-curve mapping and the outline cache; subclasses supply only the
-  outline source (`_build_outline`) and the `_bend` flag.
+  outline source (`_build_outline`) and the `_bend` flag. Segments stay out
+  of figure layout (`set_in_layout`): the parent positions them when it draws,
+  so their own `Text` position, the data origin, is not where they appear, and
+  an unclipped label measured there would stretch a tight bounding box to the
+  origin.
   - `_outline_units()` returns the segment's outline `(vertices, codes)` in
     1/100-em units, baseline at `v = 0`, memoized per text, font properties, and
     usetex setting. It calls the subclass's `_build_outline` on a cache miss.

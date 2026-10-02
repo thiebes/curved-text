@@ -1042,6 +1042,26 @@ def test_kern_is_zero_where_no_plain_pair_is_kerned(text, kwargs):
     assert kerns == [0.0] * len(ct._segments)
 
 
+def test_unclipped_label_keeps_the_tight_bounding_box():
+    # The container positions each glyph when it draws, so a glyph's own Text
+    # position, the data origin, is not where it appears. An unclipped label
+    # must leave figure layout alone; measured at the origin, its glyphs
+    # stretched a tight bounding box to it, here over a hundred inches.
+    def tight_bounds(label):
+        fig, ax = plt.subplots(figsize=(4, 3))
+        x = np.linspace(100, 110, 50)
+        ax.plot(x, 100 + np.sin(x))
+        if label:
+            curved_text(ax, x, 100 + np.sin(x), "far from the origin",
+                        clip_on=False)
+        _draw(fig)
+        bounds = fig.get_tightbbox(fig.canvas.get_renderer()).bounds
+        plt.close(fig)
+        return bounds
+
+    np.testing.assert_allclose(tight_bounds(True), tight_bounds(False))
+
+
 def test_outline_is_cached_until_its_font_changes(monkeypatch):
     # Each segment caches its outline on its text, font, and usetex setting.
     # A redraw reuses every outline, and a change to one glyph's font rebuilds

@@ -485,6 +485,10 @@ class _OutlineSegment(mtext.Text):
 
     def __init__(self, text: str, **kwargs: Any) -> None:
         super().__init__(0.0, 0.0, text, **kwargs)
+        # The container positions every segment when it draws, so the Text
+        # position is not where the segment appears, and figure layout
+        # (``bbox_inches="tight"``, constrained layout) must not measure it.
+        self.set_in_layout(False)
         self._frame: _CurveFrame | None = None
         self._s_left = 0.0
         self._width_px = 0.0

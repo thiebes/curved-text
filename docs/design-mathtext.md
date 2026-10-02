@@ -97,14 +97,20 @@ All code lives in `src/curved_text/_core.py`.
   extension. Shared by the per-character walk and by math runs.
 - `_OutlineSegment(matplotlib.text.Text)`: the shared base for both segment
   kinds. Subclassing `Text` inherits kwargs handling identically across
-  segments, and `get_window_extent` measures both plain text and mathtext, so
-  the parent's measurement loop has no special case. It owns `draw` and the
-  outline-to-curve mapping and the outline cache; subclasses supply only the
-  outline source (`_build_outline`) and the `_bend` flag.
+  segments, and `_size_px` measures both plain text and mathtext through
+  matplotlib's `get_window_extent`, so the parent's measurement loop has no
+  special case; a usetex plain glyph overrides it to read its run (see the
+  LaTeX section). It owns `draw` and the outline-to-curve mapping and the
+  outline cache; subclasses supply only the outline source (`_build_outline`)
+  and the `_bend` flag. Segments stay out of figure layout (`set_in_layout`):
+  the parent positions them when it draws, so their own `Text` position, the
+  data origin, is not where they appear, and an unclipped label measured there
+  would stretch a tight bounding box to the origin.
   - `_outline_units()` returns the segment's outline `(vertices, codes)` in
     1/100-em units, baseline at `v = 0`, memoized per text, font properties, and
     usetex setting. It calls the subclass's `_build_outline` on a cache miss.
-    `_PlainGlyph` reads the outline from `TextToPath.get_text_path`;
+    `_PlainGlyph` reads the outline from `TextToPath.get_text_path`, or under
+    usetex from its run (see the LaTeX section), whose cache it then uses;
     `_MathRun` from `TextToPath.get_glyphs_mathtext` (or `get_glyphs_tex` under
     usetex, see below), subdividing rule boxes (fraction bars, radical
     overlines) with `_densify` so the long straight runs follow the curve. Glyph
@@ -158,8 +164,8 @@ back: between two consecutive plain glyphs it is the kern matplotlib's own text
 layout applies to the pair, and next to a math run it is zero. A segment's
 span, its width plus that kern, sets where the next segment starts, while the
 glyph keeps its own width as the chord it is rotated by. Crowding's gap is
-centred on the span, so the kern stays between the pair it belongs to. Usetex
-glyphs are not kerned here; see the deferred list.
+centred on the span, so the kern stays between the pair it belongs to. Under
+usetex the kern is TeX's, from the glyph's run; see the LaTeX section.
 
 The kern is read from matplotlib's layout of the pair (`_font_kern_units`),
 cached per font file, pair, and the `text.hinting_factor` and
@@ -192,8 +198,10 @@ would land on the wrong pair.
 When a segment's usetex setting is on (the `text.usetex` rcParam, or
 `usetex=True` passed through the kwargs), LaTeX lays out both segment kinds, so
 a curved label matches the figure's other usetex text. The run architecture
-carries over unchanged; three details make the outline agree with the advance
-matplotlib measures, and a fourth puts the `valign` lines on the drawn font.
+carries over unchanged. The first bullet below makes the outline agree with
+the advance matplotlib measures. The next four cover plain text: one LaTeX pass
+per run, how each character keeps its own item, literal characters, and spaces.
+The last puts the `valign` lines on the drawn font.
 
 - **Layout at the label size.** matplotlib measures a usetex advance by running
   LaTeX at the label's own size, and TeX fonts change design with size (cmss8 at
@@ -211,21 +219,69 @@ matplotlib measures, and a fourth puts the `valign` lines on the drawn font.
   would shrink the glyphs (2.8% at 190 pt). The DPI is rounded up to a whole
   number, and `_layout_units` rescales the outline to 1/100-em layout units by
   the remaining factor, which is within 1.4% of 1 up to 72 pt.
-- **Plain text is literal.** Each plain character is its own segment, so TeX
-  commands cannot span plain text anyway. A plain glyph's text is the
-  character's literal TeX source (`_tex_source`): markup characters are escaped,
-  and `<`, `>`, and `|`, which the default OT1 encoding typesets as other
-  glyphs, are spelled out by name. The escaped text is set once at
-  construction, when matplotlib also fixes the artist's usetex setting, so
-  matplotlib's own measurement, figure layout (`bbox_inches="tight"`), and the
-  outline all read the same string. Overriding matplotlib's private
-  `Text._preprocess_math` hook would escape the text without changing
-  `get_text()`, and was rejected under the public-API constraint below.
+- **One LaTeX pass per plain run.** Each plain run is typeset once
+  (`_typeset_tex_run`) and split per character. Typesetting each character on
+  its own would run LaTeX once per distinct character and lose TeX's kerning
+  between neighbours. Each printing character sets one item, a glyph or a rule
+  (`\_` draws a rule in the default encoding), and the items, taken in order
+  along the run, pair with the printing characters. A character's outline is
+  its item, its width the item's own width, and its span the distance to the
+  next character, which carries TeX's kern (`_PlainGlyph._tex_kern_units`). A
+  usetex plain glyph's `_size_px` reads its width and height from the run, so
+  matplotlib never measures it on its own. The height is the one matplotlib
+  gives the character on its own: at least the box of `lp`, as for every line
+  of usetex text, and a taller character's ink, which stands in for its box.
+  The run sits in an `\mbox`, so a long run stays on one line instead of
+  breaking where matplotlib's LaTeX paragraph ends.
+- **Cost.** LaTeX runs once per distinct plain run instead of once per distinct
+  character, as it does for matplotlib's own usetex text, one run per string.
+  A long label's first draw is several times faster (about 2 s instead of 9
+  to 10 s for 37 characters with an empty TeX cache). A new label string costs one
+  LaTeX run even when every character in it has been drawn before, so many
+  short new labels take longer than when their characters were already cached.
+  Kerning needs TeX to set the characters together, so the per-character cost
+  model is not kept.
+- **Cache.** Runs are cached per run, size, and the rcParams matplotlib's
+  `TexManager` writes the LaTeX preamble from (`_TEX_RCPARAMS`): the user's
+  preamble, `font.family`, and each family's font list, such as `font.serif`,
+  from which it picks the font package. A change to any of them typesets the
+  run again, and a glyph's outline and width come from the same pass, so a
+  redraw after the change cannot mix two fonts. Keying on
+  `TexManager.get_basefile`, which hashes the whole LaTeX job, was rejected: it
+  rebuilds the job's source on every call, about 150 microseconds on
+  matplotlib 3.10 and 3.11, and a draw reads every glyph's run, which tripled
+  the redraw time of a figure with ten labels. The cache holds 1024 runs,
+  enough that a large figure's runs are not read back from their DVI files on
+  every draw.
+- **Ligatures and characters that cannot be paired.** TeX fonts join pairs such
+  as `fi`, `--`, and ` `` ` into one glyph, which would leave two characters
+  with one item; an empty group between such a pair keeps them apart
+  (`_TEX_LIGATURES`). A character TeX builds from several items, such as `é`,
+  which the default OT1 encoding sets as an accent over an `e`, leaves the item
+  count unequal to the character count. A control or format character, such as
+  a soft hyphen, can set no item, and a combining mark joins the character
+  before, so with one of them the counts could agree while the pairing is
+  wrong; a run holding one is not paired at all (`_TEX_UNPAIRED_CATEGORIES`).
+  Either way the run is typeset one character at a time: its glyphs take
+  matplotlib's measurement of each character on its own, and no kern.
+- **Plain text is literal.** Each plain character keeps its literal TeX source
+  (`_tex_source`): markup characters are escaped, and `<`, `>`, and `|`, which
+  the default OT1 encoding typesets as other glyphs, are spelled out by name,
+  so TeX commands cannot span plain text. A glyph's own text is that source,
+  set once at construction, when matplotlib also fixes the artist's usetex
+  setting, so a run typeset one character at a time measures and draws the same
+  string. Overriding matplotlib's private `Text._preprocess_math` hook would
+  escape the text without changing `get_text()`, and was rejected under the
+  public-API constraint below.
 - **Whitespace advances.** matplotlib's DVI reader sizes its output from the
   glyphs and rules TeX sets, and glue alone sets neither, so a bare space
-  measures zero wide. Whitespace (TeX reads a tab as a space) is typeset as an
-  interword space between two 1sp rules, which measures the true interword
-  width.
+  measures zero wide. In a run, each whitespace character (TeX reads a tab as a
+  space) is a control space, an interword space TeX neither drops at the ends
+  nor collapses in a row, and a 1sp rule at each end of the run makes the
+  reader measure spaces there. A run of spaces splits the gap between its
+  neighbours evenly (`_char_lefts`). A control space takes no extra sentence
+  spacing after a period, unlike a space in matplotlib's own usetex text. On
+  its own, a space is an interword space between two 1sp rules.
 - **`valign` reads the drawn font.** Under usetex the text is drawn in a TeX
   font chosen by the preamble, font family, and size, never in the matplotlib
   font the label's font properties name, so the `valign` lines come from TeX.
@@ -291,9 +347,11 @@ reads on top.
 - `parse_math=False` (kwarg or rcParam) disables splitting entirely.
 - A string with an odd count of unescaped `$` renders literally, character by
   character, as matplotlib itself would.
-- Under `usetex`, plain text is typeset literally, one character at a time; TeX
+- Under `usetex`, plain text is typeset literally, one run at a time; TeX
   commands work only inside `$...$`. This differs from matplotlib's own usetex
-  `Text`, which passes the whole string to TeX.
+  `Text`, which passes the whole string to TeX. Each space is one interword
+  space, without the extra sentence spacing TeX adds after a period in
+  matplotlib's own usetex text.
 - Under `usetex`, plain text is limited to characters the LaTeX preamble can
   typeset. By default a Greek letter in plain text is a LaTeX error, as it is in
   matplotlib's own usetex text. Math-run Greek (`$\lambda$`) is italic, the
@@ -344,8 +402,19 @@ fontsize pass-through), these tests carry the design:
   only in the GPOS table. It fails if the kern is dropped, split around the
   glyph, or read from the `kern` table under matplotlib 3.11. The kern is zero
   next to a math run, after a combining mark, within a ligature, after a soft
-  hyphen, within a Hebrew pair, for an unkerned cmr10 pair (exactly, despite
-  HarfBuzz's rounding), and under usetex.
+  hyphen, within a Hebrew pair, and for an unkerned cmr10 pair (exactly,
+  despite HarfBuzz's rounding).
+- Usetex runs: a label and a tight-bounding-box save ask LaTeX for the run and a
+  fixed set of probes, never for a single character. "AV" and "To" are kerned
+  exactly as TeX sets the pair. Ligature pairs, the markup characters (with
+  `\_` as a rule), and spaces at either end and in a row each take one item. A
+  run with `é`, alone or with a soft hyphen, is typeset one character at a time,
+  in order. A long run at 72 pt stays on one line. A glyph's height matches
+  matplotlib's measurement of the character on its own. After a change to
+  `font.family` or to `font.serif`, a new label and a redrawn one both match
+  the character typeset alone under the new rcParams.
+- Figure layout: an unclipped label leaves a tight bounding box as it is
+  without the label.
 
 ## Deferred
 
@@ -353,9 +422,10 @@ fontsize pass-through), these tests carry the design:
   stem weight, which rotation largely defeats anyway); marginal gain, not
   pursued. Usetex glyphs are hinted by matplotlib, at a resolution where it is
   negligible (see the LaTeX section).
-- Kerning for usetex plain text. Each usetex character is typeset by its own
-  LaTeX run, so TeX's kerning between neighbours is not applied. Typesetting
-  each plain run once would restore it and cut the LaTeX runs (#20).
+- Kerning for usetex runs with composite characters. A run with a character TeX
+  builds from several items, such as `é` in the default OT1 encoding, is
+  typeset one character at a time without kerning. Pairing items with
+  characters there needs a way to tell which items belong to which character.
 
 ## Ecosystem constraints
 

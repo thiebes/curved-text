@@ -3,6 +3,17 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- Plain text is kerned. Each plain character's advance now includes the
+  font's kern toward the next character in the same run, as matplotlib's own
+  text layout applies it, so pairs such as "AV" and "To" sit as tightly as in
+  ordinary text. Labels that contain kerning pairs come out slightly tighter
+  than before. Usetex text is not kerned yet
+  ([#20](https://github.com/thiebes/curved-text/issues/20)).
+
 ## 0.6.0
 
 ### Added

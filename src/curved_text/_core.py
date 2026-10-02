@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import math
 import re
+import unicodedata
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import matplotlib as mpl
 import matplotlib.artist as martist
 import matplotlib.colors as mcolors
 import matplotlib.font_manager as font_manager
@@ -54,6 +57,19 @@ _BOX_SAMPLES = 64
 
 # Shared converter from text to glyph outlines; it caches font faces internally.
 _text_to_path = TextToPath()
+
+# matplotlib 3.11 lays text out through HarfBuzz, which also shapes it, and its
+# layout takes OpenType features; earlier versions only kern.
+_LAYOUT_TAKES_FEATURES = "features" in inspect.signature(
+    TextToPath.get_glyphs_with_font).parameters
+
+# Kerns cached per font and character pair. A label's pairs recur on every draw
+# and across labels, but the pairs a session can meet are unbounded.
+_KERN_CACHE_SIZE = 4096
+
+# Bidirectional classes of right-to-left characters. Curved labels draw
+# characters in logical order, so a kern would land on the wrong pair.
+_RTL_CLASSES = ("R", "AL")
 
 # TeX source for a plain character under usetex. A plain glyph is one literal
 # character, so characters TeX reads as markup are escaped, and characters the
@@ -191,6 +207,64 @@ def _valign_datum(valign: str, lines: _FontLines) -> float:
     return (lines.ascender + lines.descender) / 2.0  # "center"
 
 
+def _kern_units(prop: font_manager.FontProperties, left: str,
+                right: str) -> float:
+    """The kern between two characters of the matplotlib font ``prop`` names,
+    in 1/100-em layout units, as matplotlib's own text layout applies it
+    (:func:`_font_kern_units`)."""
+    return _font_kern_units(font_manager.findfont(prop), left, right,
+                            mpl.rcParams["text.hinting_factor"],
+                            mpl.rcParams["text.kerning_factor"])
+
+
+@functools.lru_cache(maxsize=_KERN_CACHE_SIZE)
+def _font_kern_units(fname: str, left: str, right: str, hinting_factor: Any,
+                     kerning_factor: Any) -> float:
+    """The kern between two characters of the font file ``fname``, in 1/100-em
+    layout units: how far kerning alone moves the right glyph in matplotlib's
+    own layout of the pair.
+
+    Taking it from matplotlib's layout, rather than from the font's ``kern``
+    table, follows whichever source matplotlib kerns from: the ``kern`` table up
+    to 3.10, and the GPOS table through HarfBuzz from 3.11, where many fonts
+    keep their only kerning or a different one. Before 3.11 the layout sets the
+    right glyph at the left glyph's unhinted advance plus the kern. From 3.11
+    the layout also shapes the pair (it reorders right-to-left text, picks
+    Arabic joining forms, attaches combining marks, hides format characters
+    such as the soft hyphen, and rounds advances), so the kern is the
+    difference between the pair laid out with and without the ``kern``
+    feature, which cancels the rest.
+
+    Zero when the font lacks either character, when the layout does not yield
+    one glyph per character (a ligature), and for right-to-left characters.
+    ``hinting_factor`` and ``kerning_factor`` are the rcParams of those names:
+    matplotlib keys its font objects on them and, before 3.11, kerns through
+    them, so they key this cache too.
+    """
+    if any(unicodedata.bidirectional(c) in _RTL_CLASSES for c in (left, right)):
+        return 0.0
+    font = font_manager.get_font(fname)
+    if not font.get_char_index(ord(left)) or not font.get_char_index(ord(right)):
+        return 0.0
+    font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
+    pair = left + right
+    kerned = _text_to_path.get_glyphs_with_font(font, pair)[0]
+    if _LAYOUT_TAKES_FEATURES:
+        unkerned = _text_to_path.get_glyphs_with_font(  # type: ignore[call-arg]
+            font, pair, features=("-kern",))[0]
+    else:
+        unkerned = kerned
+    if len(kerned) != 2 or len(unkerned) != 2:
+        return 0.0
+    _, x_kerned, _, _ = kerned[1]
+    if _LAYOUT_TAKES_FEATURES:
+        _, x_unkerned, _, _ = unkerned[1]
+    else:
+        # FreeType's linear advance is unhinted, in 16.16 fixed point.
+        x_unkerned = font.load_char(ord(left)).linearHoriAdvance / 65536
+    return (x_kerned - x_unkerned) * _layout_units(_text_to_path)
+
+
 class _CurveFrame:
     """Display-space curve geometry: cumulative arc length with an elementwise
     point-and-tangent lookup.
@@ -225,7 +299,7 @@ class _CurveFrame:
     def chord_angles(self, s, span):
         """Angle of the chord across ``[s, s + span]``, elementwise.
 
-        This is the rotation a glyph of advance ``span`` takes: it follows the
+        This is the rotation a glyph of width ``span`` takes: it follows the
         local tangent but averages over the glyph's own width, so it stays
         smooth across the vertices of a coarsely sampled polyline instead of
         snapping to each segment's angle. Degenerate chords (zero ``span`` or a
@@ -420,8 +494,9 @@ class _OutlineSegment(mtext.Text):
     def _set_placement(self, frame: _CurveFrame, s_left: float,
                        width_px: float, datum: float) -> None:
         """Receive this draw's frame, the arc length of the segment's left edge on
-        it (already the parallel curve when offset), the segment's flat advance
-        width in pixels (the chord for a rigid glyph's rotation), and the
+        it (already the parallel curve when offset), the segment's own width in
+        pixels (the chord a rigid glyph is rotated by; its kern toward the next
+        glyph moves only the cursor, not the glyph), and the
         vertical-alignment datum (height in 1/100-em layout units that rides the
         curve), computed once by the container so every segment shares it."""
         self._frame = frame
@@ -480,7 +555,7 @@ class _OutlineSegment(mtext.Text):
                                       y + v * np.cos(angle)])
         else:
             # Place the glyph rigidly: one rotation, by the chord across its own
-            # advance, about its centre on the curve. A single isometry preserves
+            # width, about its centre on the curve. A single isometry preserves
             # the glyph's shape (no distortion) while the baseline datum still
             # lands on the curve, so spacing and rotation match the bent runs.
             w = self._width_px
@@ -586,7 +661,7 @@ class CurvedText(mtext.Text):
 
     Every glyph -- plain character or mathtext run -- is laid out on one shared
     text baseline and mapped onto the curve from its glyph outline: a plain
-    character rigidly (one rotation by the chord across its own advance, so its
+    character rigidly (one rotation by the chord across its own width, so its
     shape is undistorted), a mathtext run by bending its outlines so radicals and
     fractions stay connected. ``valign`` chooses which line of the text rides the
     curve -- the vertical centre by default. Because both kinds share the baseline,
@@ -698,12 +773,13 @@ class CurvedText(mtext.Text):
         ``1.1``), and ``alpha``. The band has rounded ends, so it extends about
         half its height past the first and last glyph.
     crowding : {"none", "curvature"}, default "none"
-        How to space glyphs around bends. ``"none"`` advances each glyph by its
-        own width, so on the concave side of a tight bend the rotated glyph
-        boxes can overlap. ``"curvature"`` opens an even letterspacing gap that
-        grows with the local curvature and the glyph height, so the inside edges
-        stop colliding; the gap is the same between every pair of letters, and a
-        deadband leaves gentle bends and straight runs unchanged.
+        How to space glyphs around bends. ``"none"`` spaces them as ordinary
+        text does, by width and kerning, so on the concave side of a tight bend
+        the rotated glyph boxes can overlap. ``"curvature"`` opens an even
+        letterspacing gap that grows with the local curvature and the glyph
+        height, so the inside edges stop colliding; the gap is the same between
+        every pair of letters, and a deadband leaves gentle bends and straight
+        runs unchanged.
     valign : {"center", "baseline", "ascender", "descender"}, default "center"
         Which line of the text rides the curve. ``"center"`` straddles the text on
         the curve (the default); ``"baseline"`` follows the text baseline so the
@@ -802,14 +878,36 @@ class CurvedText(mtext.Text):
             self._box = None
         super().remove()
 
-    def _advances(self, frame: _CurveFrame, widths: list[float],
+    def _kerns_px(self, renderer) -> list[float]:
+        """The kern from each segment toward the next, in display pixels.
+
+        Between two consecutive plain glyphs it is the kern matplotlib's own
+        text layout applies to the pair (:func:`_kern_units`), so pairs such as
+        "AV" and "To" sit as tightly as in ordinary text. Next to a math run, and
+        at the end of the label, it is zero. Usetex glyphs are typeset by LaTeX
+        one character at a time, and are not kerned here.
+        """
+        kerns = [0.0] * len(self._segments)
+        for i, (left, right) in enumerate(zip(self._segments,
+                                              self._segments[1:])):
+            if (isinstance(left, _PlainGlyph) and isinstance(right, _PlainGlyph)
+                    and not left.get_usetex()):
+                prop = left.get_fontproperties()
+                px_per_unit = (renderer.points_to_pixels(prop.get_size_in_points())
+                               / _text_to_path.FONT_SCALE)
+                kerns[i] = (_kern_units(prop, left._char, right._char)
+                            * px_per_unit)
+        return kerns
+
+    def _advances(self, frame: _CurveFrame, spans: list[float],
                   heights: list[float], flat_start: float) -> list[float]:
         """Arc-length advance for each segment along ``frame``.
 
-        In the default ``"none"`` mode the advance is the flat glyph width, so
-        the layout is unchanged. In ``"curvature"`` mode each advance is widened
-        where the curve bends, to keep the concave edges of adjacent rigid glyph
-        boxes from overlapping on the inside of the bend. A box of height ``h``
+        In the default ``"none"`` mode the advance is the segment's flat span
+        (its width plus its kern toward the next glyph), with no widening. In
+        ``"curvature"`` mode each advance is widened where the curve bends, to
+        keep the concave edges of adjacent rigid glyph boxes from overlapping on
+        the inside of the bend. A box of height ``h``
         whose center rides a curve of local curvature ``kappa`` has its concave
         edge, a distance ``h/2`` toward the center of curvature, lose roughly
         ``(h/2)*|kappa|`` of arc length per unit advance to its neighbor; the
@@ -824,20 +922,19 @@ class CurvedText(mtext.Text):
         of the glyph's own width: multiplying by the width would give wide
         glyphs a proportionally larger trailing gap, which reads as uneven
         tracking on an arc, whereas a constant gap keeps the spacing even where
-        the curvature is uniform. The center sits in the middle of its widened
-        slot, so the gap is split evenly before and after each glyph. The
-        curvature is sampled along the un-widened layout starting at
-        ``flat_start``.
+        the curvature is uniform. Each span sits in the middle of its widened
+        slot, so the gap is split evenly around it. The curvature is sampled
+        along the un-widened layout starting at ``flat_start``.
         """
         if self._crowding == "none":
-            return list(widths)
+            return list(spans)
         advances = []
         cursor = flat_start
-        for w, h in zip(widths, heights):
-            kappa = float(frame.curvature(cursor, w))
+        for span, h in zip(spans, heights):
+            kappa = float(frame.curvature(cursor, span))
             crowd = min(abs(kappa) * h / 2.0, _MAX_CROWD)
-            advances.append(w + max(0.0, crowd - _CROWD_SLACK) * h)
-            cursor += w
+            advances.append(span + max(0.0, crowd - _CROWD_SLACK) * h)
+            cursor += span
         return advances
 
     def draw(self, renderer, *args, **kwargs) -> None:
@@ -888,6 +985,10 @@ class CurvedText(mtext.Text):
                    for t in self._segments]
         widths = [e.width for e in extents]
         heights = [e.height for e in extents]
+        # A segment's span is its width plus the kern toward the next glyph:
+        # the space it takes along the curve before the next one starts. The
+        # glyph itself keeps its own width as the chord it is rotated by.
+        spans = [w + k for w, k in zip(widths, self._kerns_px(renderer))]
 
         # Anchor at ``pos`` of the base curve, carried onto the offset curve, so
         # the user's placement reads against the curve they passed in. ``lead``
@@ -900,8 +1001,8 @@ class CurvedText(mtext.Text):
         # along the un-widened layout, anchored the same way, which is accurate
         # enough since the widening shifts positions only slightly. The label
         # then spans ``total`` pixels from the re-anchored cursor.
-        flat_total = float(sum(widths))
-        advances = self._advances(frame, widths, heights, s0 - lead * flat_total)
+        flat_total = float(sum(spans))
+        advances = self._advances(frame, spans, heights, s0 - lead * flat_total)
         total = float(sum(advances))
         cursor = s0 - lead * total
 
@@ -929,13 +1030,14 @@ class CurvedText(mtext.Text):
 
         # ``cursor`` walks the label's left edge along the arc. Each segment maps
         # its baseline-relative outline onto the curve when it draws: a plain
-        # glyph rigidly (one rotation by the chord across its own advance, so it
+        # glyph rigidly (one rotation by the chord across its own width, so it
         # stays undistorted), a math run by bending its outlines. Centering each
-        # segment's flat width in its (possibly widened) slot lets crowding space
+        # segment's span in its (possibly widened) slot lets crowding space
         # plain glyphs and math runs alike, and the shared baseline datum keeps
-        # them level.
-        for t, w, adv in zip(self._segments, widths, advances):
-            t._set_placement(frame, cursor + (adv - w) / 2.0, w, datum)
+        # them level. The kern stays between the pair it belongs to, because the
+        # glyph starts where its span starts.
+        for t, w, span, adv in zip(self._segments, widths, spans, advances):
+            t._set_placement(frame, cursor + (adv - span) / 2.0, w, datum)
             t.set_visible(True)
             cursor += adv
 

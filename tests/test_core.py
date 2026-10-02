@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 import matplotlib as mpl
+import matplotlib.font_manager as font_manager
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -979,6 +980,66 @@ def test_font_lines_are_measured_only_when_needed(monkeypatch, valign, box,
     fig, _ = _flat_label("label", valign=valign, box=box)
     assert calls == [False] * measurements  # the label is not usetex
     plt.close(fig)
+
+
+@pytest.mark.parametrize("family, pair, reference", [
+    ("DejaVu Sans", "AV", "AB"),
+    ("DejaVu Sans", "To", "Tx"),
+    # STIXGeneral keeps its kerning only in the GPOS table, which matplotlib
+    # reads from 3.11 on (through HarfBuzz) and ignores before.
+    ("STIXGeneral", "AV", "AB"),
+])
+def test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text(family, pair,
+                                                              reference):
+    # Each plain glyph's span includes the kern toward the next glyph, so the
+    # second glyph of a pair starts where matplotlib's own layout puts it.
+    # Comparing against a reference pair cancels the first glyph's own width,
+    # which some matplotlib versions round to whole pixels.
+    fontsize = 30
+
+    def second_glyph_offsets(text):
+        fig, ct = _flat_label(text, fontsize=fontsize, fontfamily=family)
+        renderer = fig.canvas.get_renderer()
+        first, second = ct._segments
+        prop = first.get_fontproperties()
+        font = font_manager.get_font(font_manager.findfont(prop))
+        font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
+        glyphs = _text_to_path.get_glyphs_with_font(font, text)[0]
+        px_per_unit = (renderer.points_to_pixels(fontsize)
+                       / _text_to_path.FONT_SCALE)
+        plt.close(fig)
+        return second._s_left - first._s_left, glyphs[1][1] * px_per_unit
+
+    ours, matplotlibs = second_glyph_offsets(pair)
+    ours_ref, matplotlibs_ref = second_glyph_offsets(reference)
+    if family == "DejaVu Sans":  # kerned by every supported matplotlib
+        assert ours - ours_ref < -1.0
+    assert ours - ours_ref == pytest.approx(matplotlibs - matplotlibs_ref, abs=0.01)
+
+
+@pytest.mark.parametrize("text, kwargs", [
+    ("A$V$", {}),
+    ("$A$V", {}),
+    # matplotlib 3.11 shapes text through HarfBuzz: it attaches the accent over
+    # the "q", forms an "fi" ligature, hides the soft hyphen, reorders the
+    # Hebrew pair, and rounds every advance. None of that is a kern, and cmr10
+    # has no kerning at all, so its pair must come out exactly zero.
+    ("q\u0301V", {}),
+    ("fi", {}),
+    ("A\u00adV", {}),
+    ("\u05d0\u05d1", {}),
+    ("Ba", {"fontfamily": "cmr10"}),
+    pytest.param("AV", {"usetex": True}, marks=needs_latex),
+])
+def test_kern_is_zero_where_no_plain_pair_is_kerned(text, kwargs):
+    # Only two consecutive plain glyphs set by matplotlib are kerned, and only
+    # by the font's kerning. A math run, a usetex glyph LaTeX sets on its own,
+    # and every other effect of shaping take no kern, so the label spaces
+    # exactly as without kerning.
+    fig, ct = _flat_label(text, **kwargs)
+    kerns = ct._kerns_px(fig.canvas.get_renderer())
+    plt.close(fig)
+    assert kerns == [0.0] * len(ct._segments)
 
 
 def test_outline_is_cached_until_its_font_changes(monkeypatch):

@@ -68,7 +68,7 @@ Plain characters and math runs share one baseline and one outline-placement
 mechanism, differing only in rigidity:
 
 - Plain characters are placed rigidly, each rotated to the chord across its own
-  advance, so the glyph shape is undistorted.
+  width, so the glyph shape is undistorted.
 - Math runs bend continuously through the frame.
 
 The two regimes are the same frame at different scales of discretization: a
@@ -149,6 +149,43 @@ characters. A shared font-metric datum is immune, because it does not depend on
 the segment's own extent. Pinned by tests: a math `x` shares the baseline of a
 plain `x`, an exponent extends the run upward without moving its body, and
 `valign` shifts the whole label by one constant with no per-glyph step.
+
+## Kerning
+
+Each plain character is its own segment, so matplotlib never lays two of them
+out together and never applies the kern between them. `_kerns_px` adds it
+back: between two consecutive plain glyphs it is the kern matplotlib's own text
+layout applies to the pair, and next to a math run it is zero. A segment's
+span, its width plus that kern, sets where the next segment starts, while the
+glyph keeps its own width as the chord it is rotated by. Crowding's gap is
+centred on the span, so the kern stays between the pair it belongs to. Usetex
+glyphs are not kerned here; see the deferred list.
+
+The kern is read from matplotlib's layout of the pair (`_font_kern_units`),
+cached per font file, pair, and the `text.hinting_factor` and
+`text.kerning_factor` rcParams that select matplotlib's font object. Reading
+FreeType's `get_kerning` directly was rejected. It reads only the font's `kern`
+table, which matplotlib uses up to 3.10. From 3.11 matplotlib lays out text
+through HarfBuzz, which reads the GPOS table instead, and many fonts keep their
+only kerning there (STIXGeneral, Calibri) or a different one (Segoe UI). The
+direct reading missed matplotlib 3.11 by up to 6.6 px at 30 pt.
+
+How the kern is isolated depends on the version:
+
+- Up to 3.10 the layout sets the right glyph at the left glyph's unhinted
+  advance plus the kern, so the kern is the remainder.
+- From 3.11 HarfBuzz also shapes the pair: it reorders right-to-left text, picks
+  Arabic joining forms, attaches combining marks over their base, hides format
+  characters such as the soft hyphen, and rounds advances to 1/64 pixel. Each
+  of these would read as a kern under the remainder rule; the soft hyphen alone
+  pulled the next glyph back over the previous one. The kern is therefore the
+  difference between the pair laid out with and without the `kern` feature,
+  which cancels everything else exactly.
+
+Three cases take no kern: a pair the layout does not set as two glyphs (an
+`fi` ligature), a pair whose font lacks either character, and right-to-left
+characters, which curved labels draw in logical order, so even a real kern
+would land on the wrong pair.
 
 ## LaTeX (`usetex`)
 
@@ -302,6 +339,13 @@ fontsize pass-through), these tests carry the design:
   from the matplotlib font instead of the drawn one.
 - `valign` without usetex: the `"ascender"` shift equals the ascender of the
   font the label names, for DejaVu Sans and for STIXGeneral.
+- Kerning: the second glyph of "AV" and "To" starts where matplotlib's own
+  layout puts it, for DejaVu Sans and for STIXGeneral, which keeps its kerning
+  only in the GPOS table. It fails if the kern is dropped, split around the
+  glyph, or read from the `kern` table under matplotlib 3.11. The kern is zero
+  next to a math run, after a combining mark, within a ligature, after a soft
+  hyphen, within a Hebrew pair, for an unkerned cmr10 pair (exactly, despite
+  HarfBuzz's rounding), and under usetex.
 
 ## Deferred
 
@@ -309,10 +353,9 @@ fontsize pass-through), these tests carry the design:
   stem weight, which rotation largely defeats anyway); marginal gain, not
   pursued. Usetex glyphs are hinted by matplotlib, at a resolution where it is
   negligible (see the LaTeX section).
-- Inter-character kerning for plain runs. Each plain character is laid out and
-  advanced on its own, so kerning pairs between adjacent glyphs are not applied.
-  The per-character placement that rides the curve is what makes this hard:
-  kerning is a pairwise shift, and the glyphs do not share one layout pass.
+- Kerning for usetex plain text. Each usetex character is typeset by its own
+  LaTeX run, so TeX's kerning between neighbours is not applied. Typesetting
+  each plain run once would restore it and cut the LaTeX runs (#20).
 
 ## Ecosystem constraints
 

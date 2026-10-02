@@ -1045,8 +1045,8 @@ def test_kern_is_zero_where_no_plain_pair_is_kerned(text, kwargs):
 def test_unclipped_label_keeps_the_tight_bounding_box():
     # The container positions each glyph when it draws, so a glyph's own Text
     # position, the data origin, is not where it appears. An unclipped label
-    # must leave figure layout alone; measured at the origin, its glyphs
-    # stretched a tight bounding box to it, here over a hundred inches.
+    # must leave figure layout alone; glyphs measured at the origin would
+    # stretch a tight bounding box to it, here over a hundred inches.
     def tight_bounds(label):
         fig, ax = plt.subplots(figsize=(4, 3))
         x = np.linspace(100, 110, 50)
@@ -1323,13 +1323,14 @@ def test_usetex_bar_is_not_ot1_dash():
 
 @needs_latex
 def test_usetex_plain_run_is_typeset_in_one_latex_pass(monkeypatch, tmp_path):
-    # LaTeX typesets each plain run once, where it once ran for every distinct
-    # character and made a label's first draw take seconds. Figure layout must
-    # not measure the glyphs one at a time either, so saving with a tight
-    # bounding box asks LaTeX for nothing more, even for an unclipped label,
-    # whose glyphs layout would otherwise measure. What remains does not grow
-    # with the label: the run, the "lp" line box, the "()gy" font lines the
-    # default valign reads, and the container's own text, a single space.
+    # LaTeX typesets each plain run once, not once per distinct character.
+    # Figure layout must not measure the glyphs one at a time either, so saving
+    # with a tight bounding box asks LaTeX for nothing more, even for an
+    # unclipped label, whose glyphs layout would otherwise measure. What remains
+    # does not grow with the label: the run, the "lp" line box, the "()gy" font
+    # lines the default valign reads, and the container's own text, a single
+    # space. The run cache is emptied first, so the run is asked for here.
+    _core._typeset_tex_run.cache_clear()
     sources = set()
     make_dvi = TexManager.make_dvi
 
@@ -1385,7 +1386,7 @@ def test_usetex_run_sets_one_item_per_character(text):
     fig, ct = _flat_label(text, usetex=True)
     em_px = fig.canvas.get_renderer().points_to_pixels(16)
     for seg in ct._segments:
-        assert seg._tex_run() is not None
+        assert seg._run_layout() is not None
         assert seg._width_px > 0, seg._char
         if seg._char.isspace():
             assert seg._width_px == pytest.approx(em_px / 3, rel=0.1)
@@ -1395,16 +1396,82 @@ def test_usetex_run_sets_one_item_per_character(text):
 
 
 @needs_latex
-def test_usetex_run_of_composite_characters_is_typeset_per_character():
-    # In the default OT1 encoding "\u00e9" sets an accent and a letter, two
-    # items for one character, so the run cannot be split per character and its
-    # characters are typeset one at a time, in order, as before.
-    fig, ct = _flat_label("caf\u00e9", usetex=True)
+def test_usetex_long_run_stays_on_one_line():
+    # LaTeX sets text in a paragraph a few inches wide, so a long run would
+    # break onto a second line and its items would interleave along the run.
+    # Kept on one line, every character starts after the one before it.
+    fig, ct = _flat_label("wavy line " * 30, fontsize=72, usetex=True)
     lefts = [seg._s_left for seg in ct._segments]
-    assert all(seg._tex_run() is None for seg in ct._segments)
-    assert all(seg._width_px > 0 for seg in ct._segments)
+    assert ct._segments[0]._run_layout() is not None
+    assert all(a < b for a, b in zip(lefts, lefts[1:]))
+    plt.close(fig)
+
+
+@needs_latex
+@pytest.mark.parametrize("text", [
+    # In the default OT1 encoding "\u00e9" sets an accent and a letter, two
+    # items for one character.
+    "caf\u00e9",
+    # A soft hyphen sets nothing, so with "\u00e9" the counts would agree and
+    # every item after them would pair with the wrong character.
+    "caf\u00e9\u00adx",
+])
+def test_usetex_run_that_cannot_be_paired_is_typeset_per_character(text):
+    # A run whose items cannot be paired with its characters is typeset one
+    # character at a time, and its characters still advance in order.
+    fig, ct = _flat_label(text, usetex=True)
+    lefts = [seg._s_left for seg in ct._segments]
+    assert all(seg._run_layout() is None for seg in ct._segments)
+    assert all(seg._width_px > 0 for seg in ct._segments if seg._char.isalpha())
     assert lefts == sorted(lefts)
-    assert len(ct._segments[-1]._outline_units()[0]) > 0
+    assert len(_ink(ct, fig.canvas.get_renderer(), "\u00e9").bounds) == 4
+    plt.close(fig)
+
+
+@needs_latex
+def test_usetex_run_glyph_height_matches_matplotlib_measuring_it_alone():
+    # A glyph's height sizes its crowding gap and the box casing. Taken from
+    # its run, it is the height matplotlib gives the character typeset on its
+    # own: the "lp" line box, or a taller character's own box.
+    fontsize = 26
+    fig, ct = _flat_label("an (q) [j]", fontsize=fontsize, usetex=True)
+    renderer = fig.canvas.get_renderer()
+    for seg in ct._segments:
+        alone = ct.axes.text(0, 0, _tex_source(seg._char), usetex=True,
+                             fontsize=fontsize)
+        expected = alone.get_window_extent(renderer).height
+        assert seg._size_px(renderer)[1] == pytest.approx(expected, abs=0.5), (
+            seg._char)
+    plt.close(fig)
+
+
+@needs_latex
+@pytest.mark.parametrize("after, tex_files", [
+    pytest.param({"font.family": "monospace"}, ("cmtt12.pfb",), id="family"),
+    pytest.param({"font.family": "serif", "font.serif": ["Times"]},
+                 ("mathptmx.sty", "utmr8a.pfb"), id="serif-list"),
+])
+def test_usetex_run_follows_the_font_when_rcparams_change(after, tex_files):
+    if not _has_tex_files(*tex_files):
+        pytest.skip(f"needs {', '.join(tex_files)}")
+    # A run is typeset again when any rcParam LaTeX reads changes: the family,
+    # or the font list LaTeX picks a family's font from. A new label then
+    # matches the character typeset alone under the new rcParams, and so does
+    # a label drawn before the change and redrawn after it, whose outline must
+    # come from the same pass as its width.
+    with mpl.rc_context({"font.family": "serif"}):
+        fig_before, drawn_before = _flat_label("ww", fontsize=30, usetex=True)
+    with mpl.rc_context(after):
+        _draw(fig_before)
+        fig, drawn_after = _flat_label("ww", fontsize=30, usetex=True)
+        alone = drawn_after.axes.text(0, 0, "w", usetex=True, fontsize=30)
+        expected = alone.get_window_extent(fig.canvas.get_renderer()).width
+        for label in (drawn_before, drawn_after):
+            seg = label._segments[0]
+            assert seg._width_px == pytest.approx(expected, abs=0.5)
+        np.testing.assert_allclose(drawn_before._segments[0]._outline_units()[0],
+                                   drawn_after._segments[0]._outline_units()[0])
+    plt.close(fig_before)
     plt.close(fig)
 
 

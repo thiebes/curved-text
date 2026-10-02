@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import itertools
 import math
 import re
 import unicodedata
@@ -83,16 +84,15 @@ _CHAR_TO_TEX = {
     "<": r"\textless{}", ">": r"\textgreater{}", "|": r"\textbar{}",
 }
 
-# TeX source for any whitespace character under usetex: an interword space
-# between two 1sp (1/65536 pt) rules. matplotlib's DVI reader sizes the output
-# from the glyphs and rules TeX sets, and glue alone sets neither, so a bare
-# space would advance zero. TeX itself reads a tab as a space.
-_TEX_SPACE = r"\rule{1sp}{1sp}\ \rule{1sp}{1sp}"
+# A 1sp (1/65536 pt) rule. matplotlib's DVI reader sizes its output from the
+# glyphs and rules TeX sets, and glue alone sets neither, so a rule at each end
+# of a space or a run makes the reader measure the space there.
+_TEX_EDGE = r"\rule{1sp}{1sp}"
 
-# TeX source at each end of a usetex plain run: a 1sp rule, so the DVI reader,
-# which sizes its output from the glyphs and rules TeX sets, also measures
-# spaces at either end of the run.
-_TEX_RUN_EDGE = r"\rule{1sp}{1sp}"
+# TeX source for a whitespace character typeset on its own: an interword space
+# between two edge rules. A bare space would advance zero. TeX itself reads a
+# tab as a space.
+_TEX_SPACE = _TEX_EDGE + r"\ " + _TEX_EDGE
 
 # Character pairs TeX fonts join into one glyph: the f ligatures, dashes from
 # hyphens, curly quotes from "``" and "''", inverted marks from "!`" and "?`",
@@ -101,9 +101,22 @@ _TEX_RUN_EDGE = r"\rule{1sp}{1sp}"
 _TEX_LIGATURES = frozenset(
     {"ff", "fi", "fl", "--", "``", "''", "!`", "?`", ",,", "<<", ">>"})
 
-# Usetex plain runs whose layout is kept. A label redraws its runs on every
-# draw, and each kept run holds its glyph outlines.
-_TEX_RUN_CACHE_SIZE = 256
+# Unicode categories of characters a TeX run cannot pair with its items by
+# count: control and format characters can set nothing (a soft hyphen prints
+# nothing), and combining marks join the character before. A run with one is
+# typeset one character at a time.
+_TEX_UNPAIRED_CATEGORIES = frozenset({"Cc", "Cf", "Mn", "Me"})
+
+# The rcParams matplotlib's TexManager reads to write a LaTeX job's preamble:
+# the user's preamble, the font family, and each family's font list, from which
+# it picks the font package ("Times" in font.serif loads mathptmx).
+_TEX_RCPARAMS = ("text.latex.preamble", "font.family", "font.serif",
+                 "font.sans-serif", "font.cursive", "font.monospace")
+
+# Usetex plain runs whose layout is kept. Every draw reads each run of every
+# label, and a run missing from the cache is read back from its DVI file, so the
+# cache holds the runs of a large figure; each holds its glyph outlines.
+_TEX_RUN_CACHE_SIZE = 1024
 
 # TeX source matplotlib measures every usetex text against: its box is the least
 # height and depth matplotlib gives a line of usetex text.
@@ -123,20 +136,21 @@ class _Run(NamedTuple):
     text: str
 
 
-class _TexRun(NamedTuple):
+class _TexRunLayout(NamedTuple):
     """A usetex plain run typeset by one LaTeX pass, per character, in 1/100-em
     layout units.
 
     ``outlines`` holds each character's outline with its left edge at ``u = 0``
     (empty for whitespace). ``widths`` holds each character's own width, the
-    chord its glyph is rotated by, and ``spans`` the distance from its left edge
-    to the next character's, which adds TeX's kern. ``height`` is the line
-    height matplotlib gives the run's text, depth included.
+    chord its glyph is rotated by; a space's is its span. ``spans`` holds the
+    distance from each character's left edge to the next character's, which
+    adds TeX's kern. ``heights`` holds the height matplotlib gives each
+    character typeset on its own, depth included.
     """
     outlines: tuple[tuple[np.ndarray, np.ndarray], ...]
     widths: tuple[float, ...]
     spans: tuple[float, ...]
-    height: float
+    heights: tuple[float, ...]
 
 
 class _FontLines(NamedTuple):
@@ -223,6 +237,15 @@ def _tex_font_lines(size: float) -> _FontLines:
         _TEX_LINE_PROBE, size)
     units = _text_to_path.FONT_SCALE / size
     return _FontLines((height - depth) * units, -depth * units)
+
+
+def _tex_min_line_height(size: float) -> float:
+    """The least height, depth included, matplotlib gives a line of usetex text
+    at ``size`` points, in 1/100-em layout units: the height of the box TeX
+    gives ``_TEX_MIN_LINE_PROBE``, as for :func:`_tex_font_lines`."""
+    _, height, _ = TexManager().get_text_width_height_descent(
+        _TEX_MIN_LINE_PROBE, size)
+    return height * _text_to_path.FONT_SCALE / size
 
 
 def _valign_datum(valign: str, lines: _FontLines) -> float:
@@ -453,57 +476,64 @@ def _tex_source(char: str) -> str:
     return _CHAR_TO_TEX.get(char, char)
 
 
+def _tex_run_layout(chars: str, size: float) -> _TexRunLayout | None:
+    """The plain run ``chars`` typeset by LaTeX in one pass at ``size`` points
+    (:func:`_typeset_tex_run`), or None when its characters are typeset one at
+    a time: when it holds a character it cannot pair with an item by count
+    (``_TEX_UNPAIRED_CATEGORIES``), or when it sets a different number of items
+    than it has printing characters."""
+    if any(unicodedata.category(char) in _TEX_UNPAIRED_CATEGORIES
+           for char in chars):
+        return None
+    # Font lists are lists; their text form is hashable and keeps every entry.
+    tex_config = tuple(str(mpl.rcParams[name]) for name in _TEX_RCPARAMS)
+    return _typeset_tex_run(chars, size, tex_config)
+
+
 def _tex_run_source(chars: str) -> str:
     """The TeX source that typesets the plain run ``chars`` in one pass.
 
-    Each character keeps its literal source (:func:`_tex_source`), except that
-    whitespace is a control space, an interword space TeX neither drops nor
-    collapses. An empty group breaks each ligature pair, and a 1sp rule marks
-    each end of the run.
+    Each printing character keeps its literal source (:func:`_tex_source`), and
+    each whitespace character is a control space, an interword space TeX
+    neither drops nor collapses. An empty group breaks each ligature pair, an
+    edge rule marks each end of the run, and a box keeps the run on one line.
     """
-    pieces = [_TEX_RUN_EDGE]
+    pieces = [r"\mbox{", _TEX_EDGE]
     for previous, char in zip(" " + chars, chars):
         if previous + char in _TEX_LIGATURES:
             pieces.append("{}")
-        pieces.append(r"\ " if char.isspace() else _CHAR_TO_TEX.get(char, char))
-    pieces.append(_TEX_RUN_EDGE)
+        pieces.append(r"\ " if char.isspace() else _tex_source(char))
+    pieces += [_TEX_EDGE, "}"]
     return "".join(pieces)
 
 
-def _tex_run_layout(chars: str, size: float) -> _TexRun | None:
-    """The plain run ``chars`` typeset by LaTeX in one pass at ``size`` points
-    (:func:`_typeset_tex_run`), or None when the run does not set one glyph or
-    rule per printing character."""
-    return _typeset_tex_run(chars, size, mpl.rcParams["text.latex.preamble"],
-                            tuple(mpl.rcParams["font.family"]))
-
-
 @functools.lru_cache(maxsize=_TEX_RUN_CACHE_SIZE)
-def _typeset_tex_run(chars: str, size: float, preamble: str,
-                     family: tuple[str, ...]) -> _TexRun | None:
+def _typeset_tex_run(chars: str, size: float,
+                     tex_config: tuple) -> _TexRunLayout | None:
     """Typeset the plain run ``chars`` with one LaTeX pass and split it per
     character.
 
-    One pass replaces one LaTeX run per distinct character, and it keeps TeX's
-    kerning between neighbours. Each printing character sets one glyph, or one
-    rule (``\\_`` draws a rule in the default encoding); taken in order along
-    the run, the items pair with the printing characters. Whitespace sets
-    neither, so each run of spaces splits the gap between its neighbours
-    evenly, every space being one interword space. A run whose item count
-    differs (an accented letter can set an accent and a letter) returns None,
-    and its characters are typeset one at a time instead.
+    One pass, rather than one per distinct character, keeps TeX's kerning
+    between neighbours. Each printing character sets one glyph, or one rule
+    (``\\_`` draws a rule in the default encoding); taken in order along the
+    run, the items pair with the printing characters. A run that sets a
+    different number of items (an accented letter can set an accent and a
+    letter) returns None.
 
-    ``preamble`` and ``family`` are the rcParams that select the TeX font; they
-    key the cache only, as LaTeX reads them itself.
+    ``tex_config`` holds the values of ``_TEX_RCPARAMS``; it keys the cache
+    only, as LaTeX reads them itself, so a change to any of them typesets the
+    run again.
     """
     converter = _tex_to_path(size)
     source = _tex_run_source(chars)
     with dviread.Dvi(TexManager().make_dvi(source, converter.FONT_SCALE),
                      converter.DPI) as dvi:
         page, = dvi
+    # get_glyphs_tex reads the same page, listing the glyphs in the order of
+    # ``page.text`` and the rules in the order of ``page.boxes``, which pairs
+    # each item's outline with its position and width.
     glyph_info, glyph_map, rects = converter.get_glyphs_tex(
         font_manager.FontProperties(size=size), source)
-    # The glyphs, and the rules between the two edge rules, along the run.
     items = sorted(
         [(text.x, text.width, _place_glyph(glyph_map, *info))
          for text, info in zip(page.text, glyph_info)]
@@ -512,48 +542,55 @@ def _typeset_tex_run(chars: str, size: float, preamble: str,
         key=lambda item: item[0])
     if len(items) != sum(not char.isspace() for char in chars):
         return None
-    pending_items = iter(items)
     start, end = page.boxes[0], page.boxes[-1]
+    lefts = _char_lefts(chars, items, start.x + start.width, end.x)
     units = _layout_units(converter)
-    empty = (np.empty((0, 2)), np.empty(0, dtype=Path.code_type))
-    lefts: list[float] = []
-    outlines, widths = [], []
-    edge = start.x + start.width  # where the spaces after the last item start
-    spaces: list[int] = []  # whitespace waiting for the next item's left edge
-    for char in chars:
-        if char.isspace():
-            spaces.append(len(lefts))
-            lefts.append(0.0)
-            outlines.append(empty)
-            widths.append(0.0)
-            continue
-        x, width, (verts, codes) = next(pending_items)
-        _share_gap(lefts, spaces, edge, x)
-        lefts.append(x)
-        outlines.append(((verts - [x, 0.0]) * units,
-                         np.asarray(codes, dtype=Path.code_type)))
-        widths.append(width * units)
-        edge = x + width
-    _share_gap(lefts, spaces, edge, end.x)
     spans = np.diff(np.append(lefts, end.x)) * units
-    widths = [span if char.isspace() else width
-              for char, width, span in zip(chars, widths, spans)]
-    # matplotlib gives a line of usetex text at least the height of "lp".
-    _, line_height, _ = TexManager().get_text_width_height_descent(
-        _TEX_MIN_LINE_PROBE, size)
-    height = max((page.height + page.descent) * units,
-                 line_height * _text_to_path.FONT_SCALE / size)
-    return _TexRun(tuple(outlines), tuple(widths), tuple(spans), height)
+    min_height = _tex_min_line_height(size)
+    empty = (np.empty((0, 2)), np.empty(0, dtype=Path.code_type))
+    outlines, widths, heights = [], [], []
+    printing = iter(items)
+    for char, span in zip(chars, spans):
+        if char.isspace():
+            outlines.append(empty)
+            widths.append(span)
+            heights.append(min_height)
+            continue
+        x, width, (verts, codes) = next(printing)
+        verts = (verts - [x, 0.0]) * units
+        codes = np.asarray(codes, dtype=Path.code_type)
+        outlines.append((verts, codes))
+        widths.append(width * units)
+        # matplotlib measures a character on its own at least as tall as "lp";
+        # its ink stands in for its TeX box, which only a taller one exceeds.
+        heights.append(max(min_height, Path(verts, codes).get_extents().height))
+    return _TexRunLayout(tuple(outlines), tuple(widths), tuple(spans),
+                         tuple(heights))
 
 
-def _share_gap(lefts: list[float], spaces: list[int], start: float,
-               end: float) -> None:
-    """Set the left edges of the whitespace characters indexed by ``spaces`` so
-    they split the gap from ``start`` to ``end`` evenly, then empty
-    ``spaces``."""
-    for k, index in enumerate(spaces):
-        lefts[index] = start + (end - start) * k / len(spaces)
-    spaces.clear()
+def _char_lefts(chars: str, items: list, start: float,
+                end: float) -> list[float]:
+    """The left edge of each character of a run, from its ``items`` (position,
+    width, outline) in order along the run, which spans ``start`` to ``end``.
+
+    A printing character starts at its item. Whitespace sets no item, so each
+    stretch of it splits the gap between the item before (or ``start``) and the
+    item after (or ``end``) evenly, every space being one interword space.
+    """
+    lefts: list[float] = []
+    edge = start
+    index = 0
+    for is_space, group in itertools.groupby(chars, key=str.isspace):
+        count = len(list(group))
+        if is_space:
+            following = items[index][0] if index < len(items) else end
+            lefts += [edge + (following - edge) * k / count for k in range(count)]
+            continue
+        for x, width, _ in items[index:index + count]:
+            lefts.append(x)
+            edge = x + width
+        index += count
+    return lefts
 
 
 def _place_glyph(glyph_map: dict, glyph_id: str, x_pen: float, y_pen: float,
@@ -767,7 +804,7 @@ class _PlainGlyph(_OutlineSegment):
         if self.get_usetex():
             self.set_text(_tex_source(char))
 
-    def _tex_run(self) -> _TexRun | None:
+    def _run_layout(self) -> _TexRunLayout | None:
         """This glyph's run typeset in one LaTeX pass, or None without usetex or
         when the run's characters are typeset one at a time."""
         if not self.get_usetex():
@@ -776,21 +813,31 @@ class _PlainGlyph(_OutlineSegment):
                                self.get_fontproperties().get_size_in_points())
 
     def _size_px(self, renderer) -> tuple[float, float]:
-        run = self._tex_run()
+        run = self._run_layout()
         if run is None:
             return super()._size_px(renderer)
         px_per_unit = (renderer.points_to_pixels(self.get_fontsize())
                        / _text_to_path.FONT_SCALE)
-        return run.widths[self._index] * px_per_unit, run.height * px_per_unit
+        return (run.widths[self._index] * px_per_unit,
+                run.heights[self._index] * px_per_unit)
 
     def _tex_kern_units(self) -> float:
         """TeX's kern from this glyph toward the next character of its run, in
         1/100-em layout units; zero when the run is typeset one character at a
         time."""
-        run = self._tex_run()
+        run = self._run_layout()
         if run is None:
             return 0.0
         return run.spans[self._index] - run.widths[self._index]
+
+    def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
+        # A glyph from a run takes its outline from the run's cache, which
+        # follows every rcParam LaTeX reads, so its outline and its width always
+        # come from the same LaTeX pass.
+        run = self._run_layout()
+        if run is None:
+            return super()._outline_units()
+        return run.outlines[self._index]
 
     def _build_outline(self, prop: font_manager.FontProperties, text: str,
                        usetex: bool) -> tuple[np.ndarray, np.ndarray]:
@@ -798,9 +845,6 @@ class _PlainGlyph(_OutlineSegment):
         # not ``text``: under usetex a space's text is TeX source, not whitespace.
         if not self._char.strip():
             return np.empty((0, 2)), np.empty(0, dtype=Path.code_type)
-        run = self._tex_run()
-        if run is not None:
-            return run.outlines[self._index]
         if usetex:
             converter = _tex_to_path(prop.get_size_in_points())
             verts, codes = converter.get_text_path(prop, text, ismath="TeX")
@@ -924,8 +968,9 @@ class CurvedText(mtext.Text):
     characters the LaTeX preamble can typeset; the README shows how to declare
     upright Greek letters there. The ``valign`` ascender and descender lines are
     the height and depth TeX gives ``()gy`` in the font it sets the text in. The
-    first draw runs LaTeX once for each plain run and math run, and a few more
-    times to measure line heights, and later draws reuse matplotlib's cache.
+    first draw runs LaTeX once for each distinct plain run and math run, and
+    twice more to measure line heights, and later draws reuse matplotlib's
+    cache.
     The usetex setting is fixed when the label is constructed, as matplotlib
     fixes it for each glyph; pass ``usetex`` or set the rcParam before creating
     the label. Set the LaTeX preamble and font
@@ -1175,7 +1220,6 @@ class CurvedText(mtext.Text):
             datum = _valign_datum(self._valign, lines)
             band = _valign_datum("center", lines) - datum
 
-        # Measure each segment's unrotated width and height (``_size_px``).
         sizes = [t._size_px(renderer) for t in self._segments]
         widths = [width for width, _ in sizes]
         heights = [height for _, height in sizes]

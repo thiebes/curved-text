@@ -39,6 +39,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   what an annotation anchored to the label (`xycoords=label`) refers to, so
   both now follow the label's glyphs. Such a legend also no longer avoids the
   data origin, where it measured each glyph at an unused position.
+- A label's visibility, clipping, and picking reach the parts it draws
+  ([#45](https://github.com/thiebes/curved-text/issues/45)).
+  `set_visible(False)` hides the label and its `box` casing, where its glyphs
+  kept drawing before. The casing follows the label's `clip_on`, clip box, and
+  clip path, so an unclipped label keeps its casing outside the axes instead of
+  having it cut at the axes edge, and `set_clip_on` and the other clipping
+  setters reach every glyph after construction too. The casing's band is part
+  of the label's extent in figure layout. `picker=True` picks the label when
+  the mouse is on one of its glyphs, where it never matched before.
 
 ## 0.6.0
 

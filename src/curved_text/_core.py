@@ -19,6 +19,7 @@ import matplotlib.font_manager as font_manager
 import matplotlib.lines as mlines
 import matplotlib.text as mtext
 import numpy as np
+from matplotlib.backends.backend_agg import RendererAgg
 from matplotlib.patheffects import PathEffectRenderer
 from matplotlib.path import Path
 from matplotlib.texmanager import TexManager
@@ -655,6 +656,19 @@ def _layout_units(converter: TextToPath) -> float:
     return _text_to_path.FONT_SCALE / em_px
 
 
+def _measuring_renderer(figure) -> RendererAgg:
+    """A renderer to measure a label with outside a draw: the canvas's own on
+    Agg canvases, which make one on request, or else an Agg renderer at the
+    figure's dpi. A label's placement depends on the renderer only through the
+    dpi, so it measures as any canvas at that dpi draws it; a canvas such as
+    PDF makes its renderer only while drawing, at 72 dpi."""
+    get_renderer = getattr(figure.canvas, "get_renderer", None)
+    if get_renderer is not None:
+        return get_renderer()
+    width, height = figure.canvas.get_width_height()
+    return RendererAgg(width, height, figure.dpi)
+
+
 class _OutlineSegment(mtext.Text):
     """A curved-label segment drawn by mapping a baseline-relative glyph outline
     through the curve frame.
@@ -746,7 +760,7 @@ class _OutlineSegment(mtext.Text):
 
     def _placed_path(self, renderer) -> Path | None:
         """This segment's outline mapped onto the curve, in display pixels."""
-        # draw() guards against a missing frame before calling this.
+        # Callers place the label first, which assigns every segment a frame.
         assert self._frame is not None
         verts, codes = self._outline_units()
         if len(verts) == 0:
@@ -1086,6 +1100,11 @@ class CurvedText(mtext.Text):
                                       solid_capstyle="round",
                                       solid_joinstyle="round")
             axes.add_line(self._box)
+        # What the segments were last placed for (``_placement_key``) and
+        # whether they could be placed, and the extent measured from that
+        # placement, so a measurement reuses the placement it follows.
+        self._placed_for: tuple | None = None
+        self._extent: Bbox | None = None
         self._segments: list[_OutlineSegment] = []
         runs = (_split_runs(text) if self.get_parse_math()
                 else [_Run(False, text)])
@@ -1117,9 +1136,9 @@ class CurvedText(mtext.Text):
             t.set_zorder(self.get_zorder() + 1)
 
     def _hide_box(self) -> None:
-        # The casing is an axes-owned artist drawn independently, so when ``draw``
-        # bails out before positioning it the band must be hidden explicitly or
-        # the previous draw's geometry stays painted.
+        # The casing is an axes-owned artist drawn independently, so when
+        # ``_place_on_curve`` bails out before positioning it the band must be
+        # hidden explicitly or the previous placement's geometry stays painted.
         if self._box is not None:
             self._box.set_visible(False)
 
@@ -1197,52 +1216,86 @@ class CurvedText(mtext.Text):
 
     def draw(self, renderer, *args, **kwargs) -> None:
         # The container draws nothing itself: its segments and casing are
-        # artists the axes draws after it, so drawing it lays them out.
-        self._layout(renderer)
-        self._last_renderer = renderer
+        # artists the axes draws after it, so drawing it places them. Every
+        # draw places them afresh, so a changed label is measured afresh too.
+        self._place(renderer)
         self.stale = False
 
     def get_window_extent(self, renderer=None, dpi=None) -> Bbox:
-        """The extent of the label as drawn, in display pixels: every segment's
-        placed outline and the box casing.
+        """The extent of the label's glyphs as drawn, in display pixels.
 
-        Figure layout (``bbox_inches="tight"``, constrained layout) measures an
-        unclipped label through it, so the label is laid out first; layout can
-        run before the first draw. The container's own Text, a single space at
-        the curve's first point, takes no part. ``dpi`` scales the extent to that
-        resolution, which is exact because the layout scales with the figure's
-        dpi. A label that cannot be laid out (no renderer yet on a canvas that
-        makes one only while drawing, an empty label, or a degenerate curve) has
-        an empty extent at the curve's first point.
+        Figure layout (``bbox_inches="tight"``, constrained layout, and from
+        matplotlib 3.10 ``legend(loc="best")``) measures the label through it.
+        Constrained layout measures before the first draw has placed anything,
+        so the label is placed on the curve to be measured. The container's own
+        Text, a single space at the curve's first point, takes no part, and
+        neither does the box casing, which is clipped to the axes. Each glyph
+        counts by the box of its outline's control points, which holds the
+        curves between them: it can exceed the ink by a fraction of a pixel,
+        never fall short of it, and costs far less than exact curve extrema.
+        Without a renderer, the label is measured with one at the figure's dpi
+        (:func:`_measuring_renderer`). ``dpi`` scales the extent to that
+        resolution, which matches placing the label at that dpi to within what
+        whole-pixel glyph widths add up to. A label that cannot be placed (an
+        empty label or a degenerate curve) has an empty extent at the curve's
+        first point.
+
+        Figure layout can measure the label several times a draw, and a legend
+        measures it right after the label's own draw has placed it, so a
+        measurement reuses the last placement, and its extent, while the
+        renderer and the curve's position on the canvas are unchanged.
         """
         if renderer is None:
-            # Agg canvases make a renderer on request; others, such as PDF,
-            # only while drawing, so fall back to the last draw's.
-            get_renderer = getattr(self.figure.canvas, "get_renderer", None)
-            renderer = (get_renderer() if get_renderer is not None
-                        else getattr(self, "_last_renderer", None))
-        extents = []
-        if renderer is not None and self._layout(renderer):
-            extents = [path.get_extents()
-                       for path in (seg._placed_path(renderer)
-                                    for seg in self._segments
-                                    if seg.get_visible())
-                       if path is not None]
-            if self._box is not None:
-                extents.append(self._box.get_window_extent(renderer))
-        if not extents:
-            x, y = self.get_transform().transform(self.get_unitless_position())
-            return Bbox.from_bounds(x, y, 0.0, 0.0)
-        bbox = Bbox.union(extents)
-        if dpi is not None:
-            bbox = Bbox(bbox.get_points() * (dpi / self.figure.dpi))
-        return bbox
+            renderer = _measuring_renderer(self.figure)
+        key = self._placement_key(renderer)
+        if self._placed_for is None or self._placed_for[0] != key:
+            self._place(renderer, key)
+        if self._extent is None:
+            self._extent = self._glyph_extent(renderer)
+        if dpi is None:
+            return self._extent
+        return Bbox(self._extent.get_points() * (dpi / self.figure.dpi))
 
-    def _layout(self, renderer) -> bool:
-        """Position every segment and the casing along the curve for this
-        renderer, the label's whole layout, recomputed on every draw. Returns
-        whether the label was laid out: an empty label, a label off any axes,
-        or a degenerate curve is not."""
+    def _place(self, renderer, key: tuple | None = None) -> None:
+        """Place the label for ``renderer`` (:meth:`_place_on_curve`) and record
+        what it was placed for, which voids the last measured extent."""
+        if key is None:
+            key = self._placement_key(renderer)
+        self._placed_for = (key, self._place_on_curve(renderer))
+        self._extent = None
+
+    def _placement_key(self, renderer) -> tuple:
+        """What a placement depends on besides the label itself: the renderer,
+        its resolution, and where the curve lands on the canvas, which follows
+        the axes' limits, scales, and position."""
+        if self.axes is None:
+            return (id(renderer), None)
+        pts = self.axes.transData.transform(np.column_stack([self._cx, self._cy]))
+        return (id(renderer), renderer.points_to_pixels(1.0), pts.tobytes())
+
+    def _glyph_extent(self, renderer) -> Bbox:
+        """The box of the placed glyphs' control points, or an empty box at the
+        curve's first point when the label could not be placed."""
+        points = []
+        if self._placed_for is not None and self._placed_for[1]:
+            for seg in self._segments:
+                path = seg._placed_path(renderer)
+                if path is not None:
+                    vertices = np.asarray(path.vertices)
+                    if path.codes is not None:
+                        vertices = vertices[np.asarray(path.codes) != Path.CLOSEPOLY]
+                    points.append(vertices)
+        if points:
+            vertices = np.concatenate(points)
+            return Bbox([vertices.min(axis=0), vertices.max(axis=0)])
+        x, y = self.get_transform().transform(self.get_unitless_position())
+        return Bbox.from_bounds(x, y, 0.0, 0.0)
+
+    def _place_on_curve(self, renderer) -> bool:
+        """Place every segment and the casing along the curve for this
+        renderer: the label's whole layout, recomputed on every draw. Returns
+        whether the label was placed: an empty label, a label off any axes, or
+        a degenerate curve is not."""
         if not self._segments or self.axes is None:
             self._hide_box()
             return False

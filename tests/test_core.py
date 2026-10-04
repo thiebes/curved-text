@@ -1064,12 +1064,15 @@ def test_unclipped_label_keeps_the_tight_bounding_box():
     np.testing.assert_allclose(tight_bounds(True), tight_bounds(False))
 
 
-def _rising_label(clip_on, layout=None):
-    """A label whose curve rises past the top of the axes, beyond the curve's
-    first point; return the figure and the label."""
+def _rising_label(clip_on, layout=None, label=True):
+    """A figure whose label's curve rises past the top of the axes, beyond the
+    curve's first point; return the figure and the label, or None with
+    ``label=False`` for the same figure without it."""
     fig, ax = plt.subplots(figsize=(4, 3), layout=layout)
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
+    if not label:
+        return fig, None
     x = np.linspace(1, 9, 50)
     ct = curved_text(ax, x, 10.5 + 0.6 * (x - 1), "a label rising above the axes",
                      fontsize=14, clip_on=clip_on)
@@ -1084,15 +1087,17 @@ def _tight_top_px(fig):
 
 def test_unclipped_label_outside_the_axes_is_in_the_tight_bounding_box():
     # An unclipped label is drawn wherever its curve goes, so figure layout
-    # must reach its ink, as it reaches matplotlib's own unclipped text. Measured
-    # by the container's own text at the curve's first point, the label's top
-    # fell 4.5 px outside a tight bounding box and was cropped.
+    # must reach its ink, as it reaches matplotlib's own unclipped text. The
+    # label is measured by its glyphs' control points, which can exceed the ink
+    # but never fall short of it.
     fig, ct = _rising_label(clip_on=False)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     ink = Bbox.union([seg._placed_path(renderer).get_extents()
                       for seg in ct._segments if not seg._char.isspace()])
-    assert ink.y1 == pytest.approx(_tight_top_px(fig), abs=0.5)
+    top = _tight_top_px(fig)
+    assert ink.y1 <= top + 0.01
+    assert top - ink.y1 < 2.0
     plt.close(fig)
 
 
@@ -1100,10 +1105,8 @@ def test_clipped_label_outside_the_axes_leaves_the_tight_bounding_box():
     # A clipped label is cut at the axes, as clipped text is, so figure layout
     # leaves it out, as matplotlib does for clipped artists.
     fig, _ = _rising_label(clip_on=True)
+    plain, _ = _rising_label(clip_on=True, label=False)
     _draw(fig)
-    plain, ax = plt.subplots(figsize=(4, 3))
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 10)
     _draw(plain)
     assert _tight_top_px(fig) == pytest.approx(_tight_top_px(plain))
     plt.close(fig)
@@ -1111,42 +1114,88 @@ def test_clipped_label_outside_the_axes_leaves_the_tight_bounding_box():
 
 
 def test_constrained_layout_makes_room_for_an_unclipped_label():
-    # Constrained layout measures the label before the first draw has laid it
-    # out, so the label lays itself out to be measured, and the axes shrink to
-    # keep it on the figure from the first draw on.
+    # Constrained layout measures the label before the first draw has placed
+    # it, so the label is placed to be measured, and the axes shrink for it on
+    # the first draw. The label's top sits well above the figure's, so the axes
+    # move down by a tenth of the figure or more.
     fig, ct = _rising_label(clip_on=False, layout="constrained")
-    plain, ax = plt.subplots(figsize=(4, 3), layout="constrained")
+    plain, _ = _rising_label(clip_on=False, layout="constrained", label=False)
     _draw(fig)
     _draw(plain)
-    assert ct.axes.get_position().y1 < ax.get_position().y1 - 0.1
+    assert ct.axes.get_position().y1 < plain.axes[0].get_position().y1 - 0.1
     plt.close(fig)
     plt.close(plain)
 
 
 def test_label_extent_scales_with_dpi():
-    # The layout scales with the figure's dpi, so the extent at another dpi is
-    # the extent at the figure's own, scaled.
+    # The placement scales with the figure's dpi, so the extent asked for at
+    # twice the dpi matches the label placed at twice the dpi, to within what
+    # whole-pixel glyph widths add up to along the label (matplotlib 3.11
+    # rounds each one), here 2% of its width.
     fig, ct = _rising_label(clip_on=False)
     _draw(fig)
-    renderer = fig.canvas.get_renderer()
-    extent = ct.get_window_extent(renderer)
-    doubled = ct.get_window_extent(renderer, dpi=2 * fig.dpi)
-    np.testing.assert_allclose(doubled.get_points(), 2 * extent.get_points())
+    dpi = fig.dpi
+    scaled = ct.get_window_extent(fig.canvas.get_renderer(), dpi=2 * dpi)
+    fig.set_dpi(2 * dpi)
+    _draw(fig)
+    placed = ct.get_window_extent(fig.canvas.get_renderer())
+    np.testing.assert_allclose(scaled.get_points(), placed.get_points(),
+                               atol=0.02 * placed.width)
     plt.close(fig)
 
 
-def test_label_extent_without_a_renderer_follows_the_last_draw(tmp_path):
-    # A canvas such as PDF makes a renderer only while drawing. Before a draw
-    # the label has no layout and an empty extent at its curve's first point;
-    # after a draw it reports the extent that draw laid out.
+def test_label_extent_without_a_renderer_matches_the_figure_dpi(tmp_path):
+    # A canvas such as PDF makes a renderer only while drawing, at 72 dpi.
+    # Measured without a renderer, the label is placed at the figure's own dpi,
+    # so it measures as on an Agg canvas, before a draw and after one.
     fig, ct = _rising_label(clip_on=False)
+    expected = ct.get_window_extent(fig.canvas.get_renderer()).get_points()
     FigureCanvasPdf(fig)
-    before = ct.get_window_extent()
-    start = ct.get_transform().transform(ct.get_unitless_position())
-    np.testing.assert_allclose(before.get_points(), [start, start])
+    np.testing.assert_allclose(ct.get_window_extent().get_points(), expected)
     fig.savefig(tmp_path / "label.pdf")
-    after = ct.get_window_extent()
-    assert after.width > 0 and after.height > 0
+    np.testing.assert_allclose(ct.get_window_extent().get_points(), expected)
+    plt.close(fig)
+
+
+def test_label_extent_follows_the_axes_between_draws():
+    # A measurement reuses the last placement only while the curve lands where
+    # it did on the canvas. After the axes' limits change, the label is placed
+    # again to be measured, and the extent matches the next draw's.
+    fig, ct = _rising_label(clip_on=False)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    before = ct.get_window_extent(renderer).get_points()
+    ct.axes.set_ylim(0, 20)
+    measured = ct.get_window_extent(renderer).get_points()
+    _draw(fig)
+    drawn = ct.get_window_extent(renderer).get_points()
+    assert not np.allclose(measured, before)
+    np.testing.assert_allclose(measured, drawn)
+    plt.close(fig)
+
+
+def test_legend_measures_the_label_without_placing_it_again(monkeypatch):
+    # From matplotlib 3.10, a legend placed at "best" measures every text in
+    # the axes after the labels have drawn. The measurement reuses each label's
+    # placement from that draw, so each label is placed once per draw.
+    placements = []
+    place = CurvedText._place_on_curve
+
+    def counting(self, renderer):
+        placements.append(self)
+        return place(self, renderer)
+
+    monkeypatch.setattr(CurvedText, "_place_on_curve", counting)
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 50)
+    for k in range(3):
+        ax.plot(x, x + k, label=f"line {k}")
+        curved_text(ax, x, x + k, f"label {k}")
+    ax.legend()
+    _draw(fig)
+    placements.clear()
+    _draw(fig)
+    assert len(placements) == 3
     plt.close(fig)
 
 

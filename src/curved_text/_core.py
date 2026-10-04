@@ -659,14 +659,23 @@ def _layout_units(converter: TextToPath) -> float:
 def _measuring_renderer(figure) -> RendererAgg:
     """A renderer to measure a label with outside a draw: the canvas's own on
     Agg canvases, which make one on request, or else an Agg renderer at the
-    figure's dpi. A label's placement depends on the renderer only through the
-    dpi, so it measures as any canvas at that dpi draws it; a canvas such as
-    PDF makes its renderer only while drawing, at 72 dpi."""
+    figure's dpi (:func:`_agg_renderer`). A canvas such as PDF makes its
+    renderer only while drawing, at 72 dpi. A label's placement depends on the
+    renderer chiefly through the dpi; text metrics differ between backends by a
+    fraction of a pixel, so the label measures to within that of how any canvas
+    at that dpi draws it."""
     get_renderer = getattr(figure.canvas, "get_renderer", None)
     if get_renderer is not None:
         return get_renderer()
-    width, height = figure.canvas.get_width_height()
-    return RendererAgg(width, height, figure.dpi)
+    return _agg_renderer(figure.dpi)
+
+
+@functools.lru_cache(maxsize=8)
+def _agg_renderer(dpi: float) -> RendererAgg:
+    """A one-pixel Agg renderer at ``dpi``, kept per dpi. Measuring needs its
+    text metrics and resolution, not a canvas, and keeping it lets a
+    measurement reuse the label's placement (``CurvedText._placement_key``)."""
+    return RendererAgg(1, 1, dpi)
 
 
 class _OutlineSegment(mtext.Text):
@@ -710,11 +719,18 @@ class _OutlineSegment(mtext.Text):
         self._datum = 0.0
         self._outline_cache: tuple | None = None
 
+    def get_window_extent(self, renderer=None, dpi=None) -> Bbox:
+        """An empty extent. A segment is measured as part of its label
+        (:meth:`CurvedText.get_window_extent`), so a legend placed at
+        ``loc="best"``, which measures every text in the axes, counts each
+        label once, and never at the segment's unused Text position."""
+        return Bbox.null()
+
     def _size_px(self, renderer) -> tuple[float, float]:
         """This segment's unrotated width and height in display pixels, as
         matplotlib measures its text. Segments never set a Text rotation, so
         the window extent is the unrotated box."""
-        extent = self.get_window_extent(renderer=renderer)
+        extent = mtext.Text.get_window_extent(self, renderer=renderer)
         return extent.width, extent.height
 
     def _set_placement(self, frame: _CurveFrame, s_left: float,
@@ -793,16 +809,20 @@ class _OutlineSegment(mtext.Text):
                                       cy + u_centred * sin + v * cos])
         return Path(placed, codes)
 
+    def _content_key(self) -> tuple:
+        """What the segment's outline and size are built from: its text, font,
+        and usetex setting."""
+        return (self.get_text(), hash(self.get_fontproperties()),
+                self.get_usetex())
+
     def _outline_units(self) -> tuple[np.ndarray, np.ndarray]:
         """Outline ``(vertices, codes)`` in 1/100-em layout units, baseline at
-        ``v = 0`` and left edge at ``u = 0``, cached on the text, font, and
-        usetex setting it is built from."""
-        prop = self.get_fontproperties()
-        text = self.get_text()
-        usetex = self.get_usetex()
-        key = (text, hash(prop), usetex)
+        ``v = 0`` and left edge at ``u = 0``, cached on the segment's content
+        (:meth:`_content_key`)."""
+        key = self._content_key()
         if self._outline_cache is None or self._outline_cache[0] != key:
-            self._outline_cache = (key, self._build_outline(prop, text, usetex))
+            self._outline_cache = (key, self._build_outline(
+                self.get_fontproperties(), self.get_text(), self.get_usetex()))
         return self._outline_cache[1]
 
     def _build_outline(self, prop: font_manager.FontProperties, text: str,
@@ -1100,10 +1120,11 @@ class CurvedText(mtext.Text):
                                       solid_capstyle="round",
                                       solid_joinstyle="round")
             axes.add_line(self._box)
-        # What the segments were last placed for (``_placement_key``) and
-        # whether they could be placed, and the extent measured from that
-        # placement, so a measurement reuses the placement it follows.
-        self._placed_for: tuple | None = None
+        # The key of the last placement (``_placement_key``), whether that
+        # placement succeeded, and the extent measured from it. A measurement
+        # reuses the placement while its key is unchanged.
+        self._placed_key: tuple | None = None
+        self._placed = False
         self._extent: Bbox | None = None
         self._segments: list[_OutlineSegment] = []
         runs = (_split_runs(text) if self.get_parse_math()
@@ -1237,47 +1258,58 @@ class CurvedText(mtext.Text):
         (:func:`_measuring_renderer`). ``dpi`` scales the extent to that
         resolution, which matches placing the label at that dpi to within what
         whole-pixel glyph widths add up to. A label that cannot be placed (an
-        empty label or a degenerate curve) has an empty extent at the curve's
-        first point.
+        empty label, a label off any axes, or a degenerate curve) has an empty
+        extent at the curve's first point.
 
         Figure layout can measure the label several times a draw, and a legend
         measures it right after the label's own draw has placed it, so a
-        measurement reuses the last placement, and its extent, while the
-        renderer and the curve's position on the canvas are unchanged.
+        measurement reuses the last placement, and its extent, while what the
+        placement depends on is unchanged (:meth:`_placement_key`).
         """
         if renderer is None:
             renderer = _measuring_renderer(self.figure)
-        key = self._placement_key(renderer)
-        if self._placed_for is None or self._placed_for[0] != key:
-            self._place(renderer, key)
+        curve_px = self._curve_px()
+        key = self._placement_key(renderer, curve_px)
+        if key != self._placed_key:
+            self._place(renderer, curve_px, key)
         if self._extent is None:
             self._extent = self._glyph_extent(renderer)
         if dpi is None:
-            return self._extent
+            return self._extent.frozen()
         return Bbox(self._extent.get_points() * (dpi / self.figure.dpi))
 
-    def _place(self, renderer, key: tuple | None = None) -> None:
+    def _place(self, renderer, curve_px: np.ndarray | None = None,
+               key: tuple | None = None) -> None:
         """Place the label for ``renderer`` (:meth:`_place_on_curve`) and record
-        what it was placed for, which voids the last measured extent."""
+        the placement's key, which voids the last measured extent."""
+        if curve_px is None:
+            curve_px = self._curve_px()
         if key is None:
-            key = self._placement_key(renderer)
-        self._placed_for = (key, self._place_on_curve(renderer))
+            key = self._placement_key(renderer, curve_px)
+        self._placed = self._place_on_curve(renderer, curve_px)
+        self._placed_key = key
         self._extent = None
 
-    def _placement_key(self, renderer) -> tuple:
-        """What a placement depends on besides the label itself: the renderer,
-        its resolution, and where the curve lands on the canvas, which follows
-        the axes' limits, scales, and position."""
+    def _curve_px(self) -> np.ndarray | None:
+        """The curve's points in display pixels, or None off any axes."""
         if self.axes is None:
-            return (id(renderer), None)
-        pts = self.axes.transData.transform(np.column_stack([self._cx, self._cy]))
-        return (id(renderer), renderer.points_to_pixels(1.0), pts.tobytes())
+            return None
+        return self.axes.transData.transform(
+            np.column_stack([self._cx, self._cy]))
+
+    def _placement_key(self, renderer, curve_px: np.ndarray | None) -> tuple:
+        """What a placement depends on: the renderer, its resolution, where
+        the curve lands on the canvas (which follows the axes' limits, scales,
+        and position), and each segment's text, font, and usetex setting."""
+        return (type(renderer), id(renderer), renderer.points_to_pixels(1.0),
+                None if curve_px is None else curve_px.tobytes(),
+                tuple(seg._content_key() for seg in self._segments))
 
     def _glyph_extent(self, renderer) -> Bbox:
         """The box of the placed glyphs' control points, or an empty box at the
         curve's first point when the label could not be placed."""
         points = []
-        if self._placed_for is not None and self._placed_for[1]:
+        if self._placed:
             for seg in self._segments:
                 path = seg._placed_path(renderer)
                 if path is not None:
@@ -1291,12 +1323,12 @@ class CurvedText(mtext.Text):
         x, y = self.get_transform().transform(self.get_unitless_position())
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
-    def _place_on_curve(self, renderer) -> bool:
-        """Place every segment and the casing along the curve for this
-        renderer: the label's whole layout, recomputed on every draw. Returns
-        whether the label was placed: an empty label, a label off any axes, or
-        a degenerate curve is not."""
-        if not self._segments or self.axes is None:
+    def _place_on_curve(self, renderer, curve_px: np.ndarray | None) -> bool:
+        """Place every segment and the casing along the curve, given in display
+        pixels as ``curve_px``, for this renderer: the label's whole layout,
+        recomputed on every draw. Returns whether the label was placed: an
+        empty label, a label off any axes, or a degenerate curve is not."""
+        if not self._segments or self.axes is None or curve_px is None:
             self._hide_box()
             return False
         axes = self.axes
@@ -1308,9 +1340,8 @@ class CurvedText(mtext.Text):
         # once, because the cursor advances along the curve the glyphs sit on.
         # ``pos``/``anchor`` stay defined against the base curve and are carried
         # onto the offset curve below, so the label lands where the user asked.
-        pts = axes.transData.transform(np.column_stack([self._cx, self._cy]))
         offset_px = self._offset * renderer.points_to_pixels(1.0)
-        base = _CurveFrame(pts[:, 0], pts[:, 1])
+        base = _CurveFrame(curve_px[:, 0], curve_px[:, 1])
         frame = base.offset(offset_px)
         if not np.isfinite(frame.length) or frame.length <= 0.0:
             # A degenerate curve has no span to position the casing on; hide it

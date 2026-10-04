@@ -627,7 +627,7 @@ def test_math_run_follows_tight_arc():
     bent = run._placed_path(renderer)
     center = ax.transData.transform((0.0, 0.0))
     radius = ax.transData.transform((1.0, 0.0))[0] - center[0]
-    extent = run.get_window_extent(renderer)
+    width, _ = run._size_px(renderer)
     # Derive the bound from the run's actual outline reach above and below the
     # baseline datum it rides on, mapped to pixels exactly as the bend map does.
     # Tying the bound to the same geometry the placement uses keeps it robust to
@@ -641,7 +641,7 @@ def test_math_run_follows_tight_arc():
                    / _text_to_path.FONT_SCALE)
     reach = np.abs(verts[:, 1] - datum).max() * px_per_unit
     bound = reach + 2.0
-    half_span = extent.width / 2.0 / radius  # half the label arc, radians
+    half_span = width / 2.0 / radius  # half the label arc, radians
     sagitta = radius * (1.0 - np.cos(half_span))
     assert sagitta > bound + 4.0, "test geometry too gentle to discriminate"
     radii = np.hypot(*(bent.vertices - center).T)
@@ -1174,28 +1174,82 @@ def test_label_extent_follows_the_axes_between_draws():
     plt.close(fig)
 
 
+_LEGEND_MEASURES_TEXT = pytest.mark.skipif(
+    tuple(int(part) for part in mpl.__version__.split(".")[:2]) < (3, 10),
+    reason="a legend placed at 'best' measures texts from matplotlib 3.10")
+
+
+@_LEGEND_MEASURES_TEXT
 def test_legend_measures_the_label_without_placing_it_again(monkeypatch):
-    # From matplotlib 3.10, a legend placed at "best" measures every text in
-    # the axes after the labels have drawn. The measurement reuses each label's
-    # placement from that draw, so each label is placed once per draw.
-    placements = []
+    # A legend placed at "best" measures every text in the axes after the
+    # labels have drawn. The measurement reuses each label's placement from
+    # that draw, so each label is measured but placed once per draw.
+    placements, measurements = [], []
     place = CurvedText._place_on_curve
+    measure = CurvedText.get_window_extent
 
-    def counting(self, renderer):
+    def counting_place(self, renderer, curve_px):
         placements.append(self)
-        return place(self, renderer)
+        return place(self, renderer, curve_px)
 
-    monkeypatch.setattr(CurvedText, "_place_on_curve", counting)
+    def counting_measure(self, renderer=None, dpi=None):
+        measurements.append(self)
+        return measure(self, renderer, dpi)
+
+    monkeypatch.setattr(CurvedText, "_place_on_curve", counting_place)
+    monkeypatch.setattr(CurvedText, "get_window_extent", counting_measure)
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 50)
     for k in range(3):
         ax.plot(x, x + k, label=f"line {k}")
         curved_text(ax, x, x + k, f"label {k}")
-    ax.legend()
+    ax.legend(loc="best")
     _draw(fig)
     placements.clear()
+    measurements.clear()
     _draw(fig)
+    assert len(measurements) >= 3
     assert len(placements) == 3
+    plt.close(fig)
+
+
+@_LEGEND_MEASURES_TEXT
+def test_legend_avoids_the_label_not_its_glyphs_unused_position():
+    # A legend placed at "best" measures every text in the axes, the glyph
+    # segments included. A segment counts as part of its label, not at its
+    # unused Text position, the data origin in the lower left corner, so with
+    # a line across the top the legend goes to the lower left, the first free
+    # corner in matplotlib's order of preference.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 50)
+    ax.plot(x, np.full_like(x, 9.5), label="line")
+    curved_text(ax, np.linspace(4, 6, 20), np.full(20, 5.0), "label in the middle")
+    legend = ax.legend(loc="best")
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    box = legend.get_window_extent(renderer)
+    axes_box = ax.get_window_extent(renderer)
+    assert box.x0 < axes_box.x0 + 0.25 * axes_box.width
+    assert box.y0 < axes_box.y0 + 0.25 * axes_box.height
+    plt.close(fig)
+
+
+def test_label_extent_follows_a_change_to_its_glyphs_between_draws():
+    # A measurement reuses the last placement only while the glyphs it placed
+    # are unchanged. After their font size changes, the label is placed again
+    # to be measured, and the extent matches the next draw's.
+    fig, ct = _rising_label(clip_on=False)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    before = ct.get_window_extent(renderer)
+    plt.setp(ct._segments, fontsize=20)
+    measured = ct.get_window_extent(renderer)
+    _draw(fig)
+    drawn = ct.get_window_extent(renderer)
+    assert measured.width > 1.2 * before.width
+    np.testing.assert_allclose(measured.get_points(), drawn.get_points())
     plt.close(fig)
 
 

@@ -30,6 +30,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A label drawn with `clip_on=False` no longer stretches a tight bounding box
   (`bbox_inches="tight"`) to the data origin. Figure layout measured each glyph
   at its unused `Text` position; glyphs now stay out of figure layout.
+- A label drawn with `clip_on=False` outside the axes is no longer cropped by a
+  tight bounding box, and constrained layout makes room for it, as for
+  matplotlib's own unclipped text. Figure layout measured the label as a single
+  space at its curve's first point; it now measures the label as drawn
+  ([#42](https://github.com/thiebes/curved-text/issues/42)).
 
 ## 0.6.0
 

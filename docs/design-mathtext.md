@@ -132,6 +132,16 @@ All code lives in `src/curved_text/_core.py`.
 - `CurvedText` builds children from `_split_runs` (honoring `parse_math`), and
   its draw walks one cursor over the segments, handing each its placement. The
   child list is named `_segments`, since elements are characters and runs alike.
+  The container draws nothing itself, so its draw is its layout (`_layout`).
+  Figure layout measures the label through the container's
+  `get_window_extent`, which lays the label out and returns the union of the
+  segments' placed outlines and the box casing. Constrained layout measures
+  before the first draw has positioned anything, so the extent cannot come
+  from the last draw. The container's own `Text`, a single space at the curve's
+  first point, takes no part: measured as text, it put an unclipped label's
+  extent at that one point, and a tight bounding box cropped the rest. A
+  clipped label stays out of figure layout, as matplotlib leaves out every
+  artist clipped to the axes.
 
 ## Vertical datum
 
@@ -414,8 +424,13 @@ fontsize pass-through), these tests carry the design:
   matplotlib's measurement of the character on its own. After a change to
   `font.family` or to `font.serif`, a new label and a redrawn one both match
   the character typeset alone under the new rcParams.
-- Figure layout: an unclipped label leaves a tight bounding box as it is
-  without the label.
+- Figure layout: an unclipped label near its axes leaves a tight bounding box
+  as it is without the label, instead of stretching it to the data origin. An
+  unclipped label rising above the axes reaches the top of a tight bounding
+  box, and constrained layout shrinks the axes for it on the first draw. A
+  clipped one leaves the box as it is. The extent scales with `dpi`, follows
+  the last draw on a canvas that makes a renderer only while drawing, and is
+  empty for a degenerate curve.
 
 ## Deferred
 

@@ -1065,10 +1065,11 @@ def test_unclipped_label_keeps_the_tight_bounding_box():
     np.testing.assert_allclose(tight_bounds(True), tight_bounds(False))
 
 
-def _rising_label(clip_on, layout=None, label=True):
+def _rising_label(clip_on, layout=None, label=True, **kwargs):
     """A figure whose label's curve rises past the top of the axes, beyond the
     curve's first point; return the figure and the label, or None with
-    ``label=False`` for the same figure without it."""
+    ``label=False`` for the same figure without it. ``kwargs`` go to the
+    label."""
     fig, ax = plt.subplots(figsize=(4, 3), layout=layout)
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
@@ -1076,7 +1077,7 @@ def _rising_label(clip_on, layout=None, label=True):
         return fig, None
     x = np.linspace(1, 9, 50)
     ct = curved_text(ax, x, 10.5 + 0.6 * (x - 1), "a label rising above the axes",
-                     fontsize=14, clip_on=clip_on)
+                     fontsize=14, clip_on=clip_on, **kwargs)
     return fig, ct
 
 
@@ -1255,7 +1256,7 @@ def test_label_extent_follows_a_change_to_its_glyphs_between_draws():
 
 
 def _red_pixels_above_axes(fig, ax):
-    """How many strongly red pixels the figure draws above its axes."""
+    """Draw the figure and count the strongly red pixels above its axes."""
     _draw(fig)
     image = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].astype(int)
     rows_above = image.shape[0] - int(np.ceil(ax.bbox.y1))
@@ -1282,15 +1283,17 @@ def test_hidden_label_hides_its_glyphs_and_takes_no_room():
     plt.close(fig)
 
 
-def test_hidden_label_hides_its_casing():
-    fig, ax = plt.subplots()
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 10)
-    x = np.linspace(1, 9, 50)
-    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", box="red")
-    ct.set_visible(False)
+@pytest.mark.parametrize("hide_at_construction", [False, True])
+def test_hidden_label_hides_its_casing(hide_at_construction):
+    # Visibility reaches the casing whether the label is hidden when it is
+    # made, through the keyword, or afterwards.
+    kwargs = {"visible": False} if hide_at_construction else {}
+    fig, ct = _flat_label("label", box="red", **kwargs)
+    if not hide_at_construction:
+        ct.set_visible(False)
     _draw(fig)
     assert not ct._box.get_visible()
+    assert not any(seg.get_visible() for seg in ct._segments)
     plt.close(fig)
 
 
@@ -1299,13 +1302,8 @@ def test_unclipped_label_keeps_its_casing_outside_the_axes():
     # leaves the axes keeps its casing behind it there, and a clipped one has
     # it cut at the axes edge along with its glyphs.
     def red_above(clip_on):
-        fig, ax = plt.subplots(figsize=(4, 3))
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10)
-        x = np.linspace(1, 9, 50)
-        curved_text(ax, x, 10.5 + 0.6 * (x - 1), "a label rising above the axes",
-                    fontsize=14, clip_on=clip_on, box="red")
-        count = _red_pixels_above_axes(fig, ax)
+        fig, ct = _rising_label(clip_on, box="red")
+        count = _red_pixels_above_axes(fig, ct.axes)
         plt.close(fig)
         return count
 
@@ -1314,14 +1312,33 @@ def test_unclipped_label_keeps_its_casing_outside_the_axes():
 
 
 def test_clipping_set_after_construction_reaches_every_part():
-    fig, ax = plt.subplots()
-    x = np.linspace(0, 1, 20)
-    ct = curved_text(ax, x, x, "label $x$", box=True)
+    fig, ct = _flat_label("label $x$", box=True)
+    parts = [*ct._segments, ct._box]
     ct.set_clip_on(False)
-    assert not any(part.get_clip_on() for part in [*ct._segments, ct._box])
+    assert not any(part.get_clip_on() for part in parts)
     ct.set_clip_on(True)
-    assert all(part.get_clip_on() for part in [*ct._segments, ct._box])
+    assert all(part.get_clip_on() for part in parts)
+    circle = plt.Circle((5, 5), 2, transform=ct.axes.transData)
+    ct.set_clip_path(circle)
+    assert all(part.get_clip_path() is not None for part in parts)
+    clip_box = ct.axes.bbox
+    ct.set_clip_box(clip_box)
+    assert all(part.get_clip_box() is clip_box for part in parts)
     plt.close(fig)
+
+
+def test_label_out_of_layout_takes_its_casing_with_it():
+    # The label measures its casing, so the casing never enters figure layout
+    # on its own: a label taken out of layout leaves a tight bounding box as
+    # it is without the label, casing and all.
+    fig, ct = _rising_label(clip_on=False, box="red")
+    ct.set_in_layout(False)
+    plain, _ = _rising_label(clip_on=False, label=False)
+    _draw(fig)
+    _draw(plain)
+    assert _tight_top_px(fig) == pytest.approx(_tight_top_px(plain))
+    plt.close(fig)
+    plt.close(plain)
 
 
 def test_casing_is_part_of_the_label_extent():
@@ -1346,10 +1363,13 @@ def test_casing_is_part_of_the_label_extent():
 
 def test_label_is_picked_on_its_glyphs():
     # Picking and hover test a point against the label's placed glyphs, so a
-    # click on a glyph hits the label and a click in empty space does not.
+    # click on a glyph hits the label and a click in empty space does not. The
+    # glyph segments take the forwarded picker too, but never answer a pick
+    # themselves, so a click at the data origin, their unused Text position,
+    # picks nothing.
     fig, ax = plt.subplots()
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 10)
+    ax.set_xlim(-1, 10)
+    ax.set_ylim(-1, 10)
     x = np.linspace(1, 9, 50)
     ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
                      picker=True)
@@ -1367,6 +1387,9 @@ def test_label_is_picked_on_its_glyphs():
     assert ct.contains(on_glyph)[0]
     assert not ct.contains(empty)[0]
     fig.canvas.callbacks.process("button_press_event", on_glyph)
+    assert picked == [ct]
+    origin = event_at(*(ax.transData.transform((0.0, 0.0)) + 3.0))
+    fig.canvas.callbacks.process("button_press_event", origin)
     assert picked == [ct]
     ct.set_visible(False)
     assert not ct.contains(on_glyph)[0]

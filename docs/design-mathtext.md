@@ -242,7 +242,7 @@ The last puts the `valign` lines on the drawn font.
   Kerning needs TeX to set the characters together, so the per-character cost
   model is not kept.
 - **Cache.** Runs are cached per run, size, and the rcParams matplotlib's
-  `TexManager` writes the LaTeX preamble from (`_TEX_RCPARAMS`): the user's
+  `TexManager` writes the LaTeX preamble from: the user's
   preamble, `font.family`, and each family's font list, such as `font.serif`,
   from which it picks the font package. A change to any of them typesets the
   run again, and a glyph's outline and width come from the same pass, so a

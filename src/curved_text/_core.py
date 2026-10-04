@@ -107,12 +107,6 @@ _TEX_LIGATURES = frozenset(
 # typeset one character at a time.
 _TEX_UNPAIRED_CATEGORIES = frozenset({"Cc", "Cf", "Mn", "Me"})
 
-# The rcParams matplotlib's TexManager reads to write a LaTeX job's preamble:
-# the user's preamble, the font family, and each family's font list, from which
-# it picks the font package ("Times" in font.serif loads mathptmx).
-_TEX_RCPARAMS = ("text.latex.preamble", "font.family", "font.serif",
-                 "font.sans-serif", "font.cursive", "font.monospace")
-
 # Usetex plain runs whose layout is kept. Every draw reads each run of every
 # label, and a run missing from the cache is read back from its DVI file, so the
 # cache holds the runs of a large figure; each holds its glyph outlines.
@@ -485,8 +479,14 @@ def _tex_run_layout(chars: str, size: float) -> _TexRunLayout | None:
     if any(unicodedata.category(char) in _TEX_UNPAIRED_CATEGORIES
            for char in chars):
         return None
+    # The rcParams matplotlib's TexManager writes a LaTeX job's preamble from:
+    # the user's preamble, the font family, and each family's font list, from
+    # which it picks the font package ("Times" in font.serif loads mathptmx).
     # Font lists are lists; their text form is hashable and keeps every entry.
-    tex_config = tuple(str(mpl.rcParams[name]) for name in _TEX_RCPARAMS)
+    rc = mpl.rcParams
+    tex_config = tuple(str(value) for value in (
+        rc["text.latex.preamble"], rc["font.family"], rc["font.serif"],
+        rc["font.sans-serif"], rc["font.cursive"], rc["font.monospace"]))
     return _typeset_tex_run(chars, size, tex_config)
 
 
@@ -520,9 +520,9 @@ def _typeset_tex_run(chars: str, size: float,
     different number of items (an accented letter can set an accent and a
     letter) returns None.
 
-    ``tex_config`` holds the values of ``_TEX_RCPARAMS``; it keys the cache
-    only, as LaTeX reads them itself, so a change to any of them typesets the
-    run again.
+    ``tex_config`` holds the rcParams matplotlib writes the LaTeX preamble
+    from (see :func:`_tex_run_layout`); it keys the cache only, as LaTeX reads
+    them itself, so a change to any of them typesets the run again.
     """
     converter = _tex_to_path(size)
     source = _tex_run_source(chars)

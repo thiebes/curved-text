@@ -135,7 +135,8 @@ All code lives in `src/curved_text/_core.py`.
   The container draws nothing itself, so its draw places the segments and
   the casing (`_place_on_curve`).
 - Figure layout measures the label through the container's
-  `get_window_extent`: the box of the placed glyphs' outline control points.
+  `get_window_extent`: the box of the placed glyphs' outline control points
+  and the casing's band.
   The curves lie inside their control points, so the box can exceed the ink by
   a fraction of a pixel but never falls short of it. Exact curve extrema
   (`Path.get_extents`) would make a draw with a legend at `loc="best"`, which
@@ -147,8 +148,9 @@ All code lives in `src/curved_text/_core.py`.
   A legend measuring the label right after its draw therefore does not place
   it again, and every draw places afresh. The container's own `Text`, a single
   space at the curve's first point, takes no part, since its extent is that
-  one point. The box casing takes no part either: it is clipped to the axes
-  (#45). Each segment reports an empty extent, so a legend, which measures
+  one point. The box casing counts by its band, half its line width beyond
+  its centreline on every side, which also covers its round caps. Each
+  segment reports an empty extent, so a legend, which measures
   every text in the axes, counts each label once and never at a segment's
   unused `Text` position, the data origin; the container measures a segment's
   size through matplotlib's `Text` measurement (`_size_px`). Without a
@@ -356,9 +358,25 @@ nothing cannibalizes. Its centreline is shifted off the curve by the glyph
 band's offset (the text rides its `valign` datum, so the ink band is centred off
 the bare curve) so the band covers the ink. The band's centre line comes from
 the same font lines as the label, under usetex the TeX ones. It is a child
-artist positioned per draw in `CurvedText.draw`, like the glyphs. When `draw`
-bails out early (no segments, detached axes, or a degenerate curve) it hides the
-casing, so a stale band is never left painted.
+artist positioned per draw in `CurvedText._place_on_curve`, like the glyphs.
+When placement bails out early (no segments, detached axes, or a degenerate
+curve) it hides the casing, so a stale band is never left painted.
+
+The container draws nothing itself, so the properties that decide whether and
+where the label shows reach the parts it draws. `set_visible` passes to every
+segment and the casing; a hidden label is not placed and has an empty extent,
+as matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
+clip path pass to them as well, at construction and through the setters, so an
+unclipped label keeps its casing outside the axes. Picking tests the mouse
+against the box of each placed glyph (`contains`), as matplotlib's own text
+tests its box; a click on the casing's band between glyphs is not a hit. The
+segments take the forwarded `picker` but are never pickable themselves
+(`pickable` is false), since matplotlib asks a picker function without calling
+`contains`, and their `contains` is false for hover, since matplotlib's
+`Text.contains` tests the base `Text` box at their unused position, the data
+origin, not the empty extent they report. A click there picks nothing. The
+label measures its casing, so the casing, like the segments, stays out of
+figure layout itself.
 
 Layering is by zorder, applied once in `__init__` and maintained by
 `set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at

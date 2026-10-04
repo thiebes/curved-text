@@ -726,6 +726,20 @@ class _OutlineSegment(mtext.Text):
         label once, and never at the segment's unused Text position."""
         return Bbox.null()
 
+    def pickable(self) -> bool:
+        """Never. A segment is picked as part of its label
+        (:meth:`CurvedText.contains`), though the label's ``picker`` keyword
+        reaches it too: matplotlib asks a picker function without calling
+        ``contains``, and the segment's own Text position is the data
+        origin."""
+        return False
+
+    def contains(self, mouseevent) -> tuple[bool, dict]:
+        """Never, for hover as for picking (:meth:`pickable`). matplotlib's
+        ``Text.contains`` would test the segment's own Text box, at the data
+        origin, not its empty extent."""
+        return False, {}
+
     def _size_px(self, renderer) -> tuple[float, float]:
         """This segment's unrotated width and height in display pixels, as
         matplotlib measures its text. Segments never set a Text rotation, so
@@ -1120,12 +1134,16 @@ class CurvedText(mtext.Text):
                                       solid_capstyle="round",
                                       solid_joinstyle="round")
             axes.add_line(self._box)
+            # The label measures its casing (``get_window_extent``), so figure
+            # layout must not measure it again, as for the segments.
+            self._box.set_in_layout(False)
         # The key of the last placement (``_placement_key``), whether that
-        # placement succeeded, and the extent measured from it. A measurement
-        # reuses the placement while its key is unchanged.
+        # placement succeeded, and the extent and glyph boxes measured from it.
+        # A measurement reuses the placement while its key is unchanged.
         self._placed_key: tuple | None = None
         self._placed = False
-        self._extent: Bbox | None = None
+        self._extent_cache: Bbox | None = None
+        self._glyph_box_cache: tuple[Bbox, ...] | None = None
         self._segments: list[_OutlineSegment] = []
         runs = (_split_runs(text) if self.get_parse_math()
                 else [_Run(False, text)])
@@ -1141,8 +1159,14 @@ class CurvedText(mtext.Text):
                 self._segments.append(glyph)
         # Apply the layered zorders now that the casing and glyphs exist: the
         # container draws first (it positions them), then the casing, then the
-        # glyphs on top.
+        # glyphs on top. Visibility and clipping reach the casing the same way;
+        # for the glyphs, which have them already from the keyword arguments and
+        # the axes, applying them again changes nothing.
         self.set_zorder(self.get_zorder())
+        self.set_visible(self.get_visible())
+        self.set_clip_on(self.get_clip_on())
+        self.set_clip_path(self.get_clip_path())
+        self.set_clip_box(self.get_clip_box())
 
     def set_zorder(self, zorder) -> None:
         # Glyphs sit one level above the container; the casing sits between, so
@@ -1155,6 +1179,38 @@ class CurvedText(mtext.Text):
             box.set_zorder(self.get_zorder() + 0.5)
         for t in getattr(self, "_segments", ()):
             t.set_zorder(self.get_zorder() + 1)
+
+    def set_visible(self, b) -> None:
+        # The container draws nothing itself, so its visibility and clipping
+        # (the setters below) apply to the parts it draws: every segment and
+        # the casing.
+        super().set_visible(b)
+        for part in self._parts():
+            part.set_visible(b)
+
+    def set_clip_on(self, b) -> None:
+        super().set_clip_on(b)
+        for part in self._parts():
+            part.set_clip_on(b)
+
+    def set_clip_box(self, clipbox) -> None:
+        super().set_clip_box(clipbox)
+        for part in self._parts():
+            part.set_clip_box(clipbox)
+
+    def set_clip_path(self, path, transform=None) -> None:
+        super().set_clip_path(path, transform)
+        for part in self._parts():
+            part.set_clip_path(path, transform)
+
+    def _parts(self) -> list[martist.Artist]:
+        """The artists the label draws: its segments and its casing. Setters
+        may run during base-class construction, before they exist."""
+        parts: list[martist.Artist] = list(getattr(self, "_segments", ()))
+        box = getattr(self, "_box", None)
+        if box is not None:
+            parts.append(box)
+        return parts
 
     def _hide_box(self) -> None:
         # The casing is an axes-owned artist drawn independently, so when
@@ -1238,57 +1294,87 @@ class CurvedText(mtext.Text):
     def draw(self, renderer, *args, **kwargs) -> None:
         # The container draws nothing itself: its segments and casing are
         # artists the axes draws after it, so drawing it places them. Every
-        # draw places them afresh, so a changed label is measured afresh too.
-        self._place(renderer)
+        # draw places them afresh, so a changed label is measured afresh too. A
+        # hidden label has hidden its parts (``set_visible``) and is not placed.
+        if self.get_visible():
+            self._place(renderer)
         self.stale = False
 
     def get_window_extent(self, renderer=None, dpi=None) -> Bbox:
-        """The extent of the label's glyphs as drawn, in display pixels.
+        """The extent of the label as drawn, in display pixels: its glyphs and
+        its box casing.
 
         Figure layout (``bbox_inches="tight"``, constrained layout, and from
         matplotlib 3.10 ``legend(loc="best")``) measures the label through it.
         Constrained layout measures before the first draw has placed anything,
         so the label is placed on the curve to be measured. The container's own
-        Text, a single space at the curve's first point, takes no part, and
-        neither does the box casing, which is clipped to the axes. Each glyph
-        counts by the box of its outline's control points, which holds the
+        Text, a single space at the curve's first point, takes no part. Each
+        glyph counts by the box of its outline's control points, which holds the
         curves between them: it can exceed the ink by a fraction of a pixel,
-        never fall short of it, and costs far less than exact curve extrema.
+        never fall short of it, and costs far less than exact curve extrema. The
+        casing counts by its band, half its line width beyond its centreline on
+        every side, which also covers its round caps.
         Without a renderer, the label is measured with one at the figure's dpi
         (:func:`_measuring_renderer`). ``dpi`` scales the extent to that
         resolution, which matches placing the label at that dpi to within what
-        whole-pixel glyph widths add up to. A label that cannot be placed (an
-        empty label, a label off any axes, or a degenerate curve) has an empty
-        extent at the curve's first point.
+        whole-pixel glyph widths add up to. A hidden label, and one that cannot
+        be placed (an empty label, a label off any axes, or a degenerate curve),
+        has an empty extent at the curve's first point.
 
         Figure layout can measure the label several times a draw, and a legend
         measures it right after the label's own draw has placed it, so a
         measurement reuses the last placement, and its extent, while what the
         placement depends on is unchanged (:meth:`_placement_key`).
         """
+        if not self.get_visible():
+            return self._empty_extent()
         if renderer is None:
             renderer = _measuring_renderer(self.figure)
+        extent = self._measured_extent(renderer)
+        if dpi is None:
+            return extent.frozen()
+        return Bbox(extent.get_points() * (dpi / self.figure.dpi))
+
+    def contains(self, mouseevent) -> tuple[bool, dict]:
+        """Whether ``mouseevent`` falls on the label: within the box of one of
+        its placed glyphs, as matplotlib's own text tests its box. Picking
+        (``picker``) and hover use it; the casing's band between glyphs is not
+        a hit."""
+        if (not self.get_visible() or self.figure is None
+                or mouseevent.canvas is not self.figure.canvas):
+            return False, {}
+        renderer = _measuring_renderer(self.figure)
+        self._place_if_stale(renderer)
+        hit = any(box.contains(mouseevent.x, mouseevent.y)
+                  for box in self._glyph_boxes(renderer))
+        return hit, {}
+
+    def _measured_extent(self, renderer) -> Bbox:
+        """The label's extent for ``renderer``, placing the label first when
+        its last placement no longer holds (:meth:`_place_if_stale`)."""
+        self._place_if_stale(renderer)
+        return self._label_extent(renderer)
+
+    def _place_if_stale(self, renderer) -> None:
+        """Place the label for ``renderer`` unless the last placement was for
+        the same renderer, curve position, and glyphs (:meth:`_placement_key`)."""
         curve_px = self._curve_px()
         key = self._placement_key(renderer, curve_px)
         if key != self._placed_key:
             self._place(renderer, curve_px, key)
-        if self._extent is None:
-            self._extent = self._glyph_extent(renderer)
-        if dpi is None:
-            return self._extent.frozen()
-        return Bbox(self._extent.get_points() * (dpi / self.figure.dpi))
 
     def _place(self, renderer, curve_px: np.ndarray | None = None,
                key: tuple | None = None) -> None:
         """Place the label for ``renderer`` (:meth:`_place_on_curve`) and record
-        the placement's key, which voids the last measured extent."""
+        the placement's key, which voids what was measured from the last."""
         if curve_px is None:
             curve_px = self._curve_px()
         if key is None:
             key = self._placement_key(renderer, curve_px)
         self._placed = self._place_on_curve(renderer, curve_px)
         self._placed_key = key
-        self._extent = None
+        self._extent_cache = None
+        self._glyph_box_cache = None
 
     def _curve_px(self) -> np.ndarray | None:
         """The curve's points in display pixels, or None off any axes."""
@@ -1305,21 +1391,45 @@ class CurvedText(mtext.Text):
                 None if curve_px is None else curve_px.tobytes(),
                 tuple(seg._content_key() for seg in self._segments))
 
-    def _glyph_extent(self, renderer) -> Bbox:
-        """The box of the placed glyphs' control points, or an empty box at the
-        curve's first point when the label could not be placed."""
-        points = []
-        if self._placed:
-            for seg in self._segments:
-                path = seg._placed_path(renderer)
-                if path is not None:
-                    vertices = np.asarray(path.vertices)
-                    if path.codes is not None:
-                        vertices = vertices[np.asarray(path.codes) != Path.CLOSEPOLY]
-                    points.append(vertices)
-        if points:
-            vertices = np.concatenate(points)
-            return Bbox([vertices.min(axis=0), vertices.max(axis=0)])
+    def _label_extent(self, renderer) -> Bbox:
+        """The box of the placed glyphs' control points and the casing's band,
+        or an empty box at the curve's first point when the label could not be
+        placed; kept until the label is placed again."""
+        if self._extent_cache is None:
+            glyph_boxes = self._glyph_boxes(renderer)
+            if not glyph_boxes:
+                self._extent_cache = self._empty_extent()
+            else:
+                bands = []
+                if self._box is not None and self._box.get_visible():
+                    half_width = (renderer.points_to_pixels(
+                        self._box.get_linewidth()) / 2)
+                    bands.append(
+                        self._box.get_window_extent(renderer).padded(half_width))
+                self._extent_cache = Bbox.union([*glyph_boxes, *bands])
+        return self._extent_cache
+
+    def _glyph_boxes(self, renderer) -> tuple[Bbox, ...]:
+        """The box of each placed glyph's outline control points, in display
+        pixels, kept until the label is placed again; none when the label
+        could not be placed."""
+        if self._glyph_box_cache is None:
+            boxes = []
+            if self._placed:
+                for seg in self._segments:
+                    path = seg._placed_path(renderer)
+                    if path is not None:
+                        vertices = np.asarray(path.vertices)
+                        if path.codes is not None:
+                            drawn = np.asarray(path.codes) != Path.CLOSEPOLY
+                            vertices = vertices[drawn]
+                        boxes.append(Bbox([vertices.min(axis=0),
+                                           vertices.max(axis=0)]))
+            self._glyph_box_cache = tuple(boxes)
+        return self._glyph_box_cache
+
+    def _empty_extent(self) -> Bbox:
+        """An empty box at the curve's first point."""
         x, y = self.get_transform().transform(self.get_unitless_position())
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
@@ -1411,7 +1521,7 @@ class CurvedText(mtext.Text):
             self._box.set_data(box_xy[:, 0], box_xy[:, 1])
             self._box.set_linewidth(
                 self._box_pad * height / renderer.points_to_pixels(1.0))
-            self._box.set_visible(True)
+            self._box.set_visible(self.get_visible())
 
         # ``cursor`` walks the label's left edge along the arc. Each segment maps
         # its baseline-relative outline onto the curve when it draws: a plain
@@ -1423,7 +1533,6 @@ class CurvedText(mtext.Text):
         # glyph starts where its span starts.
         for t, w, span, adv in zip(self._segments, widths, spans, advances):
             t._set_placement(frame, cursor + (adv - span) / 2.0, w, datum)
-            t.set_visible(True)
             cursor += adv
         return True
 

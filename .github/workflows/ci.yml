@@ -126,9 +126,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends $TEX_PACKAGES
       - name: Check the usetex toolchain
-        # Render through the same TextToPath call the library uses, including
-        # the escaped markup characters it emits, so a missing TeX package fails
-        # here rather than only in the usetex tests. The valign tests skip a
+        # Render the escaped markup characters the library emits, and a math
+        # run, through TextToPath, so a missing TeX package fails here rather
+        # than only in the usetex tests. The valign tests skip a
         # preamble font whose files are missing, so check those files here too,
         # where a missing one fails instead of turning its cases into skips.
         run: |

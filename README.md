@@ -143,13 +143,18 @@ while math stays in the serif Computer Modern.
 
 ![Cooling curves labelled along their paths, with every text typeset by LaTeX](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
 
-Plain text is typeset literally, one character at a time: `%`, `#`, `&`, and
-the other TeX markup characters print as themselves, and TeX commands work only
-inside `$...$`. This differs from matplotlib's own usetex text, where
-`r"50\%"` is needed for a percent sign. The first draw runs LaTeX once for each
-distinct character and math run, and once more to measure the font's ascender
-and descender lines, which every `valign` but `"baseline"` and the `box` casing
-use. This can take several seconds; later draws are cached.
+Plain text is typeset literally: `%`, `#`, `&`, and the other TeX markup
+characters print as themselves, and TeX commands work only inside `$...$`. This
+differs from matplotlib's own usetex text, where `r"50\%"` is needed for a
+percent sign. Each run of plain text is typeset in one LaTeX pass and kerned as
+TeX sets it, and each space is one interword space, without the extra space TeX
+adds after a period. A run that holds a character TeX builds from several
+pieces, such as an accented letter in the default encoding, or a character that
+can print nothing, such as a soft hyphen, is typeset one character at a time
+instead, without kerning. The first draw runs LaTeX once for each distinct
+plain run and math run, as matplotlib does for each usetex string, and up to
+twice more for the font's line heights; later draws are cached. A figure with
+many short new labels therefore runs LaTeX many times on its first draw.
 
 Plain text is limited to characters the LaTeX preamble can typeset. A Greek
 letter in a math run (`$\lambda$`) is italic, as a variable should be. For an
@@ -172,11 +177,13 @@ A few details differ from the default renderer:
 - The usetex setting is fixed when the label is created, as matplotlib fixes it
   for each text. Set the rcParam or pass `usetex=True` before creating the
   label.
-- Set the LaTeX preamble and the font family before the figure is drawn. If
-  they change after a draw, redrawing the same figure keeps the old text
-  measurements, because matplotlib caches them per figure without the
-  preamble. Its own usetex text behaves the same way. Create the figure again
-  after changing them.
+- Set the LaTeX preamble and the font family and font lists before the figure
+  is drawn. If they change after a draw, redrawing the same figure keeps the
+  old measurements of math runs and of text typeset one character at a time,
+  because matplotlib caches them per figure without the preamble, while plain
+  runs follow the change, so one label can mix two fonts. matplotlib's own
+  usetex text also keeps the old measurements. Create the figure again after
+  changing them.
 - LaTeX takes the font family from the `font.family` rcParam, as for
   matplotlib's own usetex text, so the `fontfamily` keyword has no effect.
 - The `valign` lines come from the TeX font as LaTeX draws it. Under usetex,

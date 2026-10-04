@@ -14,6 +14,7 @@ import matplotlib.font_manager as font_manager
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.backend_bases import MouseEvent
 from matplotlib.backends.backend_pdf import FigureCanvasPdf
 from matplotlib.texmanager import TexManager
 from matplotlib.transforms import Bbox
@@ -1250,6 +1251,125 @@ def test_label_extent_follows_a_change_to_its_glyphs_between_draws():
     drawn = ct.get_window_extent(renderer)
     assert measured.width > 1.2 * before.width
     np.testing.assert_allclose(measured.get_points(), drawn.get_points())
+    plt.close(fig)
+
+
+def _red_pixels_above_axes(fig, ax):
+    """How many strongly red pixels the figure draws above its axes."""
+    _draw(fig)
+    image = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].astype(int)
+    rows_above = image.shape[0] - int(np.ceil(ax.bbox.y1))
+    red, green, blue = image[:rows_above].transpose(2, 0, 1)
+    return int(((red > 200) & (green < 80) & (blue < 80)).sum())
+
+
+def test_hidden_label_hides_its_glyphs_and_takes_no_room():
+    # The container draws nothing itself, so hiding it hides every part it
+    # draws, and its extent is empty, as matplotlib's own hidden text takes no
+    # room. Shown again, it draws and measures as before.
+    fig, ct = _rising_label(clip_on=False)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    shown = ct.get_window_extent(renderer)
+    ct.set_visible(False)
+    assert not any(seg.get_visible() for seg in ct._segments)
+    hidden = ct.get_window_extent(renderer)
+    assert hidden.width == hidden.height == 0
+    ct.set_visible(True)
+    _draw(fig)
+    np.testing.assert_allclose(ct.get_window_extent(renderer).get_points(),
+                               shown.get_points())
+    plt.close(fig)
+
+
+def test_hidden_label_hides_its_casing():
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(1, 9, 50)
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", box="red")
+    ct.set_visible(False)
+    _draw(fig)
+    assert not ct._box.get_visible()
+    plt.close(fig)
+
+
+def test_unclipped_label_keeps_its_casing_outside_the_axes():
+    # The casing follows the label's clipping, so an unclipped label that
+    # leaves the axes keeps its casing behind it there, and a clipped one has
+    # it cut at the axes edge along with its glyphs.
+    def red_above(clip_on):
+        fig, ax = plt.subplots(figsize=(4, 3))
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        x = np.linspace(1, 9, 50)
+        curved_text(ax, x, 10.5 + 0.6 * (x - 1), "a label rising above the axes",
+                    fontsize=14, clip_on=clip_on, box="red")
+        count = _red_pixels_above_axes(fig, ax)
+        plt.close(fig)
+        return count
+
+    assert red_above(clip_on=False) > 1000
+    assert red_above(clip_on=True) == 0
+
+
+def test_clipping_set_after_construction_reaches_every_part():
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 20)
+    ct = curved_text(ax, x, x, "label $x$", box=True)
+    ct.set_clip_on(False)
+    assert not any(part.get_clip_on() for part in [*ct._segments, ct._box])
+    ct.set_clip_on(True)
+    assert all(part.get_clip_on() for part in [*ct._segments, ct._box])
+    plt.close(fig)
+
+
+def test_casing_is_part_of_the_label_extent():
+    # A drawn casing is part of the label, so the extent reaches its band:
+    # half its line width beyond its centreline, past the glyphs on every side.
+    def extent(box):
+        fig, ax = plt.subplots(figsize=(4, 3))
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        x = np.linspace(1, 9, 50)
+        ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=14,
+                         box=box)
+        _draw(fig)
+        bbox = ct.get_window_extent(fig.canvas.get_renderer())
+        plt.close(fig)
+        return bbox
+
+    plain, cased = extent(False), extent({"pad": 2.0})
+    assert cased.x0 < plain.x0 - 5 and cased.x1 > plain.x1 + 5
+    assert cased.y0 < plain.y0 - 5 and cased.y1 > plain.y1 + 5
+
+
+def test_label_is_picked_on_its_glyphs():
+    # Picking and hover test a point against the label's placed glyphs, so a
+    # click on a glyph hits the label and a click in empty space does not.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(1, 9, 50)
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
+                     picker=True)
+    picked = []
+    fig.canvas.mpl_connect("pick_event", lambda event: picked.append(event.artist))
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    glyph = ct._segments[0]._placed_path(renderer).get_extents()
+
+    def event_at(x_px, y_px):
+        return MouseEvent("button_press_event", fig.canvas, x_px, y_px, button=1)
+
+    on_glyph = event_at(*glyph.get_points().mean(axis=0))
+    empty = event_at(*ax.transData.transform((1.0, 1.0)))
+    assert ct.contains(on_glyph)[0]
+    assert not ct.contains(empty)[0]
+    fig.canvas.callbacks.process("button_press_event", on_glyph)
+    assert picked == [ct]
+    ct.set_visible(False)
+    assert not ct.contains(on_glyph)[0]
     plt.close(fig)
 
 

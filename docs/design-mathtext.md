@@ -368,7 +368,11 @@ as matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
 clip path pass to them as well, at construction and through the setters, so an
 unclipped label keeps its casing outside the axes. Picking tests the mouse
 against the box of each placed glyph (`contains`), as matplotlib's own text
-tests its box; the segments' own `Text` boxes, at the data origin, never match.
+tests its box, after a cheap test against the label's extent. The segments
+take the forwarded `picker` but never answer a pick themselves (their
+`contains` is false), as their extent is empty, so a click at the data origin,
+their unused `Text` position, picks nothing. The label measures its casing, so
+the casing, like the segments, stays out of figure layout itself.
 
 Layering is by zorder, applied once in `__init__` and maintained by
 `set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at

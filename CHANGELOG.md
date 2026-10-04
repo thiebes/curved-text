@@ -46,8 +46,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   clip path, so an unclipped label keeps its casing outside the axes instead of
   having it cut at the axes edge, and `set_clip_on` and the other clipping
   setters reach every glyph after construction too. The casing's band is part
-  of the label's extent in figure layout. `picker=True` picks the label when
-  the mouse is on one of its glyphs, where it never matched before.
+  of the label's extent in figure layout, and leaves layout with the label.
+  `picker=True` picks the label when the mouse is on one of its glyphs, where
+  it never matched before, and its glyphs no longer fire pick events of their
+  own near the data origin.
 
 ## 0.6.0
 

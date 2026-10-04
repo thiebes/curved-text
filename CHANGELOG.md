@@ -37,7 +37,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   ([#42](https://github.com/thiebes/curved-text/issues/42)). The same extent
   is what a legend placed at `loc="best"` avoids (matplotlib 3.10 and later) and
   what an annotation anchored to the label (`xycoords=label`) refers to, so
-  both now follow the label's glyphs.
+  both now follow the label's glyphs. Such a legend also no longer avoids the
+  data origin, where it measured each glyph at an unused position.
 
 ## 0.6.0
 

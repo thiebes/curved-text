@@ -34,7 +34,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   tight bounding box, and constrained layout makes room for it, as for
   matplotlib's own unclipped text. Figure layout measured the label as a single
   space at its curve's first point; it now measures the label as drawn
-  ([#42](https://github.com/thiebes/curved-text/issues/42)).
+  ([#42](https://github.com/thiebes/curved-text/issues/42)). The same extent
+  is what a legend placed at `loc="best"` avoids (matplotlib 3.10 and later) and
+  what an annotation anchored to the label (`xycoords=label`) refers to, so
+  both now follow the label's glyphs.
 
 ## 0.6.0
 

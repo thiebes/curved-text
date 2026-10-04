@@ -132,16 +132,25 @@ All code lives in `src/curved_text/_core.py`.
 - `CurvedText` builds children from `_split_runs` (honoring `parse_math`), and
   its draw walks one cursor over the segments, handing each its placement. The
   child list is named `_segments`, since elements are characters and runs alike.
-  The container draws nothing itself, so its draw is its layout (`_layout`).
-  Figure layout measures the label through the container's
-  `get_window_extent`, which lays the label out and returns the union of the
-  segments' placed outlines and the box casing. Constrained layout measures
-  before the first draw has positioned anything, so the extent cannot come
-  from the last draw. The container's own `Text`, a single space at the curve's
-  first point, takes no part: measured as text, it put an unclipped label's
-  extent at that one point, and a tight bounding box cropped the rest. A
-  clipped label stays out of figure layout, as matplotlib leaves out every
-  artist clipped to the axes.
+  The container draws nothing itself, so its draw places the segments and
+  the casing (`_place_on_curve`).
+- Figure layout measures the label through the container's
+  `get_window_extent`: the box of the placed glyphs' outline control points.
+  The curves lie inside their control points, so the box can exceed the ink by
+  a fraction of a pixel but never falls short of it, and it costs far less
+  than exact curve extrema, which made a draw with a legend at `loc="best"`
+  (which measures every text in the axes) ten times slower. Constrained layout
+  measures before the first draw has placed anything, so the label is placed
+  to be measured. A measurement reuses the last placement while the renderer
+  and the curve's position on the canvas (`_placement_key`) are unchanged, so
+  a legend measuring the label right after its draw does not place it again;
+  every draw places afresh. The container's own `Text`, a single space at the
+  curve's first point, takes no part, since its extent is that one point. The
+  box casing takes no part either: it is clipped to the axes (#45). Without a
+  renderer, as on a PDF canvas outside a draw, the label is measured with an
+  Agg renderer at the figure's dpi (`_measuring_renderer`). A clipped label
+  stays out of figure layout, as matplotlib leaves out every artist clipped to
+  the axes.
 
 ## Vertical datum
 
@@ -428,9 +437,12 @@ fontsize pass-through), these tests carry the design:
   as it is without the label, instead of stretching it to the data origin. An
   unclipped label rising above the axes reaches the top of a tight bounding
   box, and constrained layout shrinks the axes for it on the first draw. A
-  clipped one leaves the box as it is. The extent scales with `dpi`, follows
-  the last draw on a canvas that makes a renderer only while drawing, and is
-  empty for a degenerate curve.
+  clipped one leaves the box as it is. The extent asked for at another `dpi`
+  matches the label placed at that dpi to within 2% of its width. Without a
+  renderer on a PDF canvas, before and after a save, it matches the Agg
+  measurement. A measurement after an axis-limit change matches the next
+  draw. A legend at `loc="best"` measures each label without placing it
+  again. The extent is empty for a degenerate curve.
 
 ## Deferred
 

@@ -101,8 +101,9 @@ All code lives in `src/curved_text/_core.py`.
   matplotlib's `get_window_extent`, so the parent's measurement loop has no
   special case; a usetex plain glyph overrides it to read its run (see the
   LaTeX section). It owns `draw` and the outline-to-curve mapping and the
-  outline cache; subclasses supply only the outline source (`_build_outline`)
-  and the `_bend` flag. Segments stay out of figure layout (`set_in_layout`):
+  outline cache; subclasses supply the outline source (`_build_outline`) and
+  the `_bend` flag, and a usetex plain glyph also takes its size and outline
+  from its run (`_size_px`, `_outline_units`). Segments stay out of figure layout (`set_in_layout`):
   the parent positions them when it draws, so their own `Text` position, the
   data origin, is not where they appear, and an unclipped label measured there
   would stretch a tight bounding box to the origin.
@@ -199,9 +200,8 @@ When a segment's usetex setting is on (the `text.usetex` rcParam, or
 `usetex=True` passed through the kwargs), LaTeX lays out both segment kinds, so
 a curved label matches the figure's other usetex text. The run architecture
 carries over unchanged. The first bullet below makes the outline agree with
-the advance matplotlib measures. The next four cover plain text: one LaTeX pass
-per run, how each character keeps its own item, literal characters, and spaces.
-The last puts the `valign` lines on the drawn font.
+the advance matplotlib measures, the bullets after it cover plain-text runs,
+and the last puts the `valign` lines on the drawn font.
 
 - **Layout at the label size.** matplotlib measures a usetex advance by running
   LaTeX at the label's own size, and TeX fonts change design with size (cmss8 at
@@ -228,19 +228,20 @@ The last puts the `valign` lines on the drawn font.
   its item, its width the item's own width, and its span the distance to the
   next character, which carries TeX's kern (`_PlainGlyph._tex_kern_units`). A
   usetex plain glyph's `_size_px` reads its width and height from the run, so
-  matplotlib never measures it on its own. The height is the one matplotlib
-  gives the character on its own: at least the box of `lp`, as for every line
-  of usetex text, and a taller character's ink, which stands in for its box.
+  matplotlib never measures it on its own. The height approximates the one
+  matplotlib gives the character on its own: at least the box of `lp`, as for
+  every line of usetex text, and for a taller character its ink, which stands
+  in for its TeX box to within a fraction of a pixel (0.3 px at 26 pt).
   The run sits in an `\mbox`, so a long run stays on one line instead of
   breaking where matplotlib's LaTeX paragraph ends.
-- **Cost.** LaTeX runs once per distinct plain run instead of once per distinct
-  character, as it does for matplotlib's own usetex text, one run per string.
-  A long label's first draw is several times faster (about 2 s instead of 9
-  to 10 s for 37 characters with an empty TeX cache). A new label string costs one
-  LaTeX run even when every character in it has been drawn before, so many
-  short new labels take longer than when their characters were already cached.
-  Kerning needs TeX to set the characters together, so the per-character cost
-  model is not kept.
+- **Cost.** LaTeX runs once per distinct plain run, as matplotlib runs it once
+  per usetex string. A 37-character label's first draw takes about 2 s with an
+  empty TeX cache. Each new label string costs one LaTeX run, so a figure with
+  many short new labels runs LaTeX once per label. Typesetting per character
+  was rejected: a new string could reuse characters already in TeX's cache, but
+  each distinct character costs a run (9 to 10 s for the same label), and TeX
+  never sets two characters together, so nothing is kerned. One LaTeX job per
+  draw for every new run would cut the many-labels cost (#43).
 - **Cache.** Runs are cached per run, size, and the rcParams matplotlib's
   `TexManager` writes the LaTeX preamble from: the user's
   preamble, `font.family`, and each family's font list, such as `font.serif`,
@@ -422,10 +423,14 @@ fontsize pass-through), these tests carry the design:
   stem weight, which rotation largely defeats anyway); marginal gain, not
   pursued. Usetex glyphs are hinted by matplotlib, at a resolution where it is
   negligible (see the LaTeX section).
-- Kerning for usetex runs with composite characters. A run with a character TeX
-  builds from several items, such as `é` in the default OT1 encoding, is
-  typeset one character at a time without kerning. Pairing items with
-  characters there needs a way to tell which items belong to which character.
+- Kerning for usetex runs that cannot be paired. A run with a character TeX
+  builds from several items, such as `é` in the default OT1 encoding, or with a
+  printing character that may set no item (a soft hyphen) or join the one
+  before (a combining mark), is typeset one character at a time without
+  kerning. Pairing items with characters there needs a way to tell which items
+  belong to which character.
+- One LaTeX job per draw for every usetex run not yet cached, so a figure with
+  many short new labels starts LaTeX once rather than once per label (#43).
 
 ## Ecosystem constraints
 

@@ -16,12 +16,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Under usetex, each run of plain text is typeset in one LaTeX pass, where
   LaTeX used to run once for each distinct character. A long label's first draw
   is several times faster: about 2 s instead of 9 to 10 s for a 37-character
-  label with an empty TeX cache. Each new label string now costs one LaTeX run, as
-  matplotlib's own usetex text does, so many short new labels can take longer
-  than when their characters were already cached. A run with a character TeX
-  builds from several pieces, such as an accented letter in the default
-  encoding, or with a soft hyphen or combining mark, is typeset one character at
-  a time without kerning, as all usetex plain text was before.
+  label with an empty TeX cache. Each new label string now costs one LaTeX run,
+  as matplotlib's own usetex text does, so a figure with many short new labels
+  can take much longer than when their characters were already cached: 300 new
+  short labels took 124 s, against 2.5 s
+  ([#43](https://github.com/thiebes/curved-text/issues/43)). A run with a
+  character TeX builds from several pieces, such as an accented letter in the
+  default encoding, or with a soft hyphen or combining mark, is typeset one
+  character at a time without kerning, as all usetex plain text was before.
 
 ### Fixed
 

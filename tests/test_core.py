@@ -1379,6 +1379,7 @@ def test_usetex_plain_glyphs_are_kerned_as_tex_sets_them(pair, reference):
     "office --- affluent",  # ligature pairs, kept one glyph per character
     "S" + _TEX_MARKUP,  # "\_" sets a rule, not a glyph
     " a  b ",  # spaces at either end and in a row
+    "a\tb",  # a tab is whitespace, not a character that sets nothing
 ])
 def test_usetex_run_sets_one_item_per_character(text):
     # Each printing character of a run takes its own glyph or rule from the
@@ -1431,8 +1432,9 @@ def test_usetex_run_that_cannot_be_paired_is_typeset_per_character(text):
 @needs_latex
 def test_usetex_run_glyph_height_matches_matplotlib_measuring_it_alone():
     # A glyph's height sizes its crowding gap and the box casing. Taken from
-    # its run, it is the height matplotlib gives the character typeset on its
-    # own: the "lp" line box, or a taller character's own box.
+    # its run, it is within a fraction of a pixel of the height matplotlib gives
+    # the character typeset on its own: the "lp" line box, or a taller
+    # character's own box, which the run stands in for with the glyph's ink.
     fontsize = 26
     fig, ct = _flat_label("an (q) [j]", fontsize=fontsize, usetex=True)
     renderer = fig.canvas.get_renderer()
@@ -1454,8 +1456,9 @@ def test_usetex_run_glyph_height_matches_matplotlib_measuring_it_alone():
 def test_usetex_run_follows_the_font_when_rcparams_change(after, tex_files):
     if not _has_tex_files(*tex_files):
         pytest.skip(f"needs {', '.join(tex_files)}")
-    # A run is typeset again when any rcParam LaTeX reads changes: the family,
-    # or the font list LaTeX picks a family's font from. A new label then
+    # A run is typeset again when any rcParam matplotlib writes the LaTeX
+    # preamble from changes: the family, or the font list it picks a family's
+    # font from. A new label then
     # matches the character typeset alone under the new rcParams, and so does
     # a label drawn before the change and redrawn after it, whose outline must
     # come from the same pass as its width.

@@ -23,7 +23,7 @@ from matplotlib.patheffects import PathEffectRenderer
 from matplotlib.path import Path
 from matplotlib.texmanager import TexManager
 from matplotlib.textpath import TextToPath
-from matplotlib.transforms import IdentityTransform
+from matplotlib.transforms import Bbox, IdentityTransform
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -1196,9 +1196,56 @@ class CurvedText(mtext.Text):
         return advances
 
     def draw(self, renderer, *args, **kwargs) -> None:
+        # The container draws nothing itself: its segments and casing are
+        # artists the axes draws after it, so drawing it lays them out.
+        self._layout(renderer)
+        self._last_renderer = renderer
+        self.stale = False
+
+    def get_window_extent(self, renderer=None, dpi=None) -> Bbox:
+        """The extent of the label as drawn, in display pixels: every segment's
+        placed outline and the box casing.
+
+        Figure layout (``bbox_inches="tight"``, constrained layout) measures an
+        unclipped label through it, so the label is laid out first; layout can
+        run before the first draw. The container's own Text, a single space at
+        the curve's first point, takes no part. ``dpi`` scales the extent to that
+        resolution, which is exact because the layout scales with the figure's
+        dpi. A label that cannot be laid out (no renderer yet on a canvas that
+        makes one only while drawing, an empty label, or a degenerate curve) has
+        an empty extent at the curve's first point.
+        """
+        if renderer is None:
+            # Agg canvases make a renderer on request; others, such as PDF,
+            # only while drawing, so fall back to the last draw's.
+            get_renderer = getattr(self.figure.canvas, "get_renderer", None)
+            renderer = (get_renderer() if get_renderer is not None
+                        else getattr(self, "_last_renderer", None))
+        extents = []
+        if renderer is not None and self._layout(renderer):
+            extents = [path.get_extents()
+                       for path in (seg._placed_path(renderer)
+                                    for seg in self._segments
+                                    if seg.get_visible())
+                       if path is not None]
+            if self._box is not None:
+                extents.append(self._box.get_window_extent(renderer))
+        if not extents:
+            x, y = self.get_transform().transform(self.get_unitless_position())
+            return Bbox.from_bounds(x, y, 0.0, 0.0)
+        bbox = Bbox.union(extents)
+        if dpi is not None:
+            bbox = Bbox(bbox.get_points() * (dpi / self.figure.dpi))
+        return bbox
+
+    def _layout(self, renderer) -> bool:
+        """Position every segment and the casing along the curve for this
+        renderer, the label's whole layout, recomputed on every draw. Returns
+        whether the label was laid out: an empty label, a label off any axes,
+        or a degenerate curve is not."""
         if not self._segments or self.axes is None:
             self._hide_box()
-            return
+            return False
         axes = self.axes
         # Work in display pixels: project the curve and build its arc-length
         # frame, then shift that frame perpendicularly to the parallel (offset)
@@ -1216,7 +1263,7 @@ class CurvedText(mtext.Text):
             # A degenerate curve has no span to position the casing on; hide it
             # rather than leave the previous draw's band stranded on screen.
             self._hide_box()
-            return
+            return False
         inv = axes.transData.inverted()
 
         # The vertical-alignment datum is a font-metric constant, identical for
@@ -1294,6 +1341,7 @@ class CurvedText(mtext.Text):
             t._set_placement(frame, cursor + (adv - span) / 2.0, w, datum)
             t.set_visible(True)
             cursor += adv
+        return True
 
 
 def curved_text(ax: Axes, x: ArrayLike, y: ArrayLike, text: str, *,

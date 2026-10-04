@@ -135,7 +135,8 @@ All code lives in `src/curved_text/_core.py`.
   The container draws nothing itself, so its draw places the segments and
   the casing (`_place_on_curve`).
 - Figure layout measures the label through the container's
-  `get_window_extent`: the box of the placed glyphs' outline control points.
+  `get_window_extent`: the box of the placed glyphs' outline control points
+  and the casing's band.
   The curves lie inside their control points, so the box can exceed the ink by
   a fraction of a pixel but never falls short of it. Exact curve extrema
   (`Path.get_extents`) would make a draw with a legend at `loc="best"`, which
@@ -368,11 +369,14 @@ as matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
 clip path pass to them as well, at construction and through the setters, so an
 unclipped label keeps its casing outside the axes. Picking tests the mouse
 against the box of each placed glyph (`contains`), as matplotlib's own text
-tests its box, after a cheap test against the label's extent. The segments
-take the forwarded `picker` but never answer a pick themselves (their
-`contains` is false), as their extent is empty, so a click at the data origin,
-their unused `Text` position, picks nothing. The label measures its casing, so
-the casing, like the segments, stays out of figure layout itself.
+tests its box; a click on the casing's band between glyphs is not a hit. The
+segments take the forwarded `picker` but are never pickable themselves
+(`pickable` is false), since matplotlib asks a picker function without calling
+`contains`, and their `contains` is false for hover, since matplotlib's
+`Text.contains` tests the base `Text` box at their unused position, the data
+origin, not the empty extent they report. A click there picks nothing. The
+label measures its casing, so the casing, like the segments, stays out of
+figure layout itself.
 
 Layering is by zorder, applied once in `__init__` and maintained by
 `set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at

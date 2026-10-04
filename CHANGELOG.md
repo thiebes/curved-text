@@ -49,7 +49,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   of the label's extent in figure layout, and leaves layout with the label.
   `picker=True` picks the label when the mouse is on one of its glyphs, where
   it never matched before, and its glyphs no longer fire pick events of their
-  own near the data origin.
+  own near the data origin, whether `picker` is `True` or a function.
 
 ## 0.6.0
 

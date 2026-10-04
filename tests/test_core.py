@@ -1283,7 +1283,8 @@ def test_hidden_label_hides_its_glyphs_and_takes_no_room():
     plt.close(fig)
 
 
-@pytest.mark.parametrize("hide_at_construction", [False, True])
+@pytest.mark.parametrize("hide_at_construction", [False, True],
+                         ids=["hidden_afterwards", "hidden_at_construction"])
 def test_hidden_label_hides_its_casing(hide_at_construction):
     # Visibility reaches the casing whether the label is hidden when it is
     # made, through the keyword, or afterwards.
@@ -1345,13 +1346,7 @@ def test_casing_is_part_of_the_label_extent():
     # A drawn casing is part of the label, so the extent reaches its band:
     # half its line width beyond its centreline, past the glyphs on every side.
     def extent(box):
-        fig, ax = plt.subplots(figsize=(4, 3))
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10)
-        x = np.linspace(1, 9, 50)
-        ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=14,
-                         box=box)
-        _draw(fig)
+        fig, ct = _flat_label("label", fontsize=14, box=box)
         bbox = ct.get_window_extent(fig.canvas.get_renderer())
         plt.close(fig)
         return bbox
@@ -1361,38 +1356,88 @@ def test_casing_is_part_of_the_label_extent():
     assert cased.y0 < plain.y0 - 5 and cased.y1 > plain.y1 + 5
 
 
-def test_label_is_picked_on_its_glyphs():
-    # Picking and hover test a point against the label's placed glyphs, so a
-    # click on a glyph hits the label and a click in empty space does not. The
-    # glyph segments take the forwarded picker too, but never answer a pick
-    # themselves, so a click at the data origin, their unused Text position,
-    # picks nothing.
+def _picking_label(picker):
+    """A label with ``picker`` on axes whose limits start at -1, so the data
+    origin, its glyph segments' unused Text position, lies inside the axes,
+    where matplotlib asks its children about a click; return the figure, the
+    label, and the artists picked so far."""
     fig, ax = plt.subplots()
     ax.set_xlim(-1, 10)
     ax.set_ylim(-1, 10)
     x = np.linspace(1, 9, 50)
     ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
-                     picker=True)
+                     picker=picker)
     picked = []
     fig.canvas.mpl_connect("pick_event", lambda event: picked.append(event.artist))
     _draw(fig)
-    renderer = fig.canvas.get_renderer()
-    glyph = ct._segments[0]._placed_path(renderer).get_extents()
+    return fig, ct, picked
 
-    def event_at(x_px, y_px):
-        return MouseEvent("button_press_event", fig.canvas, x_px, y_px, button=1)
 
-    on_glyph = event_at(*glyph.get_points().mean(axis=0))
-    empty = event_at(*ax.transData.transform((1.0, 1.0)))
+def _click(fig, x_px, y_px):
+    """A left-button press at display pixel ``(x_px, y_px)``."""
+    return MouseEvent("button_press_event", fig.canvas, x_px, y_px, button=1)
+
+
+def _first_glyph_centre(ct):
+    """The display-pixel centre of the label's first placed glyph."""
+    renderer = ct.figure.canvas.get_renderer()
+    return ct._segments[0]._placed_path(renderer).get_extents().get_points().mean(
+        axis=0)
+
+
+def test_label_is_picked_on_its_glyphs():
+    # Picking and hover test a point against the label's placed glyphs, so a
+    # click on a glyph hits the label and a click in empty space does not. The
+    # glyph segments take the forwarded picker too, but never answer a pick
+    # themselves, so a click just inside their unused Text box at the data
+    # origin picks nothing.
+    fig, ct, picked = _picking_label(picker=True)
+    ax = ct.axes
+    on_glyph = _click(fig, *_first_glyph_centre(ct))
+    empty = _click(fig, *ax.transData.transform((1.0, 1.0)))
+    inside_segment_text_box = _click(fig, *(ax.transData.transform((0, 0)) + 3.0))
     assert ct.contains(on_glyph)[0]
     assert not ct.contains(empty)[0]
     fig.canvas.callbacks.process("button_press_event", on_glyph)
     assert picked == [ct]
-    origin = event_at(*(ax.transData.transform((0.0, 0.0)) + 3.0))
-    fig.canvas.callbacks.process("button_press_event", origin)
+    fig.canvas.callbacks.process("button_press_event", inside_segment_text_box)
     assert picked == [ct]
     ct.set_visible(False)
     assert not ct.contains(on_glyph)[0]
+    plt.close(fig)
+
+
+def test_label_picked_by_a_picker_function_is_never_a_glyph():
+    # matplotlib asks a picker function without calling ``contains``, and the
+    # label's picker reaches every glyph segment. A function that tests each
+    # artist's own extent picks the label on its glyphs, and never a segment,
+    # whose empty extent would otherwise answer every click.
+    def by_extent(artist, mouseevent):
+        hit = artist.get_window_extent().contains(mouseevent.x, mouseevent.y)
+        return hit, {}
+
+    fig, ct, picked = _picking_label(picker=by_extent)
+    origin = _click(fig, *(ct.axes.transData.transform((0, 0)) + 3.0))
+    fig.canvas.callbacks.process("button_press_event", origin)
+    assert picked == []
+    fig.canvas.callbacks.process("button_press_event",
+                                 _click(fig, *_first_glyph_centre(ct)))
+    assert picked == [ct]
+    plt.close(fig)
+
+
+def test_label_is_picked_where_it_moved_without_a_draw():
+    # Panning moves the label before the next draw, and picking places it
+    # again to test the click, so the glyph's new position hits and its old
+    # one misses.
+    fig, ct, _ = _picking_label(picker=True)
+    ax = ct.axes
+    old_centre = _first_glyph_centre(ct)
+    data_point = ax.transData.inverted().transform(old_centre)
+    ax.set_xlim(1, 12)
+    new_centre = ax.transData.transform(data_point)
+    assert not ct.contains(_click(fig, *old_centre))[0]
+    assert ct.contains(_click(fig, *new_centre))[0]
     plt.close(fig)
 
 

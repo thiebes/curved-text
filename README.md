@@ -77,6 +77,12 @@ If the label runs past either end of the curve, it is not cut off. The curve
 continues straight in the direction it had at that end, and the extra letters
 sit on that straight line.
 
+A label is clipped to the axes, as lines are, so letters that run past the
+edge of the axes are cut there. matplotlib's own `ax.text` is not clipped by
+default. Pass `clip_on=False` to draw the whole label wherever its curve goes;
+a tight bounding box (`bbox_inches="tight"`) and constrained layout then make
+room for it.
+
 ### The function and the class
 
 The object form is also available:

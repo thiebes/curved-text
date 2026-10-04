@@ -132,6 +132,30 @@ All code lives in `src/curved_text/_core.py`.
 - `CurvedText` builds children from `_split_runs` (honoring `parse_math`), and
   its draw walks one cursor over the segments, handing each its placement. The
   child list is named `_segments`, since elements are characters and runs alike.
+  The container draws nothing itself, so its draw places the segments and
+  the casing (`_place_on_curve`).
+- Figure layout measures the label through the container's
+  `get_window_extent`: the box of the placed glyphs' outline control points.
+  The curves lie inside their control points, so the box can exceed the ink by
+  a fraction of a pixel but never falls short of it. Exact curve extrema
+  (`Path.get_extents`) would make a draw with a legend at `loc="best"`, which
+  measures every text in the axes, about ten times slower. Constrained layout
+  measures before the first draw has placed anything, so the label is placed
+  to be measured. A measurement reuses the last placement while its key
+  (`_placement_key`) is unchanged: the renderer, its resolution, the curve's
+  position on the canvas, and each segment's text, font, and usetex setting.
+  A legend measuring the label right after its draw therefore does not place
+  it again, and every draw places afresh. The container's own `Text`, a single
+  space at the curve's first point, takes no part, since its extent is that
+  one point. The box casing takes no part either: it is clipped to the axes
+  (#45). Each segment reports an empty extent, so a legend, which measures
+  every text in the axes, counts each label once and never at a segment's
+  unused `Text` position, the data origin; the container measures a segment's
+  size through matplotlib's `Text` measurement (`_size_px`). Without a
+  renderer, as on a PDF canvas outside a draw, the label is measured with a
+  one-pixel Agg renderer at the figure's dpi, kept per dpi
+  (`_measuring_renderer`). A clipped label stays out of figure layout, as
+  matplotlib leaves out every artist clipped to the axes.
 
 ## Vertical datum
 
@@ -414,8 +438,18 @@ fontsize pass-through), these tests carry the design:
   matplotlib's measurement of the character on its own. After a change to
   `font.family` or to `font.serif`, a new label and a redrawn one both match
   the character typeset alone under the new rcParams.
-- Figure layout: an unclipped label leaves a tight bounding box as it is
-  without the label.
+- Figure layout: an unclipped label near its axes leaves a tight bounding box
+  as it is without the label, instead of stretching it to the data origin. An
+  unclipped label rising above the axes reaches the top of a tight bounding
+  box, and constrained layout shrinks the axes for it on the first draw. A
+  clipped one leaves the box as it is. The extent asked for at another `dpi`
+  matches the label placed at that dpi to within 2% of its width. Without a
+  renderer on a PDF canvas, before and after a save, it matches the Agg
+  measurement. A measurement after an axis-limit change, or after a change to
+  the glyphs' font size, matches the next draw. A legend at `loc="best"`
+  measures each label without placing it again, and with a line across the top
+  of the axes goes to the lower left, which the glyphs' unused positions at the
+  data origin would block. The extent is empty for a degenerate curve.
 
 ## Deferred
 

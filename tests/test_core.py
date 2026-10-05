@@ -4,18 +4,23 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 """
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
+import datetime
 import functools
 import inspect
 import shutil
 import subprocess
 
 import matplotlib as mpl
+import matplotlib.dates as mdates
 import matplotlib.font_manager as font_manager
 import matplotlib.pyplot as plt
+import matplotlib.units as munits
 import numpy as np
+import pandas as pd
 import pytest
 from matplotlib.backend_bases import MouseEvent
 from matplotlib.backends.backend_pdf import FigureCanvasPdf
+from matplotlib.testing import jpl_units
 from matplotlib.texmanager import TexManager
 from matplotlib.transforms import Bbox
 
@@ -472,6 +477,10 @@ def test_validates_inputs():
         CurvedText([0.0], [0.0], "x", ax)            # too few points
     with pytest.raises(ValueError):
         CurvedText([0, 1], [0, 1], "x", ax, anchor="middle")  # bad anchor
+    with pytest.raises(ValueError):
+        CurvedText([0, 1, 2], [0, 1], "x", ax)       # unequal lengths
+    with pytest.raises(ValueError):
+        CurvedText(np.zeros((2, 3)), np.zeros((2, 3)), "x", ax)  # 2-D
     plt.close(fig)
 
 
@@ -1106,6 +1115,227 @@ def test_label_draws_on_polar_axes_whose_radius_starts_above_zero():
     assert axes_box.contains(extent.x1, extent.y1)
     plt.close(fig)
     plt.close(flat_fig)
+
+
+# A curve of 50 daily dates, the values a time series plots against them, and
+# 50 category strings.
+_DAYS = np.datetime64("2017-09-24") + np.arange(50) * np.timedelta64(1, "D")
+_WAVE = np.sin(np.linspace(0, 2 * np.pi, 50))
+_CATEGORIES = [f"c{i}" for i in range(50)]
+_UNIT_TEXT = "unit-typed curve"
+
+
+def _unit_label(x, y, **kwargs):
+    """A boxed label on the curve ``x, y``, over the line ``plot`` draws from
+    the same data, with the axes' limits fixed where autoscaling put them;
+    return the figure, the label, and the line. ``kwargs`` go to the label."""
+    fig, ax = plt.subplots(figsize=(6, 4))
+    (line,) = ax.plot(x, y)
+    ax.set_xlim(ax.get_xlim())
+    ax.set_ylim(ax.get_ylim())
+    ct = curved_text(ax, x, y, _UNIT_TEXT, offset=6, box=True, **kwargs)
+    return fig, ct, line
+
+
+def _float_twin(line, **kwargs):
+    """The same label on ``line``'s data as its axes converted it, in a float
+    figure of the same size, dpi, and limits; return the figure and label."""
+    ax = line.axes
+    fig, ref_ax = plt.subplots(figsize=ax.figure.get_size_inches(),
+                               dpi=ax.figure.dpi)
+    ref_ax.set_xlim(ax.get_xlim())
+    ref_ax.set_ylim(ax.get_ylim())
+    xy = line.get_xydata()
+    ct = curved_text(ref_ax, xy[:, 0], xy[:, 1], _UNIT_TEXT, offset=6, box=True,
+                     **kwargs)
+    return fig, ct
+
+
+def _assert_same_placement(fig, ct, ref_fig, ref_ct):
+    """Draw both figures and check that both labels place every glyph and
+    their casings at the same display pixels."""
+    _draw(fig)
+    _draw(ref_fig)
+    renderer = fig.canvas.get_renderer()
+    ref_renderer = ref_fig.canvas.get_renderer()
+    assert len(ct._segments) == len(ref_ct._segments)
+    for seg, ref_seg in zip(ct._segments, ref_ct._segments):
+        path = seg._placed_path(renderer)
+        ref_path = ref_seg._placed_path(ref_renderer)
+        if ref_path is None:
+            assert path is None
+            continue
+        np.testing.assert_allclose(path.vertices, ref_path.vertices, atol=1e-6)
+    np.testing.assert_allclose(
+        ct._box.get_transform().transform(ct._box.get_xydata()),
+        ref_ct._box.get_transform().transform(ref_ct._box.get_xydata()),
+        atol=1e-6)
+
+
+_UNIT_CURVES = {
+    "datetime64[s]": lambda: (_DAYS.astype("datetime64[s]"), _WAVE),
+    "datetime64[us]": lambda: (_DAYS.astype("datetime64[us]"), _WAVE),
+    "datetime64[ns]": lambda: (_DAYS.astype("datetime64[ns]"), _WAVE),
+    "datetime list": lambda: (
+        list(_DAYS.astype("datetime64[us]").astype(datetime.datetime)), _WAVE),
+    "DatetimeIndex": lambda: (pd.DatetimeIndex(_DAYS), _WAVE),
+    "aware DatetimeIndex": lambda: (
+        pd.DatetimeIndex(_DAYS).tz_localize("Europe/Madrid"), _WAVE),
+    "date Series": lambda: (pd.Series(_DAYS, index=np.arange(100, 150)), _WAVE),
+    "categories on x": lambda: (_CATEGORIES, _WAVE),
+    "dates on y": lambda: (_WAVE, _DAYS.astype("datetime64[us]")),
+    "categories on y": lambda: (_WAVE, _CATEGORIES),
+}
+
+
+@pytest.mark.parametrize("curve", list(_UNIT_CURVES.values()),
+                         ids=list(_UNIT_CURVES))
+def test_unit_typed_curve_matches_float_curve(curve):
+    # The axes convert the curve as they convert the plotted line, so a label
+    # on dates, categories, or pandas data draws exactly as one on the line's
+    # own converted data, casing included. Cast straight to float, datetime64
+    # gave raw counts since 1970, and datetime objects and strings raised.
+    fig, ct, line = _unit_label(*curve())
+    ref_fig, ref_ct = _float_twin(line)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_before_any_plot_sets_up_the_axis_units():
+    # A label made on empty axes sets up the axis converter itself, as plot
+    # does, and a line plotted afterwards shares it.
+    fig, ax = plt.subplots(figsize=(6, 4))
+    x = _DAYS.astype("datetime64[us]")
+    ct = curved_text(ax, x, _WAVE, _UNIT_TEXT, offset=6, box=True)
+    assert ax.xaxis.have_units()
+    (line,) = ax.plot(x, _WAVE)
+    ax.set_xlim(ax.get_xlim())
+    ax.set_ylim(ax.get_ylim())
+    ref_fig, ref_ct = _float_twin(line)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_follows_a_change_of_axis_units(monkeypatch):
+    # The curve is converted each time the label is placed, so after the axis
+    # switches from kilometres to metres the label stays on the line.
+    monkeypatch.setitem(munits.registry, jpl_units.UnitDbl,
+                        jpl_units.UnitDblConverter())
+    x = [jpl_units.UnitDbl(value, "km") for value in np.linspace(1, 9, 50)]
+    fig, ct, line = _unit_label(x, _WAVE)
+    _draw(fig)
+    ct.axes.xaxis.set_units("m")
+    ct.axes.set_xlim(600, 9400)
+    ref_fig, ref_ct = _float_twin(line)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_day_dates_follow_the_date_epoch():
+    # Days since 1970 match matplotlib's date numbers only under the default
+    # epoch; the axis converter follows any epoch.
+    mdates._reset_epoch_test_example()
+    mdates.set_epoch("2000-01-01T00:00:00")
+    try:
+        fig, ct, line = _unit_label(_DAYS, _WAVE)
+        ref_fig, ref_ct = _float_twin(line)
+        _assert_same_placement(fig, ct, ref_fig, ref_ct)
+        plt.close(fig)
+        plt.close(ref_fig)
+    finally:
+        mdates._reset_epoch_test_example()
+
+
+def test_label_position_is_the_callers_first_point():
+    # The label's own Text position is the curve's first point as given, and
+    # its unitless position is that point on the axis, as for any Text.
+    x = _DAYS.astype("datetime64[us]")
+    fig, ct, _ = _unit_label(x, _WAVE)
+    assert ct.get_position()[0] == x[0]
+    assert ct.get_unitless_position()[0] == pytest.approx(mdates.date2num(x[0]))
+    plt.close(fig)
+
+
+def test_float_series_without_a_zero_index_draws():
+    # The first point is taken by position; a pandas Series indexes by label.
+    index = np.arange(10, 60)
+    fig, ct, line = _unit_label(pd.Series(np.linspace(1, 9, 50), index=index),
+                                pd.Series(_WAVE, index=index))
+    ref_fig, ref_ct = _float_twin(line)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_adds_only_new_categories_to_the_axis():
+    # As for ax.text and plot, categories already on the axis keep their
+    # places and new ones are added after them, as ticks.
+    def tick_labels(ax):
+        _draw(ax.figure)
+        return [tick.get_text() for tick in ax.get_xticklabels()]
+
+    fig, ax = plt.subplots()
+    ax.plot(["a", "b", "c", "d"], [0, 1, 2, 3])
+    curved_text(ax, ["b", "c"], [1, 2], "on plotted categories")
+    assert tick_labels(ax) == ["a", "b", "c", "d"]
+    curved_text(ax, ["d", "e"], [3, 4], "on a new category")
+    assert tick_labels(ax) == ["a", "b", "c", "d", "e"]
+    plt.close(fig)
+
+
+def test_data_the_axis_cannot_convert_raises_and_leaves_the_axis_alone():
+    # Strings on a date axis raise matplotlib's ConversionError when the label
+    # is made. The label adds nothing to the axes and does not replace the
+    # date converter, so the plotted dates still draw.
+    fig, ax = plt.subplots()
+    (line,) = ax.plot(_DAYS, _WAVE)
+    with pytest.raises(munits.ConversionError):
+        curved_text(ax, _CATEGORIES, _WAVE, "strings on dates")
+    assert not ax.texts
+    _draw(fig)
+    assert np.isfinite(line.get_xydata()).all()
+    plt.close(fig)
+
+
+def test_masked_points_are_rejected():
+    # A masked point is not finite once converted. Cast straight to float, the
+    # value under the mask placed the label instead.
+    fig, ax = plt.subplots()
+    y = np.ma.masked_array(_WAVE, mask=np.arange(50) == 10)
+    with pytest.raises(ValueError, match="finite"):
+        curved_text(ax, np.arange(50.0), y, "masked")
+    plt.close(fig)
+
+
+def test_label_keeps_its_curve_when_the_callers_array_changes():
+    # The label keeps a copy of the curve, as Line2D does, so changing the
+    # caller's array after the label is made does not move it.
+    x = np.linspace(1, 9, 50)
+    fig, ct, line = _unit_label(x, _WAVE)
+    ref_fig, ref_ct = _float_twin(line)
+    x += 100.0
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_unit_typed_label_is_measured_and_picked_before_a_draw():
+    # Figure layout measures the label, and a click picks it, before the first
+    # draw has placed it; both place it through the same conversion as a draw.
+    fig, ct, line = _unit_label(_DAYS.astype("datetime64[us]"), _WAVE,
+                                picker=True)
+    ref_fig, ref_ct = _float_twin(line)
+    _draw(ref_fig)
+    assert ct.contains(_click(fig, *_first_glyph_centre(ref_ct)))[0]
+    np.testing.assert_allclose(
+        ct.get_window_extent(fig.canvas.get_renderer()).get_points(),
+        ref_ct.get_window_extent(ref_fig.canvas.get_renderer()).get_points(),
+        atol=1e-6)
+    plt.close(fig)
+    plt.close(ref_fig)
 
 
 def test_unclipped_label_keeps_the_tight_bounding_box():

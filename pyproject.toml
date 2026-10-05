@@ -33,7 +33,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+# pandas: the tests place labels on pandas dates and Series, as users pass them.
+test = [
+    "pytest>=7.0",
+    "pandas>=1.3",
+]
 # Extra renderers used only by the integration example (matplotlib is already a
 # core dependency). Lower bounds, like the rest of the project.
 examples = [

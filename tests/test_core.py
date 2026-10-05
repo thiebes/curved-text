@@ -1045,11 +1045,50 @@ def test_kern_is_zero_where_no_plain_pair_is_kerned(text, kwargs):
     assert kerns == [0.0] * len(ct._segments)
 
 
+@pytest.mark.parametrize("axis, scale, kwargs", [
+    ("y", "logit", {}),
+    ("y", "log", {"nonpositive": "mask"}),
+    ("x", "log", {"nonpositive": "mask"}),
+], ids=["logit", "log_y_mask", "log_x_mask"])
+def test_label_draws_on_scales_without_a_data_origin(axis, scale, kwargs):
+    # The container measures each glyph at its unused Text position. On a
+    # logit axis, and on a log axis that masks non-positive values, the data
+    # origin has no pixel, so a position there gave every glyph a NaN width
+    # and the label was not drawn. Every point of the curve is valid for the
+    # scale, so the label draws inside the axes, its glyphs as wide as on a
+    # linear axis.
+    def label(set_scale):
+        fig, ax = plt.subplots()
+        x = np.linspace(1, 100, 50)
+        y = np.linspace(0.1, 0.9, 50)
+        ax.plot(x, y)
+        if set_scale:
+            getattr(ax, f"set_{axis}scale")(scale, **kwargs)
+        ct = curved_text(ax, x, y, "label text")
+        _draw(fig)
+        return fig, ct
+
+    fig, ct = label(set_scale=True)
+    linear_fig, linear_ct = label(set_scale=False)
+    renderer = fig.canvas.get_renderer()
+    linear_renderer = linear_fig.canvas.get_renderer()
+    for seg, linear_seg in zip(ct._segments, linear_ct._segments):
+        np.testing.assert_allclose(seg._size_px(renderer),
+                                   linear_seg._size_px(linear_renderer))
+    extent = ct.get_window_extent(renderer)
+    axes_box = ct.axes.get_window_extent(renderer)
+    assert np.isfinite(extent.get_points()).all()
+    assert axes_box.contains(extent.x0, extent.y0)
+    assert axes_box.contains(extent.x1, extent.y1)
+    plt.close(fig)
+    plt.close(linear_fig)
+
+
 def test_unclipped_label_keeps_the_tight_bounding_box():
     # The container positions each glyph when it draws, so a glyph's own Text
-    # position, the data origin, is not where it appears. An unclipped label
+    # position, the display origin, is not where it appears. An unclipped label
     # must leave figure layout alone; glyphs measured at the origin would
-    # stretch a tight bounding box to it, here over a hundred inches.
+    # stretch a tight bounding box to the figure's lower left corner.
     def tight_bounds(label):
         fig, ax = plt.subplots(figsize=(4, 3))
         x = np.linspace(100, 110, 50)
@@ -1219,10 +1258,11 @@ def test_legend_measures_the_label_without_placing_it_again(monkeypatch):
 def test_legend_avoids_the_label_not_its_glyphs_unused_position():
     # A legend placed at "best" measures every text in the axes, the glyph
     # segments included. A segment counts as part of its label, not at its
-    # unused Text position, the data origin in the lower left corner, so with
-    # a line across the top the legend goes to the lower left, the first free
-    # corner in matplotlib's order of preference.
-    fig, ax = plt.subplots()
+    # unused Text position, the display origin, here the axes' lower left
+    # corner, so with a line across the top the legend goes to the lower left,
+    # the first free corner in matplotlib's order of preference.
+    fig = plt.figure()
+    ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 50)
@@ -1357,13 +1397,14 @@ def test_casing_is_part_of_the_label_extent():
 
 
 def _picking_label(picker):
-    """A label with ``picker`` on axes whose limits start at -1, so the data
+    """A label with ``picker`` on axes that fill the figure, so the display
     origin, its glyph segments' unused Text position, lies inside the axes,
     where matplotlib asks its children about a click; return the figure, the
     label, and the artists picked so far."""
-    fig, ax = plt.subplots()
-    ax.set_xlim(-1, 10)
-    ax.set_ylim(-1, 10)
+    fig = plt.figure()
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
     x = np.linspace(1, 9, 50)
     ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
                      picker=picker)
@@ -1389,13 +1430,13 @@ def test_label_is_picked_on_its_glyphs():
     # Picking and hover test a point against the label's placed glyphs, so a
     # click on a glyph hits the label and a click in empty space does not. The
     # glyph segments take the forwarded picker too, but never answer a pick
-    # themselves, so a click just inside their unused Text box at the data
+    # themselves, so a click just inside their unused Text box at the display
     # origin picks nothing.
     fig, ct, picked = _picking_label(picker=True)
     ax = ct.axes
     on_glyph = _click(fig, *_first_glyph_centre(ct))
     empty = _click(fig, *ax.transData.transform((1.0, 1.0)))
-    inside_segment_text_box = _click(fig, *(ax.transData.transform((0, 0)) + 3.0))
+    inside_segment_text_box = _click(fig, 3.0, 3.0)
     assert ct.contains(on_glyph)[0]
     assert not ct.contains(empty)[0]
     fig.canvas.callbacks.process("button_press_event", on_glyph)
@@ -1417,7 +1458,7 @@ def test_label_picked_by_a_picker_function_is_never_a_glyph():
         return hit, {}
 
     fig, ct, picked = _picking_label(picker=by_extent)
-    origin = _click(fig, *(ct.axes.transData.transform((0, 0)) + 3.0))
+    origin = _click(fig, 3.0, 3.0)
     fig.canvas.callbacks.process("button_press_event", origin)
     assert picked == []
     fig.canvas.callbacks.process("button_press_event",
@@ -1434,7 +1475,7 @@ def test_label_is_picked_where_it_moved_without_a_draw():
     ax = ct.axes
     old_centre = _first_glyph_centre(ct)
     data_point = ax.transData.inverted().transform(old_centre)
-    ax.set_xlim(1, 12)
+    ax.set_xlim(2, 12)
     new_centre = ax.transData.transform(data_point)
     assert not ct.contains(_click(fig, *old_centre))[0]
     assert ct.contains(_click(fig, *new_centre))[0]

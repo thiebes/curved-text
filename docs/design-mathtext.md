@@ -104,9 +104,12 @@ All code lives in `src/curved_text/_core.py`.
   outline cache; subclasses supply the outline source (`_build_outline`) and
   the `_bend` flag, and a usetex plain glyph also takes its size and outline
   from its run (`_size_px`, `_outline_units`). Segments stay out of figure layout (`set_in_layout`):
-  the parent positions them when it draws, so their own `Text` position, the
-  data origin, is not where they appear, and an unclipped label measured there
-  would stretch a tight bounding box to the origin.
+  the parent positions them when it draws, so their own `Text` position is not
+  where they appear, and an unclipped label measured there would stretch a
+  tight bounding box to it. That position is the display origin (an
+  `IdentityTransform`), not the data origin, because `_size_px` still measures
+  the segment there, and the data origin has no pixel on a logit axis or on a
+  log axis that masks non-positive values.
   - `_outline_units()` returns the segment's outline `(vertices, codes)` in
     1/100-em units, baseline at `v = 0`, memoized per text, font properties, and
     usetex setting. It calls the subclass's `_build_outline` on a cache miss.
@@ -152,7 +155,7 @@ All code lives in `src/curved_text/_core.py`.
   its centreline on every side, which also covers its round caps. Each
   segment reports an empty extent, so a legend, which measures
   every text in the axes, counts each label once and never at a segment's
-  unused `Text` position, the data origin; the container measures a segment's
+  unused `Text` position, the display origin; the container measures a segment's
   size through matplotlib's `Text` measurement (`_size_px`). Without a
   renderer, as on a PDF canvas outside a draw, the label is measured with a
   one-pixel Agg renderer at the figure's dpi, kept per dpi
@@ -457,7 +460,7 @@ fontsize pass-through), these tests carry the design:
   `font.family` or to `font.serif`, a new label and a redrawn one both match
   the character typeset alone under the new rcParams.
 - Figure layout: an unclipped label near its axes leaves a tight bounding box
-  as it is without the label, instead of stretching it to the data origin. An
+  as it is without the label, instead of stretching it to the display origin. An
   unclipped label rising above the axes reaches the top of a tight bounding
   box, and constrained layout shrinks the axes for it on the first draw. A
   clipped one leaves the box as it is. The extent asked for at another `dpi`
@@ -466,8 +469,11 @@ fontsize pass-through), these tests carry the design:
   measurement. A measurement after an axis-limit change, or after a change to
   the glyphs' font size, matches the next draw. A legend at `loc="best"`
   measures each label without placing it again, and with a line across the top
-  of the axes goes to the lower left, which the glyphs' unused positions at the
-  data origin would block. The extent is empty for a degenerate curve.
+  of axes that fill the figure goes to the lower left, which the glyphs' unused
+  positions at the display origin would block. The extent is empty for a
+  degenerate curve. On a logit axis and on a log axis with
+  `nonpositive="mask"`, x or y, a label on valid points draws inside the axes,
+  each glyph as wide as on a linear axis.
 
 ## Deferred
 

@@ -50,6 +50,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `picker=True` picks the label when the mouse is on one of its glyphs, where
   it never matched before, and its glyphs no longer fire pick events of their
   own near the data origin, whether `picker` is `True` or a function.
+- A label on a logit axis, or on a log axis with `nonpositive="mask"`, is
+  drawn. It was missing, with no error, even when every point of the curve was
+  valid for the scale: each glyph was measured at the data origin, which has
+  no pixel on those scales
+  ([#27](https://github.com/thiebes/curved-text/issues/27)).
 
 ## 0.6.0
 

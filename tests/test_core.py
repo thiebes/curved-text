@@ -891,7 +891,7 @@ def test_box_covers_line_behind_label():
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
         # Footprint of the actually-drawn outlines (the segments render their own
-        # paths, so their window extents sit at the origin, not on the curve).
+        # paths, and their own window extents are empty).
         verts = np.vstack([p.vertices for p in
                            (s._placed_path(renderer) for s in ct._segments)
                            if p is not None])
@@ -1082,6 +1082,30 @@ def test_label_draws_on_scales_without_a_data_origin(axis, scale, kwargs):
     assert axes_box.contains(extent.x1, extent.y1)
     plt.close(fig)
     plt.close(linear_fig)
+
+
+def test_label_draws_on_polar_axes_whose_radius_starts_above_zero():
+    # On polar axes whose radial limits start above zero, the data origin lies
+    # below the radial limit and has no pixel either, through a transform that
+    # is not separable into x and y scales like those above.
+    fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
+    ax.set_rlim(1, 10)
+    theta = np.linspace(0.5, 2.5, 50)
+    ct = curved_text(ax, theta, np.full_like(theta, 5.0), "label text")
+    _draw(fig)
+    flat_fig, flat_ct = _flat_label("label text", fontsize=ct.get_fontsize())
+    renderer = fig.canvas.get_renderer()
+    flat_renderer = flat_fig.canvas.get_renderer()
+    for seg, flat_seg in zip(ct._segments, flat_ct._segments):
+        np.testing.assert_allclose(seg._size_px(renderer),
+                                   flat_seg._size_px(flat_renderer))
+    extent = ct.get_window_extent(renderer)
+    axes_box = ax.get_window_extent(renderer)
+    assert np.isfinite(extent.get_points()).all()
+    assert axes_box.contains(extent.x0, extent.y0)
+    assert axes_box.contains(extent.x1, extent.y1)
+    plt.close(fig)
+    plt.close(flat_fig)
 
 
 def test_unclipped_label_keeps_the_tight_bounding_box():
@@ -1397,12 +1421,9 @@ def test_casing_is_part_of_the_label_extent():
 
 
 def _picking_label(picker):
-    """A label with ``picker`` on axes that fill the figure, so the display
-    origin, its glyph segments' unused Text position, lies inside the axes,
-    where matplotlib asks its children about a click; return the figure, the
-    label, and the artists picked so far."""
-    fig = plt.figure()
-    ax = fig.add_axes([0, 0, 1, 1])
+    """A label with ``picker``; return the figure, the label, and the artists
+    picked so far."""
+    fig, ax = plt.subplots()
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(1, 9, 50)
@@ -1431,7 +1452,8 @@ def test_label_is_picked_on_its_glyphs():
     # click on a glyph hits the label and a click in empty space does not. The
     # glyph segments take the forwarded picker too, but never answer a pick
     # themselves, so a click just inside their unused Text box at the display
-    # origin picks nothing.
+    # origin, outside every axes, where matplotlib still asks the axes'
+    # children, picks nothing, and no segment contains it for hover.
     fig, ct, picked = _picking_label(picker=True)
     ax = ct.axes
     on_glyph = _click(fig, *_first_glyph_centre(ct))
@@ -1443,6 +1465,7 @@ def test_label_is_picked_on_its_glyphs():
     assert picked == [ct]
     fig.canvas.callbacks.process("button_press_event", inside_segment_text_box)
     assert picked == [ct]
+    assert not any(seg.contains(inside_segment_text_box)[0] for seg in ct._segments)
     ct.set_visible(False)
     assert not ct.contains(on_glyph)[0]
     plt.close(fig)

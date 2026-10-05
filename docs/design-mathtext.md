@@ -108,8 +108,10 @@ All code lives in `src/curved_text/_core.py`.
   where they appear, and an unclipped label measured there would stretch a
   tight bounding box to it. That position is the display origin (an
   `IdentityTransform`), not the data origin, because `_size_px` still measures
-  the segment there, and the data origin has no pixel on a logit axis or on a
-  log axis that masks non-positive values.
+  the segment there, and the data origin has no pixel on a logit axis, on a
+  log axis that masks non-positive values, or on polar axes whose radial
+  limits start above zero. A `transform` keyword forwarded from the label is
+  replaced for the same reason; the segment never uses it.
   - `_outline_units()` returns the segment's outline `(vertices, codes)` in
     1/100-em units, baseline at `v = 0`, memoized per text, font properties, and
     usetex setting. It calls the subclass's `_build_outline` on a cache miss.
@@ -376,7 +378,7 @@ tests its box; a click on the casing's band between glyphs is not a hit. The
 segments take the forwarded `picker` but are never pickable themselves
 (`pickable` is false), since matplotlib asks a picker function without calling
 `contains`, and their `contains` is false for hover, since matplotlib's
-`Text.contains` tests the base `Text` box at their unused position, the data
+`Text.contains` tests the base `Text` box at their unused position, the display
 origin, not the empty extent they report. A click there picks nothing. The
 label measures its casing, so the casing, like the segments, stays out of
 figure layout itself.
@@ -472,8 +474,9 @@ fontsize pass-through), these tests carry the design:
   of axes that fill the figure goes to the lower left, which the glyphs' unused
   positions at the display origin would block. The extent is empty for a
   degenerate curve. On a logit axis and on a log axis with
-  `nonpositive="mask"`, x or y, a label on valid points draws inside the axes,
-  each glyph as wide as on a linear axis.
+  `nonpositive="mask"`, x or y, and on polar axes whose radial limits start
+  above zero, a label on valid points draws inside the axes, each glyph as wide
+  as on a linear axis.
 
 ## Deferred
 

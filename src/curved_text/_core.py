@@ -715,8 +715,11 @@ class _OutlineSegment(mtext.Text):
         self.set_in_layout(False)
         # The container still measures the segment's size there (``_size_px``),
         # so the position is the display origin, which has a pixel on every
-        # axis scale; the data origin has none on a logit axis or a log axis
-        # that masks non-positive values. The axes keep a transform already set.
+        # axis scale; the data origin has none on a logit axis, a log axis that
+        # masks non-positive values, or polar axes whose radial limits start
+        # above zero. The axes keep a transform already set.
+        # A ``transform`` keyword forwarded from the label is replaced on
+        # purpose: the segment draws in display pixels and never uses it.
         self.set_transform(IdentityTransform())
         self._frame: _CurveFrame | None = None
         self._s_left = 0.0

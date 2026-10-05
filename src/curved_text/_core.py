@@ -713,6 +713,14 @@ class _OutlineSegment(mtext.Text):
         # position is not where the segment appears, and figure layout
         # (``bbox_inches="tight"``, constrained layout) must not measure it.
         self.set_in_layout(False)
+        # The container still measures the segment's size there (``_size_px``),
+        # so the position is the display origin, which has a pixel on every
+        # axis scale; the data origin has none on a logit axis, a log axis that
+        # masks non-positive values, or polar axes whose radial limits start
+        # above zero. The axes keep a transform already set.
+        # A ``transform`` keyword forwarded from the label is replaced on
+        # purpose: the segment draws in display pixels and never uses it.
+        self.set_transform(IdentityTransform())
         self._frame: _CurveFrame | None = None
         self._s_left = 0.0
         self._width_px = 0.0
@@ -730,20 +738,21 @@ class _OutlineSegment(mtext.Text):
         """Never. A segment is picked as part of its label
         (:meth:`CurvedText.contains`), though the label's ``picker`` keyword
         reaches it too: matplotlib asks a picker function without calling
-        ``contains``, and the segment's own Text position is the data
+        ``contains``, and the segment's own Text position is the display
         origin."""
         return False
 
     def contains(self, mouseevent) -> tuple[bool, dict]:
         """Never, for hover as for picking (:meth:`pickable`). matplotlib's
-        ``Text.contains`` would test the segment's own Text box, at the data
+        ``Text.contains`` would test the segment's own Text box, at the display
         origin, not its empty extent."""
         return False, {}
 
     def _size_px(self, renderer) -> tuple[float, float]:
         """This segment's unrotated width and height in display pixels, as
-        matplotlib measures its text. Segments never set a Text rotation, so
-        the window extent is the unrotated box."""
+        matplotlib measures its text at its Text position, the display origin.
+        Segments never set a Text rotation, so the window extent is the
+        unrotated box."""
         extent = mtext.Text.get_window_extent(self, renderer=renderer)
         return extent.width, extent.height
 

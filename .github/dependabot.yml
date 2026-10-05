@@ -17,6 +17,12 @@ updates:
     groups:
       requirements:
         patterns: ["*"]
+    ignore:
+      # Sphinx 9.1.0 requires docutils<0.23, so a docutils 0.23 pin fails the
+      # docs build and would hold up the whole group each month. Remove this
+      # once a Sphinx release allows docutils 0.23.
+      - dependency-name: docutils
+        versions: [">=0.23"]
 
   # Actions in .github/workflows, pinned to commit SHAs with version comments.
   # Dependabot moves the SHA and the comment together.

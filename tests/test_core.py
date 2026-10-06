@@ -487,12 +487,19 @@ def test_validates_inputs():
     plt.close(fig)
 
 
-def test_rejects_non_finite_input():
+@pytest.mark.parametrize("x, y", [
+    pytest.param([0.0, np.nan, 1.0], [0.0, 0.0, 0.0], id="NaN between"),
+    pytest.param([0.0, 1.0], [0.0, np.inf], id="infinite"),
+    pytest.param([0.0, np.nan, 1.0, np.nan, 2.0], [0.0] * 5, id="isolated"),
+    pytest.param(np.ma.masked_array([0.0, 1.0, 2.0, 3.0], mask=[0, 1, 0, 1]),
+                 [0.0, 1.0, 2.0, 3.0], id="masked"),
+])
+def test_rejects_curve_without_two_consecutive_finite_points(x, y):
+    # A gap is allowed, as in plot, but a line draws nothing at an isolated
+    # point, so the curve needs one stretch of two consecutive finite points.
     fig, ax = plt.subplots()
-    with pytest.raises(ValueError):
-        CurvedText([0.0, np.nan, 1.0], [0.0, 0.0, 0.0], "x", ax)
-    with pytest.raises(ValueError):
-        CurvedText([0.0, 1.0], [0.0, np.inf], "x", ax)
+    with pytest.raises(ValueError, match="consecutive finite"):
+        CurvedText(x, y, "x", ax)
     plt.close(fig)
 
 
@@ -1409,16 +1416,6 @@ def test_data_the_axis_cannot_convert_raises_and_keeps_the_axis_converter():
     plt.close(fig)
 
 
-def test_masked_points_are_rejected():
-    # A masked point is not finite once converted. Cast straight to float, the
-    # value under the mask placed the label instead.
-    fig, ax = plt.subplots()
-    y = np.ma.masked_array(_WAVE, mask=np.arange(50) == 10)
-    with pytest.raises(ValueError, match="finite"):
-        curved_text(ax, np.arange(50.0), y, "masked")
-    plt.close(fig)
-
-
 def test_label_keeps_its_curve_when_the_callers_array_changes():
     # The label keeps a copy of the curve, as Line2D does, so changing the
     # caller's array after the label is made does not move it.
@@ -1445,6 +1442,130 @@ def test_unit_typed_label_is_measured_and_picked_before_a_draw():
         atol=1e-6)
     plt.close(fig)
     plt.close(ref_fig)
+
+
+# A curve sampled every 0.1 from 0 to 10, its points strictly between 4 and 6
+# left out: two stretches of equal length on a flat curve.
+_GAP_X = np.arange(101) / 10
+_IN_GAP = (_GAP_X > 4) & (_GAP_X < 6)
+
+
+def _gap_label(x, y, **kwargs):
+    """A boxed label on the curve ``x, y`` in axes with fixed limits; return
+    the figure and the label. ``kwargs`` go to the label."""
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.set_xlim(-1, 11)
+    ax.set_ylim(0, 10)
+    ct = curved_text(ax, x, y, "a stretch", box=True, **kwargs)
+    return fig, ct
+
+
+@pytest.mark.parametrize("pos, stretch", [
+    pytest.param(0.25, slice(0, 41), id="first stretch"),
+    pytest.param(0.75, slice(60, 101), id="second stretch"),
+])
+def test_label_on_a_gapped_curve_rides_the_stretch_holding_its_anchor(
+        pos, stretch):
+    # pos is a fraction of the drawn length, so on two stretches of equal
+    # length 0.25 and 0.75 fall at the middle of each, and the label rides
+    # that stretch as a label on the stretch alone does at pos 0.5.
+    y = np.where(_IN_GAP, np.nan, 5.0)
+    fig, ct = _gap_label(_GAP_X, y, pos=pos)
+    ref_fig, ref_ct = _gap_label(_GAP_X[stretch], np.full(41, 5.0), pos=0.5)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+@pytest.mark.parametrize("make_gap", [
+    pytest.param(lambda x, y: (x, np.where(_IN_GAP, np.inf, y)), id="infinite"),
+    pytest.param(lambda x, y: (x, np.ma.masked_array(y, mask=_IN_GAP)),
+                 id="masked y"),
+    pytest.param(lambda x, y: (np.ma.masked_array(x, mask=_IN_GAP), y),
+                 id="masked x"),
+])
+def test_infinite_and_masked_points_leave_the_gap_a_nan_does(make_gap):
+    # As in plot, an infinite or masked point breaks the curve as a NaN does.
+    # Cast straight to float, the value under a mask used to place the label.
+    wave = 5 + 2 * np.sin(_GAP_X)
+    fig, ct = _gap_label(*make_gap(_GAP_X, wave), pos=0.6)
+    ref_fig, ref_ct = _gap_label(_GAP_X, np.where(_IN_GAP, np.nan, wave),
+                                 pos=0.6)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_on_a_log_axis_that_masks_non_positive_values_skips_them():
+    # A log axis with nonpositive="mask" gives x <= 0 no pixel, so those points
+    # leave a gap and the label rides the rest, as on the curve without them.
+    def label(x, y):
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.set_xscale("log", nonpositive="mask")
+        ax.set_xlim(0.1, 10)
+        ax.set_ylim(3, 7)
+        return fig, curved_text(ax, x, y, "a stretch", box=True)
+
+    x = np.linspace(-2, 10, 121)
+    y = 5 + np.sin(x)
+    fig, ct = label(x, y)
+    ref_fig, ref_ct = label(x[x > 0], y[x > 0])
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_with_no_stretch_left_to_draw_is_hidden():
+    # A switch to a log axis that masks non-positive values leaves a curve of
+    # negative x no stretch to ride. The label and its casing are not drawn,
+    # nothing raises, and figure layout is unaffected. Before, the glyphs of
+    # the previous draw stayed painted.
+    def red_pixels(fig):
+        _draw(fig)
+        image = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].astype(int)
+        red, green, blue = image.transpose(2, 0, 1)
+        return int(((red > 200) & (green < 80) & (blue < 80)).sum())
+
+    fig, ax = plt.subplots()
+    ax.set_xlim(-5, 5)
+    ax.set_ylim(0, 10)
+    x = np.linspace(-4, -1, 30)
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
+                     color="red", box="red")
+    assert red_pixels(fig) > 0
+    ax.set_xscale("log", nonpositive="mask")
+    ax.set_xlim(0.1, 10)
+    assert red_pixels(fig) == 0
+    assert not ct._box.get_visible()
+    assert np.isfinite(fig.get_tightbbox(fig.canvas.get_renderer()).bounds).all()
+    plt.close(fig)
+
+
+def test_label_position_is_the_first_finite_point():
+    # The label's own Text position is the curve's first point with a value,
+    # so it has a pixel wherever the curve does.
+    x = np.arange(22.0)
+    y = np.r_[np.nan, np.nan, np.linspace(1, 9, 20)]
+    fig, ct = _gap_label(x, y)
+    assert ct.get_position() == (2.0, 1.0)
+    plt.close(fig)
+
+
+def test_hidden_label_extent_sits_at_the_first_point_with_a_pixel():
+    # A hidden label's extent is an empty box at its own position. When the
+    # axes give that point no pixel, here a log axis that masks x = 0, the box
+    # sits at the curve's first point that has one.
+    x = np.linspace(0, 9, 10)
+    y = np.full_like(x, 5.0)
+    fig, ct = _gap_label(x, y)
+    ct.set_visible(False)
+    ax = ct.axes
+    ax.set_xscale("log", nonpositive="mask")
+    ax.set_xlim(0.5, 10)
+    extent = ct.get_window_extent(fig.canvas.get_renderer())
+    np.testing.assert_allclose(extent.get_points(),
+                               [ax.transData.transform((1.0, 5.0))] * 2)
+    plt.close(fig)
 
 
 def test_unclipped_label_keeps_the_tight_bounding_box():

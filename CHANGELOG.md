@@ -22,18 +22,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Data an axis cannot convert, such as strings on a date axis, raises
   matplotlib's `ConversionError`, a `TypeError`, when the label is made
-  ([#24](https://github.com/thiebes/curved-text/issues/24)). Before, such
-  data raised `ValueError`, so code that catches `ValueError` no longer
-  catches it.
+  ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
+  strings raised `ValueError`, so code that catches `ValueError` no longer
+  catches them.
 - `get_position()` returns the curve's first point as given, for example a
   `datetime64`, as for any `Text`; `get_unitless_position()` returns it on the
   axes ([#24](https://github.com/thiebes/curved-text/issues/24)).
 - A masked point in the curve raises `ValueError`, as a NaN does, where the
   value under the mask used to place the label
   ([#24](https://github.com/thiebes/curved-text/issues/24)).
-- The label keeps a copy of the curve, as `Line2D` does, so a change to the
-  caller's array after the label is made no longer moves it
+- The label keeps its own copy of the curve, so a change to the caller's
+  array after the label is made no longer moves it
   ([#24](https://github.com/thiebes/curved-text/issues/24)).
+
+### Fixed
+
+- A `box` color matplotlib cannot draw raises without leaving a half-made
+  label on the axes. Before, the label was added to the axes first, so the
+  next draw of the figure raised `AttributeError`.
 
 ## 0.7.0
 

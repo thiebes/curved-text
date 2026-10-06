@@ -28,6 +28,8 @@ from matplotlib.textpath import TextToPath
 from matplotlib.transforms import Bbox, IdentityTransform
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from matplotlib.axes import Axes
     from numpy.typing import ArrayLike
 
@@ -211,10 +213,10 @@ def _box_config(box: bool | str | dict) -> dict | None:
     return config
 
 
-def _unmasked_floats(values: Any) -> np.ndarray:
-    """``values``, already converted by an axis's units, as a float array with
-    masked entries set to NaN, as matplotlib's own lines read their data."""
-    return np.ma.asarray(values, dtype=float).filled(np.nan)
+def _axis_floats(axis: Any, values: Any) -> np.ndarray:
+    """``values`` converted by ``axis``'s units into a float array, with masked
+    entries set to NaN, as matplotlib's own lines read their data."""
+    return np.ma.asarray(axis.convert_units(values), dtype=float).filled(np.nan)
 
 
 def _first(values: Any) -> Any:
@@ -1121,7 +1123,8 @@ class CurvedText(mtext.Text):
         ``color``, ``fontsize``, ``alpha``, ``fontfamily``, ``usetex``).
     """
 
-    def __init__(self, x: ArrayLike, y: ArrayLike, text: str, axes: Axes, *,
+    def __init__(self, x: ArrayLike | Sequence[Any], y: ArrayLike | Sequence[Any],
+                 text: str, axes: Axes, *,
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                  box: bool | str | dict = False, crowding: str = "none",
                  valign: str = "center", **kwargs: Any) -> None:
@@ -1136,15 +1139,19 @@ class CurvedText(mtext.Text):
         # categories, unit-aware arrays), as ``plot`` does. An axis without a
         # converter takes one from the curve, as ``plot`` sets one up; an axis
         # that has one keeps it, so data it cannot convert raises here instead
-        # of replacing the converter the axes' other artists use.
-        for axis, values in ((axes.xaxis, x), (axes.yaxis, y)):
+        # of replacing the converter the axes' other artists use. Each axis is
+        # set up and converted before the next, so data the x axis rejects
+        # leaves the y axis alone. The label converts its own copy of the
+        # values, as ``Line2D`` copies its data, since floats pass through
+        # conversion as they are and would share the caller's array.
+        curve = (copy.copy(x), copy.copy(y))
+        converted = []
+        for axis, values in zip((axes.xaxis, axes.yaxis), curve):
             if not axis.have_units():
                 axis.update_units(values)
-        # Validate converted copies. The label keeps the values as given and
-        # converts them each time it is placed (``_curve_px``), so it follows
-        # a change of the axes' units, as matplotlib's own artists do.
-        xf = _unmasked_floats(axes.xaxis.convert_units(x))
-        yf = _unmasked_floats(axes.yaxis.convert_units(y))
+            converted.append(_axis_floats(axis, values))
+        xf, yf = converted
+        # Validate the converted curve; the label keeps the values as given.
         if xf.ndim != 1 or xf.shape != yf.shape or xf.size < 2:
             raise ValueError("x and y must be 1-D arrays of equal length >= 2")
         if not (np.isfinite(xf).all() and np.isfinite(yf).all()):
@@ -1153,14 +1160,19 @@ class CurvedText(mtext.Text):
         # gave it, so ``get_position`` returns the caller's type, as for any
         # Text, and ``get_unitless_position`` the point on the axes.
         super().__init__(_first(x), _first(y), " ", **kwargs)
-        self._cx = copy.copy(x)
-        self._cy = copy.copy(y)
+        self._cx, self._cy = curve
+        # The converted curve, kept until either axis's units change, as
+        # matplotlib's lines keep theirs: converting a long curve of datetime
+        # objects on every measurement would slow each draw (``_curve_px``).
+        self._curve_floats: tuple[np.ndarray, np.ndarray] | None = (xf, yf)
+        self._unit_callbacks: list[tuple[Any, int]] = []
         self._pos = float(pos)
         self._anchor = anchor
         self._offset = float(offset)
         self._crowding = crowding
         self._valign = valign
         axes.add_artist(self)
+        self._follow_axis_units()
         # Optional casing behind the label: a fat line following the curve at
         # the label's height. Its geometry is set in ``draw`` (on the container),
         # so it must draw after the container and before the glyphs; ``set_zorder``
@@ -1269,6 +1281,11 @@ class CurvedText(mtext.Text):
         if self._box is not None:
             self._box.remove()
             self._box = None
+        # The axes' unit callbacks hold the label only weakly, but a removed
+        # label should not be told about units it no longer follows.
+        for axis, cid in self._unit_callbacks:
+            axis.callbacks.disconnect(cid)
+        self._unit_callbacks = []
         super().remove()
 
     def _kerns_px(self, renderer) -> list[float]:
@@ -1422,12 +1439,40 @@ class CurvedText(mtext.Text):
 
         The points are converted by the axes' units here, where drawing,
         measuring, and picking all place the label, so each follows the axes'
-        current units."""
+        current units. The conversion is kept until either axis's units change
+        (:meth:`_forget_curve_floats`)."""
         if self.axes is None:
             return None
-        x = _unmasked_floats(self.convert_xunits(self._cx))
-        y = _unmasked_floats(self.convert_yunits(self._cy))
-        return self.axes.transData.transform(np.column_stack([x, y]))
+        self._follow_axis_units()
+        if self._curve_floats is None:
+            self._curve_floats = (_axis_floats(self.axes.xaxis, self._cx),
+                                  _axis_floats(self.axes.yaxis, self._cy))
+        return self.axes.transData.transform(np.column_stack(self._curve_floats))
+
+    def _follow_axis_units(self) -> None:
+        """Have each axis tell the label when its units change, unless it
+        already does or the label is off any axes."""
+        if self.axes is None or self._unit_callbacks:
+            return
+        self._unit_callbacks = [
+            (axis, axis.callbacks.connect("units", self._forget_curve_floats))
+            for axis in (self.axes.xaxis, self.axes.yaxis)]
+
+    def _forget_curve_floats(self) -> None:
+        """Convert the curve again at the next placement: an axis's units
+        changed (its ``"units"`` callback, which also makes the axes'
+        lines convert their data again)."""
+        self._curve_floats = None
+
+    def __getstate__(self) -> dict:
+        # A pickled axes drops the label's unit callbacks, which are not
+        # picklable, so the unpickled label converts its curve afresh and
+        # connects them again when it is next placed (``_curve_px``).
+        state = super().__getstate__()
+        assert isinstance(state, dict)
+        state["_curve_floats"] = None
+        state["_unit_callbacks"] = []
+        return state
 
     def _placement_key(self, renderer, curve_px: np.ndarray | None) -> tuple:
         """What a placement depends on: the renderer, its resolution, where
@@ -1583,7 +1628,8 @@ class CurvedText(mtext.Text):
         return True
 
 
-def curved_text(ax: Axes, x: ArrayLike, y: ArrayLike, text: str, *,
+def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
+                y: ArrayLike | Sequence[Any], text: str, *,
                 pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                 box: bool | str | dict = False, crowding: str = "none",
                 valign: str = "center", **kwargs: Any) -> CurvedText:

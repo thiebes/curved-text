@@ -7,6 +7,7 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 import datetime
 import functools
 import inspect
+import pickle
 import shutil
 import subprocess
 
@@ -14,6 +15,7 @@ import matplotlib as mpl
 import matplotlib.dates as mdates
 import matplotlib.font_manager as font_manager
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import matplotlib.units as munits
 import numpy as np
 import pandas as pd
@@ -865,9 +867,11 @@ def test_box_hidden_on_degenerate_redraw():
     ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.5, box=True)
     _draw(fig)
     assert ct._box.get_visible()
-    # Collapse the curve to a single point, then redraw.
+    # Collapse the curve to a single point, then redraw. There is no public
+    # setter for the curve, so drop its converted copy too.
     ct._cx = np.full_like(ct._cx, 5.0)
     ct._cy = np.full_like(ct._cy, 5.0)
+    ct._forget_curve_floats()
     _draw(fig)
     assert not ct._box.get_visible()
     plt.close(fig)
@@ -1122,7 +1126,8 @@ def test_label_draws_on_polar_axes_whose_radius_starts_above_zero():
 _DAYS = np.datetime64("2017-09-24") + np.arange(50) * np.timedelta64(1, "D")
 _WAVE = np.sin(np.linspace(0, 2 * np.pi, 50))
 _CATEGORIES = [f"c{i}" for i in range(50)]
-_UNIT_TEXT = "unit-typed curve"
+# The label every unit test draws, and its float twin draws to match it.
+_UNIT_LABEL = {"text": "unit-typed curve", "offset": 6, "box": True}
 
 
 def _unit_label(x, y, **kwargs):
@@ -1133,11 +1138,11 @@ def _unit_label(x, y, **kwargs):
     (line,) = ax.plot(x, y)
     ax.set_xlim(ax.get_xlim())
     ax.set_ylim(ax.get_ylim())
-    ct = curved_text(ax, x, y, _UNIT_TEXT, offset=6, box=True, **kwargs)
+    ct = curved_text(ax, x, y, **_UNIT_LABEL, **kwargs)
     return fig, ct, line
 
 
-def _float_twin(line, **kwargs):
+def _float_twin(line):
     """The same label on ``line``'s data as its axes converted it, in a float
     figure of the same size, dpi, and limits; return the figure and label."""
     ax = line.axes
@@ -1146,8 +1151,7 @@ def _float_twin(line, **kwargs):
     ref_ax.set_xlim(ax.get_xlim())
     ref_ax.set_ylim(ax.get_ylim())
     xy = line.get_xydata()
-    ct = curved_text(ref_ax, xy[:, 0], xy[:, 1], _UNIT_TEXT, offset=6, box=True,
-                     **kwargs)
+    ct = curved_text(ref_ax, xy[:, 0], xy[:, 1], **_UNIT_LABEL)
     return fig, ct
 
 
@@ -1172,43 +1176,46 @@ def _assert_same_placement(fig, ct, ref_fig, ref_ct):
         atol=1e-6)
 
 
-_UNIT_CURVES = {
-    "datetime64[s]": lambda: (_DAYS.astype("datetime64[s]"), _WAVE),
-    "datetime64[us]": lambda: (_DAYS.astype("datetime64[us]"), _WAVE),
-    "datetime64[ns]": lambda: (_DAYS.astype("datetime64[ns]"), _WAVE),
-    "datetime list": lambda: (
-        list(_DAYS.astype("datetime64[us]").astype(datetime.datetime)), _WAVE),
-    "DatetimeIndex": lambda: (pd.DatetimeIndex(_DAYS), _WAVE),
-    "aware DatetimeIndex": lambda: (
-        pd.DatetimeIndex(_DAYS).tz_localize("Europe/Madrid"), _WAVE),
-    "date Series": lambda: (pd.Series(_DAYS, index=np.arange(100, 150)), _WAVE),
-    "categories on x": lambda: (_CATEGORIES, _WAVE),
-    "dates on y": lambda: (_WAVE, _DAYS.astype("datetime64[us]")),
-    "categories on y": lambda: (_WAVE, _CATEGORIES),
-}
+_UNIT_CURVES = [
+    pytest.param(_DAYS.astype("datetime64[s]"), _WAVE, id="datetime64[s]"),
+    pytest.param(_DAYS.astype("datetime64[us]"), _WAVE, id="datetime64[us]"),
+    pytest.param(_DAYS.astype("datetime64[ns]"), _WAVE, id="datetime64[ns]"),
+    pytest.param(list(_DAYS.astype("datetime64[us]").astype(datetime.datetime)),
+                 _WAVE, id="datetime list"),
+    pytest.param(pd.DatetimeIndex(_DAYS), _WAVE, id="DatetimeIndex"),
+    pytest.param(pd.DatetimeIndex(_DAYS).tz_localize("Europe/Madrid"), _WAVE,
+                 id="aware DatetimeIndex"),
+    pytest.param(pd.Series(_DAYS, index=np.arange(100, 150)), _WAVE,
+                 id="date Series"),
+    pytest.param(_CATEGORIES, _WAVE, id="categories on x"),
+    pytest.param(_WAVE, _DAYS.astype("datetime64[us]"), id="dates on y"),
+    pytest.param(_WAVE, _CATEGORIES, id="categories on y"),
+]
 
 
-@pytest.mark.parametrize("curve", list(_UNIT_CURVES.values()),
-                         ids=list(_UNIT_CURVES))
-def test_unit_typed_curve_matches_float_curve(curve):
+@pytest.mark.parametrize("x, y", _UNIT_CURVES)
+def test_unit_typed_curve_matches_float_curve(x, y):
     # The axes convert the curve as they convert the plotted line, so a label
     # on dates, categories, or pandas data draws exactly as one on the line's
     # own converted data, casing included. Cast straight to float, datetime64
-    # gave raw counts since 1970, and datetime objects and strings raised.
-    fig, ct, line = _unit_label(*curve())
+    # gives raw counts since 1970, and datetime objects and strings raise.
+    fig, ct, line = _unit_label(x, y)
     ref_fig, ref_ct = _float_twin(line)
     _assert_same_placement(fig, ct, ref_fig, ref_ct)
     plt.close(fig)
     plt.close(ref_fig)
 
 
-def test_label_before_any_plot_sets_up_the_axis_units():
-    # A label made on empty axes sets up the axis converter itself, as plot
-    # does, and a line plotted afterwards shares it.
+@pytest.mark.parametrize("x", [_DAYS.astype("datetime64[us]"), _CATEGORIES],
+                         ids=["dates", "categories"])
+def test_label_before_any_plot_sets_up_the_axis_units(x):
+    # A label made on empty axes sets up the axis units itself, as plot does:
+    # the axis formats dates or categories, not plain numbers, and a line
+    # plotted afterwards shares its units. Without the setup, categories on
+    # empty axes cannot be converted at all.
     fig, ax = plt.subplots(figsize=(6, 4))
-    x = _DAYS.astype("datetime64[us]")
-    ct = curved_text(ax, x, _WAVE, _UNIT_TEXT, offset=6, box=True)
-    assert ax.xaxis.have_units()
+    ct = curved_text(ax, x, _WAVE, **_UNIT_LABEL)
+    assert not isinstance(ax.xaxis.get_major_formatter(), mticker.ScalarFormatter)
     (line,) = ax.plot(x, _WAVE)
     ax.set_xlim(ax.get_xlim())
     ax.set_ylim(ax.get_ylim())
@@ -1234,9 +1241,59 @@ def test_label_follows_a_change_of_axis_units(monkeypatch):
     plt.close(ref_fig)
 
 
+def test_label_converts_its_curve_once_until_the_units_change(monkeypatch):
+    # Drawing and measuring reuse the converted curve, as matplotlib's lines
+    # do, so a long curve of datetime objects is not converted again on every
+    # measurement; a change of the axis units converts it again.
+    monkeypatch.setitem(munits.registry, jpl_units.UnitDbl,
+                        jpl_units.UnitDblConverter())
+    x = [jpl_units.UnitDbl(value, "km") for value in np.linspace(1, 9, 50)]
+    fig, ct, _ = _unit_label(x, _WAVE)
+    axis = ct.axes.xaxis
+    convert_units = axis.convert_units
+    conversions = []
+
+    def counting_convert_units(values):
+        if values is ct._cx:
+            conversions.append(values)
+        return convert_units(values)
+
+    monkeypatch.setattr(axis, "convert_units", counting_convert_units)
+    _draw(fig)
+    _draw(fig)
+    ct.get_window_extent(fig.canvas.get_renderer())
+    assert not conversions
+    axis.set_units("m")
+    _draw(fig)
+    assert len(conversions) == 1
+    plt.close(fig)
+
+
+def test_unpickled_label_follows_a_change_of_axis_units(monkeypatch):
+    # A pickled figure drops the label's unit callbacks, so the unpickled
+    # label connects them again and still follows the axis from kilometres
+    # to metres, as the plotted line does.
+    monkeypatch.setitem(munits.registry, jpl_units.UnitDbl,
+                        jpl_units.UnitDblConverter())
+    x = [jpl_units.UnitDbl(value, "km") for value in np.linspace(1, 9, 50)]
+    fig, _, _ = _unit_label(x, _WAVE)
+    _draw(fig)
+    fig = pickle.loads(pickle.dumps(fig))
+    ax = fig.axes[0]
+    (ct,) = [text for text in ax.texts if isinstance(text, CurvedText)]
+    ax.xaxis.set_units("m")
+    ax.set_xlim(600, 9400)
+    ref_fig, ref_ct = _float_twin(ax.lines[0])
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
 def test_day_dates_follow_the_date_epoch():
     # Days since 1970 match matplotlib's date numbers only under the default
-    # epoch; the axis converter follows any epoch.
+    # epoch; the axis converter follows any epoch. matplotlib fixes the epoch
+    # at its first date conversion, so the test resets it with matplotlib's
+    # own test helper, before and after, where rc_context would not reach it.
     mdates._reset_epoch_test_example()
     mdates.set_epoch("2000-01-01T00:00:00")
     try:
@@ -1286,15 +1343,19 @@ def test_label_adds_only_new_categories_to_the_axis():
     plt.close(fig)
 
 
-def test_data_the_axis_cannot_convert_raises_and_leaves_the_axis_alone():
+def test_data_the_axis_cannot_convert_raises_and_keeps_the_axis_converter():
     # Strings on a date axis raise matplotlib's ConversionError when the label
-    # is made. The label adds nothing to the axes and does not replace the
-    # date converter, so the plotted dates still draw.
+    # is made. The label adds nothing to the axes, the date axis keeps its
+    # converter, and the y axis, which comes after the x axis that raised, is
+    # not set up for the label's strings.
     fig, ax = plt.subplots()
     (line,) = ax.plot(_DAYS, _WAVE)
     with pytest.raises(munits.ConversionError):
-        curved_text(ax, _CATEGORIES, _WAVE, "strings on dates")
+        curved_text(ax, _CATEGORIES, _CATEGORIES, "strings on dates")
     assert not ax.texts
+    np.testing.assert_allclose(ax.xaxis.convert_units(_DAYS),
+                               mdates.date2num(_DAYS))
+    assert not ax.yaxis.have_units()
     _draw(fig)
     assert np.isfinite(line.get_xydata()).all()
     plt.close(fig)

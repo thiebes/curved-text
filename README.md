@@ -101,7 +101,7 @@ ax.plot(days, hours)
 curved_text(ax, days, hours, "day length at 40° N", pos=0.3, offset=6.0)
 ```
 
-A label drawn before anything is plotted sets up the axis for its data, as
+A label created before anything is plotted sets up the axis for its data, as
 `plot` does. Category strings not yet on an axis are added to it, as ticks.
 Data an axis cannot convert, such as strings on a date axis, raises
 matplotlib's `ConversionError` when the label is made.

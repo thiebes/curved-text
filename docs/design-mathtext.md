@@ -139,22 +139,31 @@ All code lives in `src/curved_text/_core.py`.
   child list is named `_segments`, since elements are characters and runs alike.
   The container draws nothing itself, so its draw places the segments and
   the casing (`_place_on_curve`).
-- Units: the container keeps the curve as the caller gave it (a shallow copy,
-  as `Line2D` keeps its data) and converts it with the axes' unit converters
-  in `_curve_px`, before projecting it. Drawing, measuring
-  (`get_window_extent`), and picking (`contains`) all place the label through
-  `_curve_px`, so all three see the axes' current units; converting in `draw`
-  alone would measure and pick an unconverted curve before the first draw, and
-  converting once at construction would miss a later change of units. The
+- Units: the container keeps a copy of the curve as the caller gave it, as
+  `Line2D` copies its data, and converts it with the axes' unit converters in
+  `_curve_px`, before projecting it. Drawing, measuring (`get_window_extent`),
+  and picking (`contains`) all place the label through `_curve_px`, so all
+  three see the axes' current units; converting in `draw` alone would measure
+  and pick an unconverted curve before the first draw. The converted curve is
+  kept until either axis's units change, as matplotlib's lines keep theirs:
+  each axis's public `"units"` callback, which also makes the lines convert
+  again, drops it. Converting on every measurement would cost a long curve of
+  `datetime` objects about 125 ms per measurement at 100,000 points, several
+  times a draw under constrained layout or a legend at `loc="best"`. The
+  callbacks are not picklable, so a pickled label drops them with its
+  converted curve and connects them again when it is next placed. The
   placement key holds the projected pixels, so a change of units places the
   label again. Construction sets up an axis without units from the curve, as
   `plot` does, and leaves an axis that has them alone, so data it cannot
   convert raises `ConversionError` instead of replacing the converter the
-  axes' other artists use; it validates converted copies (1-D, equal length,
-  at least two points, finite, with masked points as NaN). The container's
-  own `Text` position is the caller's first point, taken by position (a
-  pandas Series indexes by label). The casing needs nothing: it maps display
-  points back to plain floats, which an axis passes through unconverted.
+  axes' other artists use. It sets up and converts the x axis before the y
+  axis, so data the x axis rejects leaves the y axis as it was; like `plot`,
+  it can leave an axis set up, or with new categories, when the curve then
+  fails validation (1-D, equal length, at least two points, finite, with
+  masked points as NaN). The container's own `Text` position is the caller's
+  first point, taken by position (a pandas Series indexes by label). The
+  casing needs nothing: it maps display points back to plain floats, which an
+  axis passes through unconverted.
 - Figure layout measures the label through the container's
   `get_window_extent`: the box of the placed glyphs' outline control points
   and the casing's band.
@@ -497,15 +506,19 @@ fontsize pass-through), these tests carry the design:
   list of `datetime`, a `DatetimeIndex` (naive or timezone-aware), a pandas
   Series of dates, categories on either axis, or dates on y places every glyph
   and its casing at the same pixels as a label on the plotted line's own
-  converted data. So does a label made before anything is plotted, which sets
-  up the axis units, and one on a float Series whose index has no 0. After a
-  switch from kilometres to metres the label stays on the line, which fails if
-  the curve is converted once. Before the first draw, a measurement and a
-  click see the converted curve, which fails if it is converted only in
-  `draw`. `datetime64[D]` follows a changed date epoch. Plotted categories add
-  no ticks and new ones do; strings on a date axis raise `ConversionError` and
-  leave the axes as they were; a masked point raises `ValueError`; a change to
-  the caller's array after construction does not move the label.
+  converted data. So does a label made before anything is plotted, dates or
+  categories, which sets up the axis to format its units, and one on a float
+  Series whose index has no 0. After a switch from kilometres to metres the
+  label stays on the line, which fails if the curve is converted once and
+  kept, and so does an unpickled label. Drawing twice and measuring convert
+  the curve no more after construction, and a change of units converts it
+  once. Before the first draw, a measurement and a click see the converted
+  curve, which fails if it is converted only in `draw`. `datetime64[D]`
+  follows a changed date epoch. Plotted categories add no ticks and new ones
+  do. Strings on a date axis raise `ConversionError`, keep the date converter,
+  and leave the y axis without units. A masked point raises `ValueError`, and
+  a change to the caller's array after construction does not move the
+  label.
 
 ## Deferred
 

@@ -3,6 +3,44 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- The curve takes the data `plot` takes: dates (`datetime64` in any unit,
+  `datetime`, pandas dates, including timezone-aware ones), category strings,
+  and values with units. The axes convert the curve as they convert a plotted
+  line, so the label stays on the line and follows a later change of the axis
+  units ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
+  the curve was cast to float: a `datetime64` curve put the label far outside
+  the axes, and `datetime` objects and strings raised. A label made before
+  anything is plotted sets up the axis for its data, as `plot` does, and
+  category strings not yet on an axis are added to it, as ticks, as for
+  `ax.text` and `plot`.
+
+### Changed
+
+- Data an axis cannot convert, such as strings on a date axis, raises
+  matplotlib's `ConversionError`, a `TypeError`, when the label is made
+  ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
+  strings raised `ValueError`, so code that catches `ValueError` no longer
+  catches them.
+- `get_position()` returns the curve's first point as given, for example a
+  `datetime64`, as for any `Text`; `get_unitless_position()` returns it on the
+  axes ([#24](https://github.com/thiebes/curved-text/issues/24)).
+- A masked point in the curve raises `ValueError`, as a NaN does, where the
+  value under the mask used to place the label
+  ([#24](https://github.com/thiebes/curved-text/issues/24)).
+- The label keeps its own copy of the curve, so a change to the caller's
+  array after the label is made no longer moves it
+  ([#24](https://github.com/thiebes/curved-text/issues/24)).
+
+### Fixed
+
+- A `box` color matplotlib cannot draw raises without leaving a half-made
+  label on the axes. Before, the label was added to the axes first, so the
+  next draw of the figure raised `AttributeError`.
+
 ## 0.7.0
 
 ### Changed

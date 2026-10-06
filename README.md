@@ -83,6 +83,29 @@ default. Pass `clip_on=False` to draw the whole label wherever its curve goes;
 a tight bounding box (`bbox_inches="tight"`) and constrained layout then make
 room for it.
 
+### Dates, categories, and units
+
+The curve takes the same data `plot` does: dates (`datetime64`, `datetime`,
+pandas dates), category strings, and values with units. The axes convert them
+as they convert the plotted line, so the label stays on it.
+
+```python
+days = np.arange("2024-01-01", "2025-01-01", dtype="datetime64[D]")
+# Day length at 40° N, from the sun's declination on each day of the year.
+n = np.arange(days.size)
+declination = np.radians(23.44) * np.sin(2 * np.pi * (n - 80) / 365)
+hours = 24 / np.pi * np.arccos(-np.tan(np.radians(40)) * np.tan(declination))
+
+fig, ax = plt.subplots()
+ax.plot(days, hours)
+curved_text(ax, days, hours, "day length at 40° N", pos=0.3, offset=6.0)
+```
+
+A label created before anything is plotted sets up the axis for its data, as
+`plot` does. Category strings not yet on an axis are added to it, as ticks.
+Data an axis cannot convert, such as strings on a date axis, raises
+matplotlib's `ConversionError` when the label is made.
+
 ### The function and the class
 
 The object form is also available:

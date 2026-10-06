@@ -1323,6 +1323,20 @@ def test_removed_label_disconnects_only_its_own_unit_callbacks():
     plt.close(fig)
 
 
+def test_label_with_a_box_it_cannot_draw_leaves_the_axes_alone():
+    # The casing is built before the label touches the axes, so a box color
+    # matplotlib cannot draw raises without adding a half-made label or
+    # setting up the axis units, and the figure still draws.
+    fig, ax = plt.subplots()
+    with pytest.raises(ValueError):
+        curved_text(ax, _DAYS, _WAVE, "label", box="not-a-colour")
+    assert not ax.texts
+    assert not ax.lines
+    assert not ax.xaxis.have_units()
+    _draw(fig)
+    plt.close(fig)
+
+
 def test_day_dates_follow_the_date_epoch():
     # Days since 1970 match matplotlib's date numbers only under the default
     # epoch; the axis converter follows any epoch. matplotlib fixes the epoch

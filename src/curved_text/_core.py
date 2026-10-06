@@ -1136,6 +1136,21 @@ class CurvedText(mtext.Text):
                 f"crowding must be one of {_CROWDING}, got {crowding!r}")
         if valign not in _VALIGN:
             raise ValueError(f"valign must be one of {_VALIGN}, got {valign!r}")
+        # Optional casing behind the label: a fat line following the curve at
+        # the label's height. It is built before the label touches the axes, so
+        # a ``box`` it cannot draw raises with the axes as they were; its
+        # geometry is set in ``draw`` (on the container), so it must draw after
+        # the container and before the glyphs, and ``set_zorder`` below places
+        # it between them.
+        box_config = _box_config(box)
+        box_pad = 1.1
+        box_line: mlines.Line2D | None = None
+        if box_config is not None:
+            box_pad = box_config["pad"]
+            box_line = mlines.Line2D([], [], color=box_config["color"],
+                                     alpha=box_config["alpha"],
+                                     solid_capstyle="round",
+                                     solid_joinstyle="round")
         # The curve may hold any type the axes' unit converters accept (dates,
         # categories, unit-aware arrays), as ``plot`` does. An axis without a
         # converter takes one from the curve, as ``plot`` sets one up; an axis
@@ -1178,19 +1193,9 @@ class CurvedText(mtext.Text):
         # The converted curve is already kept, so the label must hear of a
         # change of units from now on, before its first placement too.
         self._follow_axis_units()
-        # Optional casing behind the label: a fat line following the curve at
-        # the label's height. Its geometry is set in ``draw`` (on the container),
-        # so it must draw after the container and before the glyphs; ``set_zorder``
-        # below places it between them.
-        box_config = _box_config(box)
-        self._box_pad = 1.1
-        self._box: mlines.Line2D | None = None
-        if box_config is not None:
-            self._box_pad = box_config["pad"]
-            self._box = mlines.Line2D([], [], color=box_config["color"],
-                                      alpha=box_config["alpha"],
-                                      solid_capstyle="round",
-                                      solid_joinstyle="round")
+        self._box_pad = box_pad
+        self._box: mlines.Line2D | None = box_line
+        if self._box is not None:
             axes.add_line(self._box)
             # The label measures its casing (``get_window_extent``), so figure
             # layout must not measure it again, as for the segments.

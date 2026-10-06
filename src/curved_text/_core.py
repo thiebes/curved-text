@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from matplotlib.axes import Axes
+    from matplotlib.cbook import CallbackRegistry
     from numpy.typing import ArrayLike
 
 __all__ = ["CurvedText", "curved_text"]
@@ -1141,9 +1142,9 @@ class CurvedText(mtext.Text):
         # that has one keeps it, so data it cannot convert raises here instead
         # of replacing the converter the axes' other artists use. Each axis is
         # set up and converted before the next, so data the x axis rejects
-        # leaves the y axis alone. The label converts its own copy of the
-        # values, as ``Line2D`` copies its data, since floats pass through
-        # conversion as they are and would share the caller's array.
+        # leaves the y axis alone.
+        # The label converts its own copy: floats pass through conversion as
+        # they are, so the converted curve would share the caller's array.
         curve = (copy.copy(x), copy.copy(y))
         converted = []
         for axis, values in zip((axes.xaxis, axes.yaxis), curve):
@@ -1165,13 +1166,17 @@ class CurvedText(mtext.Text):
         # matplotlib's lines keep theirs: converting a long curve of datetime
         # objects on every measurement would slow each draw (``_curve_px``).
         self._curve_floats: tuple[np.ndarray, np.ndarray] | None = (xf, yf)
-        self._unit_callbacks: list[tuple[Any, int]] = []
+        # Each axis's callback registry and the id of the label's ``"units"``
+        # callback in it (``_follow_axis_units``), to disconnect on removal.
+        self._unit_callbacks: list[tuple[CallbackRegistry, int]] = []
         self._pos = float(pos)
         self._anchor = anchor
         self._offset = float(offset)
         self._crowding = crowding
         self._valign = valign
         axes.add_artist(self)
+        # The converted curve is already kept, so the label must hear of a
+        # change of units from now on, before its first placement too.
         self._follow_axis_units()
         # Optional casing behind the label: a fat line following the curve at
         # the label's height. Its geometry is set in ``draw`` (on the container),
@@ -1282,11 +1287,24 @@ class CurvedText(mtext.Text):
             self._box.remove()
             self._box = None
         # The axes' unit callbacks hold the label only weakly, but a removed
-        # label should not be told about units it no longer follows.
-        for axis, cid in self._unit_callbacks:
-            axis.callbacks.disconnect(cid)
+        # label should not be told about units it no longer follows. Each is
+        # disconnected from the registry it was connected to: clearing the
+        # axes replaces the registries, whose new ids start again at 0 and so
+        # can name another label's callback.
+        for registry, cid in self._unit_callbacks:
+            registry.disconnect(cid)
         self._unit_callbacks = []
         super().remove()
+
+    def __getstate__(self) -> dict:
+        # A pickled axes drops the label's unit callbacks, which are not
+        # picklable, so the unpickled label converts its curve afresh and
+        # connects them again when it is next placed (``_curve_px``).
+        state = super().__getstate__()
+        assert isinstance(state, dict)
+        state["_curve_floats"] = None
+        state["_unit_callbacks"] = []
+        return state
 
     def _kerns_px(self, renderer) -> list[float]:
         """The kern from each segment toward the next, in display pixels.
@@ -1455,7 +1473,8 @@ class CurvedText(mtext.Text):
         if self.axes is None or self._unit_callbacks:
             return
         self._unit_callbacks = [
-            (axis, axis.callbacks.connect("units", self._forget_curve_floats))
+            (axis.callbacks,
+             axis.callbacks.connect("units", self._forget_curve_floats))
             for axis in (self.axes.xaxis, self.axes.yaxis)]
 
     def _forget_curve_floats(self) -> None:
@@ -1463,16 +1482,6 @@ class CurvedText(mtext.Text):
         changed (its ``"units"`` callback, which also makes the axes'
         lines convert their data again)."""
         self._curve_floats = None
-
-    def __getstate__(self) -> dict:
-        # A pickled axes drops the label's unit callbacks, which are not
-        # picklable, so the unpickled label converts its curve afresh and
-        # connects them again when it is next placed (``_curve_px``).
-        state = super().__getstate__()
-        assert isinstance(state, dict)
-        state["_curve_floats"] = None
-        state["_unit_callbacks"] = []
-        return state
 
     def _placement_key(self, renderer, curve_px: np.ndarray | None) -> tuple:
         """What a placement depends on: the renderer, its resolution, where

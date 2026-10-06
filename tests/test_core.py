@@ -12,6 +12,7 @@ import shutil
 import subprocess
 
 import matplotlib as mpl
+import matplotlib.cbook as cbook
 import matplotlib.dates as mdates
 import matplotlib.font_manager as font_manager
 import matplotlib.pyplot as plt
@@ -1225,14 +1226,19 @@ def test_label_before_any_plot_sets_up_the_axis_units(x):
     plt.close(ref_fig)
 
 
-def test_label_follows_a_change_of_axis_units(monkeypatch):
-    # The curve is converted each time the label is placed, so after the axis
-    # switches from kilometres to metres the label stays on the line.
+@pytest.mark.parametrize("drawn_first", [True, False],
+                         ids=["after a draw", "before the first draw"])
+def test_label_follows_a_change_of_axis_units(monkeypatch, drawn_first):
+    # A change of axis units drops the converted curve, so after the axis
+    # switches from kilometres to metres the label stays on the line. The
+    # label keeps the curve converted at construction, so this holds before
+    # its first draw too.
     monkeypatch.setitem(munits.registry, jpl_units.UnitDbl,
                         jpl_units.UnitDblConverter())
     x = [jpl_units.UnitDbl(value, "km") for value in np.linspace(1, 9, 50)]
     fig, ct, line = _unit_label(x, _WAVE)
-    _draw(fig)
+    if drawn_first:
+        _draw(fig)
     ct.axes.xaxis.set_units("m")
     ct.axes.set_xlim(600, 9400)
     ref_fig, ref_ct = _float_twin(line)
@@ -1281,12 +1287,40 @@ def test_unpickled_label_follows_a_change_of_axis_units(monkeypatch):
     fig = pickle.loads(pickle.dumps(fig))
     ax = fig.axes[0]
     (ct,) = [text for text in ax.texts if isinstance(text, CurvedText)]
+    # Placed once after unpickling, the label converts its curve again and
+    # keeps it, so only reconnected callbacks can tell it of the change.
+    _draw(fig)
     ax.xaxis.set_units("m")
     ax.set_xlim(600, 9400)
     ref_fig, ref_ct = _float_twin(ax.lines[0])
     _assert_same_placement(fig, ct, ref_fig, ref_ct)
     plt.close(fig)
     plt.close(ref_fig)
+
+
+def test_removed_label_disconnects_only_its_own_unit_callbacks():
+    # Removing a label disconnects its unit callbacks and no others, even
+    # after the axes' callback registries were replaced, as clearing the axes
+    # replaces them; the new registries' ids start again and can repeat the
+    # removed label's.
+    def units_callbacks(ax):
+        return [len(axis.callbacks.callbacks.get("units", {}))
+                for axis in (ax.xaxis, ax.yaxis)]
+
+    fig, ax = plt.subplots()
+    x = np.linspace(1, 9, 50)
+    before = units_callbacks(ax)
+    removed = curved_text(ax, x, _WAVE, "removed")
+    assert units_callbacks(ax) == [count + 1 for count in before]
+    for axis in (ax.xaxis, ax.yaxis):
+        axis.callbacks = cbook.CallbackRegistry()
+    kept = [curved_text(ax, x, _WAVE, f"kept {index}") for index in range(2)]
+    removed.remove()
+    assert units_callbacks(ax) == [2, 2]
+    for label in kept:
+        label.remove()
+    assert units_callbacks(ax) == [0, 0]
+    plt.close(fig)
 
 
 def test_day_dates_follow_the_date_epoch():

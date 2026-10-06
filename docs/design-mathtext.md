@@ -165,13 +165,28 @@ All code lives in `src/curved_text/_core.py`.
   axis, so data the x axis rejects leaves the y axis as it was; like `plot`,
   it can leave the x axis set up when the y axis then rejects its data, and
   an axis set up, or with new categories, when the curve then fails
-  validation (1-D, equal length, at least two points, finite, with masked
-  points as NaN). The `box` casing is built before any of this, so a casing
-  matplotlib cannot draw raises with the axes as they were. The container's
-  own `Text` position is the caller's first point, taken by position (a
-  pandas Series indexes by label). The casing needs nothing for units: it
-  maps display points back to plain floats, which an axis passes through
-  unconverted.
+  validation (1-D, equal length, and at least two consecutive finite points,
+  with masked points as NaN). The `box` casing is built before any of this,
+  so a casing matplotlib cannot draw raises with the axes as they were. The
+  container's own `Text` position is the caller's first finite point, taken
+  by position (a pandas Series indexes by label). The casing needs nothing
+  for units: it maps display points back to plain floats, which an axis
+  passes through unconverted.
+- Gaps: a point the projected curve gives no finite pixel (NaN, infinite,
+  or masked, or one the axes' scale masks, such as x of 0 or less on a log
+  axis with `nonpositive="mask"`) breaks the curve, as it breaks a `Line2D`.
+  `_place_on_curve` splits the projected curve into its stretches of at least
+  two consecutive finite points (`_finite_runs`), so drawing, measuring, and
+  picking, which all place through it, see the same stretches. `pos` is a
+  fraction of the stretches' total length, and the label rides the stretch
+  that holds its anchor (`_run_at`) as though it were the whole curve: past
+  its ends the label follows its end tangents, not the next stretch, so the
+  label always sits at `pos`. A point where one stretch ends and the next
+  starts is the next one's start. With no stretch left at draw time, as after
+  a switch to a log axis that masks the whole curve, the label is not placed.
+  The container's `Text` position is the curve's first finite point, so it
+  has a pixel wherever the curve does; when the axes later give it none, an
+  empty extent sits at the first projected point that has one.
 - Figure layout measures the label through the container's
   `get_window_extent`: the box of the placed glyphs' outline control points
   and the casing's band.
@@ -185,8 +200,8 @@ All code lives in `src/curved_text/_core.py`.
   position on the canvas, and each segment's text, font, and usetex setting.
   A legend measuring the label right after its draw therefore does not place
   it again, and every draw places afresh. The container's own `Text`, a single
-  space at the curve's first point, takes no part, since its extent is that
-  one point. The box casing counts by its band, half its line width beyond
+  space at the curve's first finite point, takes no part, since its extent is
+  that one point. The box casing counts by its band, half its line width beyond
   its centreline on every side, which also covers its round caps. Each
   segment reports an empty extent, so a legend, which measures
   every text in the axes, counts each label once and never at a segment's
@@ -397,8 +412,10 @@ band's offset (the text rides its `valign` datum, so the ink band is centred off
 the bare curve) so the band covers the ink. The band's centre line comes from
 the same font lines as the label, under usetex the TeX ones. It is a child
 artist positioned per draw in `CurvedText._place_on_curve`, like the glyphs.
-When placement bails out early (no segments, detached axes, or a degenerate
-curve) it hides the casing, so a stale band is never left painted.
+When placement bails out early (no segments, detached axes, no stretch of
+the curve with a span, or a degenerate offset curve) it hides the casing and
+clears every glyph's frame, so neither a stale band nor stale glyphs are left
+painted.
 
 The container draws nothing itself, so the properties that decide whether and
 where the label shows reach the parts it draws. `set_visible` passes to every
@@ -510,6 +527,17 @@ fontsize pass-through), these tests carry the design:
   `nonpositive="mask"`, x or y, and on polar axes whose radial limits start
   above zero, a label on valid points draws inside the axes, each glyph as wide
   as on a linear axis.
+- Gaps: on a flat curve with a gap between two stretches of equal length,
+  `pos` 0.25 and 0.75 place the label as a label on each stretch alone at
+  `pos` 0.5, which fails if `pos` counts the gap or the label rides the first
+  stretch. Infinite points and masked x or y leave the same gap as NaN, on a
+  sine. A log axis that masks x of 0 or less places the label as on the curve
+  without those points. A curve without two consecutive finite points
+  raises, for NaN, infinite, isolated, and masked points. A curve with no
+  stretch left at draw time draws none of its glyphs or casing, which fails
+  if the previous draw's frames are kept. The label's position is the first
+  finite point, and a hidden label's extent sits at the first point with a
+  pixel when the axes give its position none.
 - Units: a label on `datetime64` in seconds, microseconds, or nanoseconds, a
   list of `datetime`, a `DatetimeIndex` (naive or timezone-aware), a pandas
   Series of dates, categories on either axis, or dates on y places every glyph
@@ -528,10 +556,9 @@ fontsize pass-through), these tests carry the design:
   fails if it is converted only in `draw`. `datetime64[D]` follows a changed
   date epoch. Plotted categories add no ticks and new ones
   do. Strings on a date axis raise `ConversionError`, keep the date converter,
-  and leave the y axis without units. A masked point raises `ValueError`, a
-  change to the caller's array after construction does not move the label,
-  and a `box` color matplotlib cannot draw raises without changing the
-  axes.
+  and leave the y axis without units. A change to the caller's array after
+  construction does not move the label, and a `box` color matplotlib cannot
+  draw raises without changing the axes.
 
 ## Deferred
 

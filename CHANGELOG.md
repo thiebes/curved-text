@@ -17,6 +17,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   anything is plotted sets up the axis for its data, as `plot` does, and
   category strings not yet on an axis are added to it, as ticks, as for
   `ax.text` and `plot`.
+- A NaN, infinite, or masked point leaves a gap in the curve, as in `plot`
+  ([#28](https://github.com/thiebes/curved-text/issues/28)).
+  `pos` is a fraction of the drawn length, and the label rides the stretch
+  that holds its anchor, past whose ends it follows the stretch's end
+  tangents, as at the ends of a curve. A point the axes' scale gives no pixel,
+  such as x of 0 or less on a log axis with `nonpositive="mask"`, leaves a
+  gap too. Before, NaN and infinite points raised `ValueError`, and the value
+  under a mask placed the label. The curve needs two consecutive finite
+  points.
 
 ### Changed
 
@@ -25,12 +34,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
   strings raised `ValueError`, so code that catches `ValueError` no longer
   catches them.
-- `get_position()` returns the curve's first point as given, for example a
-  `datetime64`, as for any `Text`; `get_unitless_position()` returns it on the
-  axes ([#24](https://github.com/thiebes/curved-text/issues/24)).
-- A masked point in the curve raises `ValueError`, as a NaN does, where the
-  value under the mask used to place the label
-  ([#24](https://github.com/thiebes/curved-text/issues/24)).
+- `get_position()` returns the curve's first finite point as given, for
+  example a `datetime64`, as for any `Text`; `get_unitless_position()` returns
+  it on the axes ([#24](https://github.com/thiebes/curved-text/issues/24),
+  [#28](https://github.com/thiebes/curved-text/issues/28)).
 - The label keeps its own copy of the curve, so a change to the caller's
   array after the label is made no longer moves it
   ([#24](https://github.com/thiebes/curved-text/issues/24)).
@@ -40,6 +47,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A `box` color matplotlib cannot draw raises without leaving a half-made
   label on the axes. Before, the label was added to the axes first, so the
   next draw of the figure raised `AttributeError`.
+- A label that cannot be placed, such as one on a curve that collapses to a
+  point, is no longer drawn where it was last placed
+  ([#28](https://github.com/thiebes/curved-text/issues/28)). Before,
+  only its `box` casing was hidden, and its glyphs stayed painted.
 
 ## 0.7.0
 

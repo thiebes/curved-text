@@ -77,6 +77,12 @@ If the label runs past either end of the curve, it is not cut off. The curve
 continues straight in the direction it had at that end, and the extra letters
 sit on that straight line.
 
+A curve with NaN, infinite, or masked points has gaps, as `plot` draws it, and
+so does one with points the axes cannot show, such as zero on a log axis that
+masks it. `pos` then counts only the drawn length, and the label rides the
+stretch that holds its anchor, continuing straight past that stretch's ends as
+it does past the ends of a curve.
+
 A label is clipped to the axes, as lines are, so letters that run past the
 edge of the axes are cut there. matplotlib's own `ax.text` is not clipped by
 default. Pass `clip_on=False` to draw the whole label wherever its curve goes;

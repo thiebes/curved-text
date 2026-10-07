@@ -1642,16 +1642,20 @@ def test_label_on_a_log_axis_that_masks_non_positive_values_skips_them():
     plt.close(ref_fig)
 
 
-def _scaled_label(x, y, axis, scale, limits, scale_first=False):
+def _scaled_label(x, y, axis, scale, limits, scale_first=False,
+                  **scale_kwargs):
     """A boxed label on the curve ``x, y`` with ``axis`` ("x" or "y") on
-    ``scale`` at ``limits``, the scale set before the label is made or after;
-    return the figure and the label."""
+    ``scale`` at ``limits``, the scale set before the label is made or after,
+    and the other axis at the limits ``_gap_label`` uses; return the figure
+    and the label. ``scale_kwargs`` go to the scale."""
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.set_xlim(-1, 11)
-    ax.set_ylim(0, 10)
+    if axis == "x":
+        ax.set_ylim(0, 10)
+    else:
+        ax.set_xlim(-1, 11)
 
     def set_scale():
-        getattr(ax, f"set_{axis}scale")(scale)
+        getattr(ax, f"set_{axis}scale")(scale, **scale_kwargs)
         getattr(ax, f"set_{axis}lim")(*limits)
 
     if scale_first:
@@ -1669,8 +1673,8 @@ def test_values_outside_a_log_axis_domain_leave_a_gap(axis, scale_first):
     # On a log axis with the default nonpositive="clip", 0 and below go to a
     # finite pixel far outside the axes. They leave a gap instead, so a curve
     # that starts at 0 places the label as the curve without that point does.
-    # Measured along the clipped point, the label sat over a hundred thousand
-    # pixels outside the axes.
+    # Measured along the clipped point, the label would sit tens of thousands
+    # of pixels outside the axes.
     t = np.linspace(0.0, 10.0, 101)
     wave = 5 + 2 * np.sin(t)
     curve = (t, wave) if axis == "x" else (wave, t)
@@ -1696,26 +1700,38 @@ def test_negative_values_inside_a_curve_on_a_log_axis_leave_a_gap():
     plt.close(ref_fig)
 
 
-def test_values_outside_a_logit_axis_domain_leave_a_gap():
+@pytest.mark.parametrize("y", [
+    pytest.param(np.linspace(-0.1, 0.95, 101), id="below 0"),
+    pytest.param(np.linspace(0.05, 1.2, 101), id="above 1"),
+])
+def test_values_outside_a_logit_axis_domain_leave_a_gap(y):
     # A logit axis shows values strictly between 0 and 1. With
-    # nonpositive="clip", 0 and below go to a finite pixel far outside the
-    # axes, as on a log axis, and leave a gap instead.
+    # nonpositive="clip", values at or beyond either bound go to a finite
+    # pixel far outside the axes, as 0 does on a log axis, and leave a gap
+    # instead. Each curve leaves the domain at one end only, since two
+    # far-off ends of equal length would cancel at pos 0.5.
     x = np.linspace(0.0, 10.0, 101)
-    y = np.linspace(-0.1, 0.95, 101)
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.set_xlim(-1, 11)
-    ct = curved_text(ax, x, y, "a stretch", box=True)
-    ax.set_yscale("logit", nonpositive="clip")
-    ax.set_ylim(0.01, 0.99)
-    ref_fig, ref_ax = plt.subplots(figsize=(6, 4))
-    ref_ax.set_xlim(-1, 11)
     inside = (y > 0) & (y < 1)
-    ref_ct = curved_text(ref_ax, x[inside], y[inside], "a stretch", box=True)
-    ref_ax.set_yscale("logit", nonpositive="clip")
-    ref_ax.set_ylim(0.01, 0.99)
+    limits = (0.01, 0.99)
+    fig, ct = _scaled_label(x, y, "y", "logit", limits, nonpositive="clip")
+    ref_fig, ref_ct = _scaled_label(x[inside], y[inside], "y", "logit", limits,
+                                    nonpositive="clip")
     _assert_same_placement(fig, ct, ref_fig, ref_ct)
     plt.close(fig)
     plt.close(ref_fig)
+
+
+def test_hidden_label_with_no_point_in_the_domain_has_no_extent_position():
+    # With every point of the curve outside a log axis's domain, the label's
+    # own position is outside it too, so a hidden label's empty extent is a
+    # NaN box, which figure layout leaves out, not a finite point far outside
+    # the axes where the clipped position would project.
+    x = np.linspace(-5.0, 0.0, 30)
+    fig, ct = _scaled_label(x, np.full_like(x, 5.0), "x", "log", (0.1, 10))
+    ct.set_visible(False)
+    extent = ct.get_window_extent(fig.canvas.get_renderer())
+    assert np.isnan(extent.get_points()).all()
+    plt.close(fig)
 
 
 def test_symlog_axis_keeps_every_value():

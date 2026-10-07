@@ -469,31 +469,31 @@ class _CurveFrame:
 _BOUNDARY_TOLERANCE = 1e-9
 
 
-# Where each axis scale with a bounded domain can place a value. A log axis
-# with the default ``nonpositive="clip"`` sends 0 and below to a finite pixel
-# far outside the axes, where a line's segment toward it leaves the view but a
-# label would follow it out; a logit axis does the same outside (0, 1).
-_SCALE_DOMAINS = {
-    "log": lambda values: values > 0,
-    "logit": lambda values: (values > 0) & (values < 1),
-}
+# The open interval of values each axis scale with a bounded domain can place.
+# With ``nonpositive="clip"``, the default on a log axis, a log axis sends 0
+# and below, and a logit axis anything outside (0, 1), to a finite pixel far
+# outside the axes, where a line's segment toward it leaves the view but a
+# label would follow it out.
+_SCALE_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0)}
 
 
-def _within_scale(scale: str, values: np.ndarray) -> np.ndarray:
+def _gaps_outside_domain(scale: str, values: np.ndarray) -> np.ndarray:
     """``values`` with those outside the domain of the axis ``scale`` set to
     NaN, so they leave a gap as a masked point does; values on any other
     scale, including custom ones, as they are."""
-    in_domain = _SCALE_DOMAINS.get(scale)
-    if in_domain is None:
+    domain = _SCALE_DOMAINS.get(scale)
+    if domain is None:
         return values
+    low, high = domain
     with np.errstate(invalid="ignore"):
-        return np.where(in_domain(values), values, np.nan)
+        return np.where((values > low) & (values < high), values, np.nan)
 
 
 def _shown(curve_px: np.ndarray) -> np.ndarray:
     """Which points of the curve, in display pixels, the axes show: those with
     finite coordinates. A NaN, infinite, or masked point is not shown, and nor
-    is a point the axes' scale masks."""
+    is a point the axes' scale masks or one outside a log or logit axis's
+    domain (:func:`_gaps_outside_domain`)."""
     return np.isfinite(curve_px).all(axis=1)
 
 
@@ -1584,8 +1584,8 @@ class CurvedText(mtext.Text):
                                   _axis_floats(axes.yaxis, self._cy))
         x, y = self._curve_floats
         return axes.transData.transform(np.column_stack(
-            [_within_scale(axes.get_xscale(), x),
-             _within_scale(axes.get_yscale(), y)]))
+            [_gaps_outside_domain(axes.get_xscale(), x),
+             _gaps_outside_domain(axes.get_yscale(), y)]))
 
     def _follow_axis_units(self) -> None:
         """Have each axis tell the label when its units change, unless it
@@ -1652,15 +1652,22 @@ class CurvedText(mtext.Text):
         """An empty box at the curve's first shown point, which is the
         label's own position unless the axes' scale masks it. Off any axes, or
         when the axes show no point of the curve, the box sits at the label's
-        own position; when the axes give that position no pixel either, it is
-        a NaN box, as matplotlib's own text gives there, and figure layout
-        leaves it out."""
+        own position; when the axes do not show that position either, it is a
+        NaN box, as matplotlib's own text gives at a position without a pixel,
+        and figure layout leaves it out."""
         curve_px = self._curve_px()
         if curve_px is not None:
             shown = curve_px[_shown(curve_px)]
             if len(shown):
                 return Bbox.from_bounds(shown[0, 0], shown[0, 1], 0.0, 0.0)
-        x, y = self.get_transform().transform(self.get_unitless_position())
+        position = np.array(self.get_unitless_position(), dtype=float)
+        if self.axes is not None:
+            position = np.array([
+                _gaps_outside_domain(scale, value[None])[0]
+                for scale, value in zip(
+                    (self.axes.get_xscale(), self.axes.get_yscale()),
+                    position)])
+        x, y = self.get_transform().transform(position)
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
     def _place_on_curve(self, renderer, curve_px: np.ndarray | None) -> bool:

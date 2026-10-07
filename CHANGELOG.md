@@ -63,9 +63,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A value outside a log or logit axis's domain, such as 0 or below on a log
   axis, leaves a gap whatever the axis's `nonpositive` setting
   ([#29](https://github.com/thiebes/curved-text/issues/29)). Before, under
-  the default `nonpositive="clip"`, such a value projected far outside the
-  axes, and a label on a curve starting at 0 on `semilogx` was drawn there,
-  over a hundred thousand pixels away.
+  `nonpositive="clip"`, the default on a log axis, such a value projected far
+  outside the axes, and a label on a curve starting at 0 on `semilogx` was
+  drawn there, tens of thousands of pixels away.
 
 ## 0.7.0
 

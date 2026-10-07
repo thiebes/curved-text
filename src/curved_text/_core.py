@@ -469,6 +469,27 @@ class _CurveFrame:
 _BOUNDARY_TOLERANCE = 1e-9
 
 
+# Where each axis scale with a bounded domain can place a value. A log axis
+# with the default ``nonpositive="clip"`` sends 0 and below to a finite pixel
+# far outside the axes, where a line's segment toward it leaves the view but a
+# label would follow it out; a logit axis does the same outside (0, 1).
+_SCALE_DOMAINS = {
+    "log": lambda values: values > 0,
+    "logit": lambda values: (values > 0) & (values < 1),
+}
+
+
+def _within_scale(scale: str, values: np.ndarray) -> np.ndarray:
+    """``values`` with those outside the domain of the axis ``scale`` set to
+    NaN, so they leave a gap as a masked point does; values on any other
+    scale, including custom ones, as they are."""
+    in_domain = _SCALE_DOMAINS.get(scale)
+    if in_domain is None:
+        return values
+    with np.errstate(invalid="ignore"):
+        return np.where(in_domain(values), values, np.nan)
+
+
 def _shown(curve_px: np.ndarray) -> np.ndarray:
     """Which points of the curve, in display pixels, the axes show: those with
     finite coordinates. A NaN, infinite, or masked point is not shown, and nor
@@ -1156,6 +1177,7 @@ class CurvedText(mtext.Text):
         The curve in data coordinates: 1-D, equal length, and ordered along
         the curve. A NaN, infinite, or masked point leaves a gap, as in
         ``plot``, and the curve needs at least two consecutive finite points.
+        A value outside the domain of a log or logit axis leaves a gap too.
         Any type the axes' unit converters accept works, as for ``plot``:
         dates (``datetime64``, ``datetime``, pandas dates), category strings,
         and unit-aware values. An axis without units takes them from the
@@ -1550,14 +1572,20 @@ class CurvedText(mtext.Text):
         The points are converted by the axes' units here, where drawing,
         measuring, and picking all place the label, so each follows the axes'
         current units. The conversion is kept until either axis's units change
-        (:meth:`_forget_curve_floats`)."""
-        if self.axes is None:
+        (:meth:`_forget_curve_floats`). Values outside a log or logit axis's
+        domain leave gaps, checked against the axes' current scales each time,
+        since a scale can change after the label is made."""
+        axes = self.axes
+        if axes is None:
             return None
         self._follow_axis_units()
         if self._curve_floats is None:
-            self._curve_floats = (_axis_floats(self.axes.xaxis, self._cx),
-                                  _axis_floats(self.axes.yaxis, self._cy))
-        return self.axes.transData.transform(np.column_stack(self._curve_floats))
+            self._curve_floats = (_axis_floats(axes.xaxis, self._cx),
+                                  _axis_floats(axes.yaxis, self._cy))
+        x, y = self._curve_floats
+        return axes.transData.transform(np.column_stack(
+            [_within_scale(axes.get_xscale(), x),
+             _within_scale(axes.get_yscale(), y)]))
 
     def _follow_axis_units(self) -> None:
         """Have each axis tell the label when its units change, unless it

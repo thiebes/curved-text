@@ -172,30 +172,34 @@ All code lives in `src/curved_text/_core.py`.
   by position (a pandas Series indexes by label). The casing needs nothing
   for units: it maps display points back to plain floats, which an axis
   passes through unconverted.
-- Gaps: a point the projected curve gives no finite pixel (NaN, infinite,
-  or masked, or one the axes' scale masks, such as x of 0 or less on a log
-  axis with `nonpositive="mask"`) breaks the curve, as it breaks a `Line2D`.
+- Gaps: a point the projected curve gives no finite pixel (NaN, infinite, or
+  masked, or one the axes' scale masks, such as x of 0 or less on a log axis
+  with `nonpositive="mask"`) breaks the curve, as it breaks a `Line2D`.
   `_place_on_curve` finds the stretch to ride on the projected curve
-  (`_stretch_at`), so drawing, measuring, and picking, which all place
-  through it, see the same stretches. The drawn length is that of the
-  segments between two shown points (`_has_pixel`), measured in one
-  vectorized pass, and only the chosen stretch gets a `_CurveFrame`: a frame
-  per stretch made a 30,000-point curve with 6,000 gaps take 150 ms a
-  placement instead of 4 ms. `pos` is a fraction of the drawn length, and the
-  label rides the stretch that holds its anchor as though it were the whole
-  curve: past its ends the label follows its end tangents, not the next
-  stretch, so the label always sits at `pos` and never crosses a gap. A label
-  meant to follow scattered or gappy points rides a smooth curve fitted to
-  them instead, which it never draws. A point where one stretch ends and the
-  next starts belongs to the stretch the label extends onto: the earlier one
-  for `anchor="end"`, so a label ending there sits on the curve, and the later
-  one otherwise. A stretch of no length, such as two coincident points
-  between gaps, holds no point. Lengths are on screen, so a zoom can move the
-  anchor onto another stretch. With no stretch left at draw time, as after a
-  switch to a log axis that masks the whole curve, the label is not placed.
-  The container's `Text` position is the curve's first finite point, so it
-  has a pixel wherever the curve does, and an empty extent sits at the
-  curve's first shown point, the same test placement uses.
+  (`_stretch_at`), so drawing, measuring, and picking, which all place through
+  it, see the same stretches. The drawn length is that of the segments between
+  two shown points (`_shown`), measured in one vectorized pass, and only the
+  chosen stretch gets a `_CurveFrame`: a frame per stretch makes a placement on
+  a curve with thousands of gaps tens of times slower. `pos` is a fraction of
+  the drawn length, and the label rides the stretch that holds its anchor as
+  though it were the whole curve: past its ends the label follows its end
+  tangents, over a gap if there is one, not the next stretch, so the label
+  always sits at `pos` and never continues onto another stretch. A label meant
+  to follow scattered or gappy points rides a smooth curve fitted to them
+  instead, which it never draws. A point where one stretch ends and the next
+  starts belongs to the stretch the label extends onto: the earlier one for
+  `anchor="end"`, so a label ending there sits on the curve, and the later one
+  otherwise. `pos` within a billionth of the drawn length of that point counts
+  as the point, since `pos` times the length rarely lands on it exactly. A
+  stretch of no length, such as two coincident points between gaps, holds no
+  point, and the stretch the label rides leaves out the segments of no length
+  at its ends, such as a repeated last point, so a label overrunning it follows
+  a real end tangent. Lengths are on screen, so a zoom can move the anchor onto
+  another stretch. With no stretch left at draw time, as after a switch to a
+  log axis that masks the whole curve, the label is not placed. The container's
+  `Text` position is the curve's first finite point, so it has a pixel wherever
+  the curve does, and an empty extent sits at the curve's first shown point,
+  the same test placement uses.
 - Figure layout measures the label through the container's
   `get_window_extent`: the box of the placed glyphs' outline control points
   and the casing's band.
@@ -536,23 +540,28 @@ fontsize pass-through), these tests carry the design:
   `nonpositive="mask"`, x or y, and on polar axes whose radial limits start
   above zero, a label on valid points draws inside the axes, each glyph as wide
   as on a linear axis.
-- Gaps: on a flat curve with a gap between two stretches of equal length,
-  `pos` 0.25 and 0.75 place the label as a label on each stretch alone at
-  `pos` 0.5, which fails if `pos` counts the gap or the label rides the first
-  stretch. At `pos` 0.5, where the stretches meet, `anchor="end"` ends the
-  label on the first stretch and `"start"` and `"center"` start it on the
-  second; `pos` -0.1 and 1.1 lie before the first stretch and past the last.
-  A label overrunning its stretch follows the stretch's tangent across the
-  gap, past the stretch's end and level with it, not onto the higher next
-  stretch, which fails if it is shifted back. Two coincident points beyond a
-  gap hold no point at `pos` 0 or 1. Infinite points and masked x or y leave
-  the same gap as NaN, on a sine. A log axis that masks x of 0 or less places
-  the label as on the curve without those points. A curve without two
-  consecutive finite points raises, for NaN, infinite, isolated, and masked
-  points. A curve with no stretch left at draw time draws none of its glyphs or
-  casing, which fails if the previous draw's frames are kept. The label's
-  position is the first finite point, and a hidden label's extent sits at the
-  first point with a pixel when the axes give its position none.
+- Gaps: on a flat curve with a gap between two stretches of equal length, `pos`
+  0.25 and 0.75 place the label as a label on each stretch alone at `pos` 0.5,
+  which fails if `pos` counts the gap or the label rides the first stretch. At
+  `pos` 0.5, where the stretches meet, `anchor="end"` ends the label on the
+  first stretch and `"start"` and `"center"` start it on the second; `pos` -0.1
+  and 1.1 lie before the first stretch and past the last. On stretches of
+  unequal length, `pos` computed as one length over the total still ends an
+  `"end"` label on the first stretch, which fails without the tolerance at the
+  boundary, and on two curved stretches of the same shape it follows the first
+  to its last point. A label overrunning its stretch follows the stretch's
+  tangent over the gap, past the stretch's end and level with it, not onto the
+  higher next stretch, which fails if it is shifted back. Two coincident points
+  before, after, or between stretches hold no point, and a curve ending on a
+  repeated point is overrun along its last real segment. Infinite points and
+  masked x or y leave the same gap as NaN, on a sine. A log axis that masks x
+  of 0 or less places the label as on the curve without those points. A curve
+  without two consecutive finite points raises, for NaN, infinite, isolated,
+  and masked points, and so does a `pos` that is not finite. A curve with no
+  stretch left at draw time draws none of its glyphs or casing, which fails if
+  the previous draw's frames are kept. The label's position is the first finite
+  point, and a hidden label's extent sits at the first shown point when the
+  axes give its position no pixel.
 - Units: a label on `datetime64` in seconds, microseconds, or nanoseconds, a
   list of `datetime`, a `DatetimeIndex` (naive or timezone-aware), a pandas
   Series of dates, categories on either axis, or dates on y places every glyph

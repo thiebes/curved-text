@@ -35,6 +35,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
   strings raised `ValueError`, so code that catches `ValueError` no longer
   catches them.
+- `pos` must be finite, and a NaN or infinite `pos` raises `ValueError`
+  ([#28](https://github.com/thiebes/curved-text/issues/28)). Before, a NaN
+  `pos` placed the glyphs at NaN coordinates.
 - `get_position()` returns the curve's first finite point as given, for
   example a `datetime64`, as for any `Text`; `get_unitless_position()` returns
   it on the axes ([#24](https://github.com/thiebes/curved-text/issues/24),
@@ -52,6 +55,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   point, is no longer drawn where it was last placed
   ([#28](https://github.com/thiebes/curved-text/issues/28)). Before,
   only its `box` casing was hidden, and its glyphs stayed painted.
+- A label that overruns a curve ending on a repeated point follows the curve's
+  last real segment
+  ([#28](https://github.com/thiebes/curved-text/issues/28)). Before, the
+  repeated point's segment, of no length, gave no direction, and the
+  overrunning glyphs piled up on that point.
 
 ## 0.7.0
 

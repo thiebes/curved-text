@@ -23,9 +23,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   that holds its anchor, past whose ends it follows the stretch's end
   tangents, as at the ends of a curve. A point the axes' scale gives no pixel,
   such as x of 0 or less on a log axis with `nonpositive="mask"`, leaves a
-  gap too. Before, NaN and infinite points raised `ValueError`, and the value
-  under a mask placed the label. The curve needs two consecutive finite
-  points.
+  gap too. Before, NaN and infinite points raised `ValueError`, the value
+  under a mask placed the label, and a label on a log axis with
+  `nonpositive="mask"` and some x of 0 or less was not drawn. The curve needs
+  two consecutive finite points.
 
 ### Changed
 

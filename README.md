@@ -81,7 +81,11 @@ A curve with NaN, infinite, or masked points has gaps, as `plot` draws it, and
 so does one with points the axes cannot show, such as zero on a log axis that
 masks it. `pos` then counts only the drawn length, and the label rides the
 stretch that holds its anchor, continuing straight past that stretch's ends as
-it does past the ends of a curve.
+it does past the ends of a curve; it never crosses a gap. Lengths are measured
+on screen, so zooming can move the anchor onto another stretch. To run a label
+across gaps, or along scattered points, pass `curved_text` a smooth curve that
+follows their overall shape, such as a fit or a running mean, and leave it
+unplotted: the label never draws the curve it follows.
 
 A label is clipped to the axes, as lines are, so letters that run past the
 edge of the axes are cut there. matplotlib's own `ax.text` is not clipped by

@@ -61,7 +61,7 @@ plt.show()
 Three independent parameters control where the label sits:
 
 - `pos` sets where the label is anchored along the curve, as a fraction of the
-  curve's length. `0.0` is the first point, `1.0` is the last.
+  curve's length. `0.0` is the start of the curve, `1.0` is its end.
 - `anchor` sets which part of the label lands at `pos`: `"start"`, `"center"`,
   or `"end"`.
 - `offset` shifts the label off the curve, measured in typographic points. The
@@ -76,6 +76,17 @@ marks the anchor point in each panel.
 If the label runs past either end of the curve, it is not cut off. The curve
 continues straight in the direction it had at that end, and the extra letters
 sit on that straight line.
+
+A curve with NaN, infinite, or masked points has gaps, as `plot` draws it, and
+so does one with points the axes cannot show, such as zero on a log axis that
+masks it. `pos` then counts only the drawn length, and the label rides the
+stretch that holds its anchor, continuing straight past that stretch's ends as
+it does past the ends of a curve, over a gap if there is one; it never
+continues onto another stretch. Lengths are measured on screen, so zooming can
+move the anchor onto another stretch. To run a label along a curve with gaps,
+or along scattered points, pass `curved_text` a smooth curve that follows
+their overall shape, such as a fit or a running mean, and leave it unplotted:
+the label never draws the curve it follows.
 
 A label is clipped to the axes, as lines are, so letters that run past the
 edge of the axes are cut there. matplotlib's own `ax.text` is not clipped by

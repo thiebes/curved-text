@@ -10,7 +10,7 @@ import itertools
 import math
 import re
 import unicodedata
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import matplotlib as mpl
 import matplotlib.artist as martist
@@ -220,10 +220,10 @@ def _axis_floats(axis: Any, values: Any) -> np.ndarray:
     return np.ma.asarray(axis.convert_units(values), dtype=float).filled(np.nan)
 
 
-def _first(values: Any) -> Any:
-    """The first of ``values`` by position, as given: a pandas Series indexes
-    by label, so ``values[0]`` can miss."""
-    return next(iter(values))
+def _at_position(values: Any, index: int) -> Any:
+    """The element of ``values`` at position ``index``, as given: a pandas
+    Series indexes by label, so ``values[index]`` can miss."""
+    return next(itertools.islice(iter(values), index, None))
 
 
 def _font_lines(prop: font_manager.FontProperties, *,
@@ -460,6 +460,64 @@ class _CurveFrame:
         f = np.where(d != 0.0, (s - self._arc[i]) / np.where(d != 0.0, d, 1.0),
                      0.0)
         return other._arc[i] + f * (other._arc[i + 1] - other._arc[i])
+
+
+# How close, relative to the drawn length, ``pos`` must come to the point where
+# one stretch ends and the next starts to count as that point: rounding in
+# ``pos * length`` must not move the anchor off the boundary onto the other
+# stretch.
+_BOUNDARY_TOLERANCE = 1e-9
+
+
+def _shown(curve_px: np.ndarray) -> np.ndarray:
+    """Which points of the curve, in display pixels, the axes show: those with
+    finite coordinates. A NaN, infinite, or masked point is not shown, and nor
+    is a point the axes' scale masks."""
+    return np.isfinite(curve_px).all(axis=1)
+
+
+def _stretch_at(curve_px: np.ndarray, pos: float,
+                anchor: str) -> tuple[np.ndarray, float] | None:
+    """The stretch of the curve, in display pixels, that holds the point
+    ``pos`` of the way along the drawn length, and that point's arc length
+    along the stretch; None when nothing is drawn.
+
+    A line breaks at a point that is not shown and draws nothing at an
+    isolated point, so the drawn length is that of the segments between two
+    shown points. A point where one stretch ends and the next starts belongs
+    to the stretch the label extends onto: the earlier one for
+    ``anchor="end"``, the later one otherwise. ``pos`` below 0 or above 1 lies
+    before the first stretch or past the last. Only segments with a length
+    hold the point, and the stretch is returned without the segments of no
+    length at its ends, such as a repeated last point, so a label that
+    overruns it follows a real end tangent."""
+    shown = _shown(curve_px)
+    drawn = shown[:-1] & shown[1:]
+    with np.errstate(invalid="ignore"):
+        steps = np.diff(curve_px, axis=0)
+    lengths = np.where(drawn, np.hypot(steps[:, 0], steps[:, 1]), 0.0)
+    measured = np.flatnonzero(lengths > 0.0)
+    if not len(measured):
+        return None
+    ends = np.cumsum(lengths)
+    total = float(ends[-1])
+    target = pos * total
+    breaks = np.flatnonzero(~drawn)
+    if len(breaks):
+        boundary = float(ends[breaks[np.argmin(np.abs(ends[breaks] - target))]])
+        if abs(boundary - target) <= _BOUNDARY_TOLERANCE * total:
+            target = boundary
+    side: Literal["left", "right"] = "left" if anchor == "end" else "right"
+    segment = int(np.clip(np.searchsorted(ends, target, side=side),
+                          measured[0], measured[-1]))
+    # The stretch runs between the undrawn segments around ``segment``, from
+    # its first segment with a length to its last.
+    first = int(breaks[breaks < segment].max(initial=-1)) + 1
+    last = int(breaks[breaks > segment].min(initial=len(drawn)))
+    inside = measured[(measured >= first) & (measured < last)]
+    first, last = int(inside[0]), int(inside[-1]) + 1
+    before = float(ends[first - 1]) if first else 0.0
+    return curve_px[first:last + 1], target - before
 
 
 def _densify(verts: np.ndarray, codes: np.ndarray,
@@ -785,6 +843,11 @@ class _OutlineSegment(mtext.Text):
         self._width_px = float(width_px)
         self._datum = float(datum)
 
+    def _clear_placement(self) -> None:
+        """Forget the last placement, so the segment draws nothing until it is
+        placed again."""
+        self._frame = None
+
     @martist.allow_rasterization
     def draw(self, renderer, *args, **kwargs) -> None:
         if not self.get_visible() or self._frame is None:
@@ -815,7 +878,8 @@ class _OutlineSegment(mtext.Text):
 
     def _placed_path(self, renderer) -> Path | None:
         """This segment's outline mapped onto the curve, in display pixels."""
-        # Callers place the label first, which assigns every segment a frame.
+        # Callers place the label successfully first, which assigns every
+        # segment a frame.
         assert self._frame is not None
         verts, codes = self._outline_units()
         if len(verts) == 0:
@@ -1002,7 +1066,10 @@ class CurvedText(mtext.Text):
 
     ``pos``
         Where the label is anchored along the curve, as a fraction of the curve's
-        arc length: ``0.0`` is the first point, ``1.0`` is the last.
+        drawn arc length: ``0.0`` is the start of the drawn curve, ``1.0`` its
+        end. A curve with gaps (NaN, infinite, or masked points) is measured
+        along its drawn stretches, and the label rides the stretch that holds
+        its anchor.
     ``anchor``
         Which part of the label lands at ``pos``: ``"start"``, ``"center"``, or
         ``"end"``.
@@ -1025,9 +1092,13 @@ class CurvedText(mtext.Text):
         introduces a per-glyph step and keeps plain and math aligned. Combine with
         ``offset`` to lift the chosen line off the curve.
 
-    A label that overruns either end of the curve -- because of ``pos`` and
-    ``anchor`` -- is not clipped. The curve is extended along its end tangent and
-    the overrunning glyphs are placed on that straight extension.
+    A label that overruns either end of the curve, or of the stretch it rides
+    on a curve with gaps -- because of ``pos`` and ``anchor`` -- is not clipped.
+    The curve is extended along its end tangent and the overrunning glyphs are
+    placed on that straight extension, over a gap if there is one: a label
+    never continues onto another stretch. To run a label along a curve with
+    gaps, or along scattered points, pass it a smooth curve that follows their
+    overall shape, such as a fit: the label never draws the curve it follows.
 
     Set ``box`` to draw a casing behind the label -- a band that follows the
     curve at the label's height, drawn under the glyphs -- so the label stays
@@ -1082,19 +1153,22 @@ class CurvedText(mtext.Text):
     Parameters
     ----------
     x, y : array-like
-        The curve in data coordinates: 1-D, equal length, at least two points,
-        finite, and ordered along the curve. Any type the axes' unit converters
-        accept works, as for ``plot``: dates (``datetime64``, ``datetime``,
-        pandas dates), category strings, and unit-aware values. An axis without
-        units takes them from the curve; category strings not yet on an axis
-        are added to it, as ticks. Data an axis cannot convert raises
-        matplotlib's ``ConversionError``.
+        The curve in data coordinates: 1-D, equal length, and ordered along
+        the curve. A NaN, infinite, or masked point leaves a gap, as in
+        ``plot``, and the curve needs at least two consecutive finite points.
+        Any type the axes' unit converters accept works, as for ``plot``:
+        dates (``datetime64``, ``datetime``, pandas dates), category strings,
+        and unit-aware values. An axis without units takes them from the
+        curve; category strings not yet on an axis are added to it, as ticks.
+        Data an axis cannot convert raises matplotlib's ``ConversionError``.
     text : str
         The string to draw. May contain mathtext runs (``$...$``).
     axes : matplotlib.axes.Axes
         The axes to draw into.
     pos : float, default 0.5
-        Arc-length fraction in ``[0, 1]`` for the anchor point.
+        Arc-length fraction in ``[0, 1]`` for the anchor point. On a curve with
+        gaps it is a fraction of the drawn length, and the label rides the
+        stretch that holds its anchor.
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
@@ -1129,6 +1203,8 @@ class CurvedText(mtext.Text):
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                  box: bool | str | dict = False, crowding: str = "none",
                  valign: str = "center", **kwargs: Any) -> None:
+        if not math.isfinite(pos):
+            raise ValueError(f"pos must be finite, got {pos!r}")
         if anchor not in _ANCHORS:
             raise ValueError(f"anchor must be one of {_ANCHORS}, got {anchor!r}")
         if crowding not in _CROWDING:
@@ -1170,12 +1246,19 @@ class CurvedText(mtext.Text):
         # Validate the converted curve; the label keeps the values as given.
         if xf.ndim != 1 or xf.shape != yf.shape or xf.size < 2:
             raise ValueError("x and y must be 1-D arrays of equal length >= 2")
-        if not (np.isfinite(xf).all() and np.isfinite(yf).all()):
-            raise ValueError("x and y must contain only finite values")
-        # The container's position is the curve's first point as the caller
-        # gave it, so ``get_position`` returns the caller's type, as for any
-        # Text, and ``get_unitless_position`` the point on the axes.
-        super().__init__(_first(x), _first(y), " ", **kwargs)
+        # A NaN, infinite, or masked point leaves a gap, as in ``plot``; the
+        # curve needs one stretch a line would draw, two consecutive finite
+        # points.
+        finite = np.isfinite(xf) & np.isfinite(yf)
+        if not (finite[:-1] & finite[1:]).any():
+            raise ValueError(
+                "x and y must contain at least two consecutive finite points")
+        # The container's position is the curve's first finite point as the
+        # caller gave it, so ``get_position`` returns the caller's type, as for
+        # any Text, and ``get_unitless_position`` the point on the axes.
+        first = int(np.argmax(finite))
+        super().__init__(_at_position(x, first), _at_position(y, first), " ",
+                         **kwargs)
         self._cx, self._cy = curve
         # The converted curve, kept until either axis's units change, as
         # matplotlib's lines keep theirs: converting a long curve of datetime
@@ -1275,10 +1358,13 @@ class CurvedText(mtext.Text):
             parts.append(box)
         return parts
 
-    def _hide_box(self) -> None:
-        # The casing is an axes-owned artist drawn independently, so when
-        # ``_place_on_curve`` bails out before positioning it the band must be
-        # hidden explicitly or the previous placement's geometry stays painted.
+    def _unplace(self) -> None:
+        # The glyphs and the casing are axes-owned artists drawn independently,
+        # so when ``_place_on_curve`` bails out before positioning them they
+        # must be cleared explicitly, or the previous placement stays painted:
+        # a glyph without a placement draws nothing, and the casing is hidden.
+        for segment in self._segments:
+            segment._clear_placement()
         if self._box is not None:
             self._box.set_visible(False)
 
@@ -1389,9 +1475,9 @@ class CurvedText(mtext.Text):
         matplotlib 3.10 ``legend(loc="best")``) measures the label through it.
         Constrained layout measures before the first draw has placed anything,
         so the label is placed on the curve to be measured. The container's own
-        Text, a single space at the curve's first point, takes no part. Each
-        glyph counts by the box of its outline's control points, which holds the
-        curves between them: it can exceed the ink by a fraction of a pixel,
+        Text, a single space at the curve's first finite point, takes no part.
+        Each glyph counts by the box of its outline's control points, which holds
+        the curves between them: it can exceed the ink by a fraction of a pixel,
         never fall short of it, and costs far less than exact curve extrema. The
         casing counts by its band, half its line width beyond its centreline on
         every side, which also covers its round caps.
@@ -1399,8 +1485,9 @@ class CurvedText(mtext.Text):
         (:func:`_measuring_renderer`). ``dpi`` scales the extent to that
         resolution, which matches placing the label at that dpi to within what
         whole-pixel glyph widths add up to. A hidden label, and one that cannot
-        be placed (an empty label, a label off any axes, or a degenerate curve),
-        has an empty extent at the curve's first point.
+        be placed (an empty label, a label off any axes, a curve with no
+        stretch left to draw, or a degenerate curve), has an empty extent at
+        the curve's first shown point.
 
         Figure layout can measure the label several times a draw, and a legend
         measures it right after the label's own draw has placed it, so a
@@ -1498,8 +1585,8 @@ class CurvedText(mtext.Text):
 
     def _label_extent(self, renderer) -> Bbox:
         """The box of the placed glyphs' control points and the casing's band,
-        or an empty box at the curve's first point when the label could not be
-        placed; kept until the label is placed again."""
+        or an empty box at the curve's first shown point when the label could
+        not be placed; kept until the label is placed again."""
         if self._extent_cache is None:
             glyph_boxes = self._glyph_boxes(renderer)
             if not glyph_boxes:
@@ -1534,7 +1621,17 @@ class CurvedText(mtext.Text):
         return self._glyph_box_cache
 
     def _empty_extent(self) -> Bbox:
-        """An empty box at the curve's first point."""
+        """An empty box at the curve's first shown point, which is the
+        label's own position unless the axes' scale masks it. Off any axes, or
+        when the axes show no point of the curve, the box sits at the label's
+        own position; when the axes give that position no pixel either, it is
+        a NaN box, as matplotlib's own text gives there, and figure layout
+        leaves it out."""
+        curve_px = self._curve_px()
+        if curve_px is not None:
+            shown = curve_px[_shown(curve_px)]
+            if len(shown):
+                return Bbox.from_bounds(shown[0, 0], shown[0, 1], 0.0, 0.0)
         x, y = self.get_transform().transform(self.get_unitless_position())
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
@@ -1542,26 +1639,35 @@ class CurvedText(mtext.Text):
         """Place every segment and the casing along the curve, given in display
         pixels as ``curve_px``, for this renderer: the label's whole layout,
         recomputed on every draw. Returns whether the label was placed: an
-        empty label, a label off any axes, or a degenerate curve is not."""
+        empty label, a label off any axes, a curve with no stretch left to
+        draw, or a degenerate curve is not."""
         if not self._segments or self.axes is None or curve_px is None:
-            self._hide_box()
+            self._unplace()
             return False
         axes = self.axes
-        # Work in display pixels: project the curve and build its arc-length
-        # frame, then shift that frame perpendicularly to the parallel (offset)
-        # curve the label actually rides. Laying glyphs along the offset curve
-        # -- rather than projecting them off the base curve -- keeps the
-        # clearance from the curve and the on-screen letter spacing uniform at
-        # once, because the cursor advances along the curve the glyphs sit on.
-        # ``pos``/``anchor`` stay defined against the base curve and are carried
-        # onto the offset curve below, so the label lands where the user asked.
+        # The curve has gaps where a point has no pixel, as ``plot`` draws it.
+        # ``pos`` is a fraction of the drawn length, and the label rides the
+        # stretch that holds its anchor, as though that stretch were the whole
+        # curve: past its ends the label follows its end tangents, not the
+        # next stretch.
+        stretch = _stretch_at(curve_px, self._pos, self._anchor)
+        if stretch is None:
+            self._unplace()
+            return False
+        points, s_anchor = stretch
+        base = _CurveFrame(points[:, 0], points[:, 1])
+        # Work in display pixels: build the arc-length frame of the stretch,
+        # then shift it perpendicularly to the parallel (offset) curve the
+        # label actually rides. Laying glyphs along the offset curve -- rather
+        # than projecting them off the base curve -- keeps the clearance from
+        # the curve and the on-screen letter spacing uniform at once, because
+        # the cursor advances along the curve the glyphs sit on. ``pos`` and
+        # ``anchor`` stay defined against the base curve and are carried onto
+        # the offset curve below, so the label lands where the user asked.
         offset_px = self._offset * renderer.points_to_pixels(1.0)
-        base = _CurveFrame(curve_px[:, 0], curve_px[:, 1])
         frame = base.offset(offset_px)
         if not np.isfinite(frame.length) or frame.length <= 0.0:
-            # A degenerate curve has no span to position the casing on; hide it
-            # rather than leave the previous draw's band stranded on screen.
-            self._hide_box()
+            self._unplace()
             return False
         inv = axes.transData.inverted()
 
@@ -1593,7 +1699,7 @@ class CurvedText(mtext.Text):
         # Anchor at ``pos`` of the base curve, carried onto the offset curve, so
         # the user's placement reads against the curve they passed in. ``lead``
         # is the fraction of the label that sits before the anchor point.
-        s0 = float(base.remap_arc(frame, self._pos * base.length))
+        s0 = float(base.remap_arc(frame, s_anchor))
         lead = {"start": 0.0, "center": 0.5, "end": 1.0}[self._anchor]
 
         # Per-glyph advances along the offset curve. In ``"curvature"`` mode

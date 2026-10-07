@@ -47,6 +47,18 @@ needs_latex = pytest.mark.skipif(
 _TEX_MARKUP = r"#$%&~_^\{}<>|"
 
 
+def _strongly_red(image):
+    """How many pixels of an RGBA ``image`` are strongly red."""
+    red, green, blue = image[..., :3].astype(int).transpose(2, 0, 1)
+    return int(((red > 200) & (green < 80) & (blue < 80)).sum())
+
+
+def _red_pixels(fig):
+    """Draw the figure and count its strongly red pixels."""
+    _draw(fig)
+    return _strongly_red(np.asarray(fig.canvas.buffer_rgba()))
+
+
 def _draw(fig):
     """Force a draw so CurvedText positions its glyphs."""
     fig.canvas.draw()
@@ -480,6 +492,10 @@ def test_validates_inputs():
         CurvedText([0.0], [0.0], "x", ax)            # too few points
     with pytest.raises(ValueError):
         CurvedText([0, 1], [0, 1], "x", ax, anchor="middle")  # bad anchor
+    with pytest.raises(ValueError, match="pos"):
+        CurvedText([0, 1], [0, 1], "x", ax, pos=np.nan)  # pos not finite
+    with pytest.raises(ValueError, match="pos"):
+        CurvedText([0, 1], [0, 1], "x", ax, pos=np.inf)
     with pytest.raises(ValueError):
         CurvedText([0, 1, 2], [0, 1], "x", ax)       # unequal lengths
     with pytest.raises(ValueError):
@@ -1490,38 +1506,100 @@ def test_label_on_a_gapped_curve_rides_the_stretch_holding_its_anchor(
 def test_label_overrunning_its_stretch_follows_its_tangent_across_the_gap():
     # A label that runs past the end of its stretch follows that stretch's
     # end tangent over the gap, not the next stretch, which sits higher here,
-    # and it is not shifted back into its stretch, so it stays at pos.
+    # and it is not shifted back into its stretch, so it stays at pos. Both
+    # stretches are flat, so their lengths on screen are in the ratio of
+    # their lengths in x.
+    stretch_end = _GAP_X[_FIRST_STRETCH][-1]
+    drawn_length = 2 * stretch_end
+    anchor_x = stretch_end - 0.5
     y = np.where(_IN_GAP, np.nan, np.where(_GAP_X < 5, 5.0, 8.0))
-    fig, ct = _gap_label(_GAP_X, y, pos=3.5 / 8, anchor="start")
+    fig, ct = _gap_label(_GAP_X, y, pos=anchor_x / drawn_length,
+                         anchor="start")
     ref_fig, ref_ct = _gap_label(_GAP_X[_FIRST_STRETCH], y[_FIRST_STRETCH],
-                                 pos=3.5 / 4, anchor="start")
+                                 pos=anchor_x / stretch_end, anchor="start")
     _assert_same_placement(fig, ct, ref_fig, ref_ct)
-    stretch_end = ct.axes.transData.transform((4.0, 5.0))
+    end_px = ct.axes.transData.transform((stretch_end, 5.0))
     last_glyph = _anchor_px(ct._segments[-1])
-    assert last_glyph[0] > stretch_end[0]
-    assert last_glyph[1] == pytest.approx(stretch_end[1])
+    assert last_glyph[0] > end_px[0]
+    assert last_glyph[1] == pytest.approx(end_px[1])
     plt.close(fig)
     plt.close(ref_fig)
 
 
-@pytest.mark.parametrize("pos, coincident", [
-    pytest.param(1.0, slice(-2, None), id="after the last stretch"),
-    pytest.param(0.0, slice(0, 2), id="before the first stretch"),
+@pytest.mark.parametrize("first_length", [1.3, 2.7, 3.1, 4.9])
+def test_label_ending_at_a_boundary_ends_on_the_earlier_stretch(first_length):
+    # pos at the point where two stretches of unequal length meet, computed
+    # as one length over the total, rarely gives that point exactly in
+    # floating point; anchor="end" must still end the label on the earlier
+    # stretch, not start it a hair into the later one and run back over the
+    # gap.
+    first = np.linspace(0.0, first_length, 30)
+    second = np.linspace(6.0, 10.0, 30)
+    x = np.r_[first, np.nan, second]
+    y = np.full_like(x, 5.0)
+    pos = first_length / (first_length + 4.0)
+    fig, ct = _gap_label(x, y, pos=pos, anchor="end")
+    ref_fig, ref_ct = _gap_label(first, np.full_like(first, 5.0), pos=1.0,
+                                 anchor="end")
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_ending_at_a_boundary_follows_a_curved_stretch_to_its_end():
+    # The stretch a label rides keeps every point up to the gap: on a curved
+    # stretch, losing its last point would bend the end of the label off it.
+    # The two stretches have the same shape, so they have the same length and
+    # pos 0.5 is the point where they meet.
+    first = np.linspace(0.0, 4.0, 41)
+    x = np.r_[first, np.nan, first + 6.0]
+    y = np.r_[5 + 2 * np.sin(first), np.nan, 5 + 2 * np.sin(first)]
+    fig, ct = _gap_label(x, y, pos=0.5, anchor="end")
+    ref_fig, ref_ct = _gap_label(first, 5 + 2 * np.sin(first), pos=1.0,
+                                 anchor="end")
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+_ZERO_STRETCH_X = _GAP_X[_FIRST_STRETCH]
+
+
+@pytest.mark.parametrize("x, y, pos, anchor, stretch_pos", [
+    pytest.param(np.r_[_ZERO_STRETCH_X, np.nan, 2.0, 2.0],
+                 np.r_[np.full(41, 5.0), np.nan, 7.0, 7.0], 1.0, "center", 1.0,
+                 id="after the last stretch"),
+    pytest.param(np.r_[2.0, 2.0, np.nan, _ZERO_STRETCH_X],
+                 np.r_[7.0, 7.0, np.nan, np.full(41, 5.0)], 0.0, "end", 0.0,
+                 id="before the first stretch"),
+    pytest.param(np.r_[_ZERO_STRETCH_X, np.nan, 2.0, 2.0, np.nan,
+                       _ZERO_STRETCH_X + 6.0],
+                 np.r_[np.full(41, 5.0), np.nan, 7.0, 7.0, np.nan,
+                       np.full(41, 5.0)], 0.5, "end", 1.0,
+                 id="between two stretches"),
 ])
-def test_stretch_of_no_length_holds_no_point(pos, coincident):
-    # Two coincident points beyond a gap make a stretch of no length, which
-    # holds no point, so pos 0 or 1 lands on the end of the stretch with a
+def test_stretch_of_no_length_holds_no_point(x, y, pos, anchor, stretch_pos):
+    # Two coincident points between gaps make a stretch of no length, which
+    # holds no point: the label lands on the end of the first stretch with a
     # length, as on that stretch alone.
-    x = _GAP_X[_FIRST_STRETCH]
-    stretch_x, stretch_y = x, np.full_like(x, 5.0)
-    if coincident.start == 0:
-        x = np.r_[2.0, 2.0, np.nan, stretch_x]
-    else:
-        x = np.r_[stretch_x, np.nan, 2.0, 2.0]
-    y = np.where(np.isnan(x), np.nan, 5.0)
-    y[coincident] = 7.0
-    fig, ct = _gap_label(x, y, pos=pos)
-    ref_fig, ref_ct = _gap_label(stretch_x, stretch_y, pos=pos)
+    fig, ct = _gap_label(x, y, pos=pos, anchor=anchor)
+    ref_fig, ref_ct = _gap_label(_ZERO_STRETCH_X, np.full(41, 5.0),
+                                 pos=stretch_pos, anchor=anchor)
+    _assert_same_placement(fig, ct, ref_fig, ref_ct)
+    plt.close(fig)
+    plt.close(ref_fig)
+
+
+def test_label_overrunning_a_repeated_end_point_follows_the_tangent():
+    # A curve that ends on a repeated point still ends along its last real
+    # segment, so a label that overruns it follows that segment's tangent;
+    # the repeated point's segment, of no length, gives no direction, and the
+    # overrunning glyphs used to pile up on it.
+    x = np.linspace(1.0, 4.0, 4)
+    y = x + 1.0
+    fig, ct = _gap_label(np.r_[x, x[-1]], np.r_[y, y[-1]], pos=0.9,
+                         anchor="start")
+    ref_fig, ref_ct = _gap_label(x, y, pos=0.9, anchor="start")
     _assert_same_placement(fig, ct, ref_fig, ref_ct)
     plt.close(fig)
     plt.close(ref_fig)
@@ -1569,20 +1647,16 @@ def test_label_with_no_stretch_left_to_draw_is_hidden():
     # negative x no stretch to ride. The label and its casing are not drawn,
     # nothing raises, and figure layout is unaffected. If the glyphs kept
     # their last placement, the previous draw's glyphs would stay painted.
-    def red_pixels(fig):
-        _draw(fig)
-        return _strongly_red(np.asarray(fig.canvas.buffer_rgba()))
-
     fig, ax = plt.subplots()
     ax.set_xlim(-5, 5)
     ax.set_ylim(0, 10)
     x = np.linspace(-4, -1, 30)
     ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
                      color="red", box="red")
-    assert red_pixels(fig) > 0
+    assert _red_pixels(fig) > 0
     ax.set_xscale("log", nonpositive="mask")
     ax.set_xlim(0.1, 10)
-    assert red_pixels(fig) == 0
+    assert _red_pixels(fig) == 0
     assert not ct._box.get_visible()
     assert np.isfinite(fig.get_tightbbox(fig.canvas.get_renderer()).bounds).all()
     plt.close(fig)
@@ -1824,12 +1898,6 @@ def test_label_extent_follows_a_change_to_its_glyphs_between_draws():
     assert measured.width > 1.2 * before.width
     np.testing.assert_allclose(measured.get_points(), drawn.get_points())
     plt.close(fig)
-
-
-def _strongly_red(image):
-    """How many pixels of an RGBA ``image`` are strongly red."""
-    red, green, blue = image[..., :3].astype(int).transpose(2, 0, 1)
-    return int(((red > 200) & (green < 80) & (blue < 80)).sum())
 
 
 def _red_pixels_above_axes(fig, ax):

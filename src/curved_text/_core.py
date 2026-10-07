@@ -462,10 +462,17 @@ class _CurveFrame:
         return other._arc[i] + f * (other._arc[i + 1] - other._arc[i])
 
 
-def _has_pixel(curve_px: np.ndarray) -> np.ndarray:
+# How close, relative to the drawn length, ``pos`` must come to the point where
+# one stretch ends and the next starts to count as that point: rounding in
+# ``pos * length`` must not move the anchor off the boundary onto the other
+# stretch.
+_BOUNDARY_TOLERANCE = 1e-9
+
+
+def _shown(curve_px: np.ndarray) -> np.ndarray:
     """Which points of the curve, in display pixels, the axes show: those with
-    finite coordinates. A NaN, infinite, or masked point has none, and so has
-    a point the axes' scale masks."""
+    finite coordinates. A NaN, infinite, or masked point is not shown, and nor
+    is a point the axes' scale masks."""
     return np.isfinite(curve_px).all(axis=1)
 
 
@@ -475,13 +482,16 @@ def _stretch_at(curve_px: np.ndarray, pos: float,
     ``pos`` of the way along the drawn length, and that point's arc length
     along the stretch; None when nothing is drawn.
 
-    A line breaks at a point without a pixel and draws nothing at an isolated
-    point, so the drawn length is that of the segments between two shown
-    points. A point where one stretch ends and the next starts belongs to the
-    stretch the label extends onto: the earlier one for ``anchor="end"``, the
-    later one otherwise. ``pos`` below 0 or above 1 lies before the first
-    stretch or past the last, and no stretch of no length holds the point."""
-    shown = _has_pixel(curve_px)
+    A line breaks at a point that is not shown and draws nothing at an
+    isolated point, so the drawn length is that of the segments between two
+    shown points. A point where one stretch ends and the next starts belongs
+    to the stretch the label extends onto: the earlier one for
+    ``anchor="end"``, the later one otherwise. ``pos`` below 0 or above 1 lies
+    before the first stretch or past the last. Only segments with a length
+    hold the point, and the stretch is returned without the segments of no
+    length at its ends, such as a repeated last point, so a label that
+    overruns it follows a real end tangent."""
+    shown = _shown(curve_px)
     drawn = shown[:-1] & shown[1:]
     with np.errstate(invalid="ignore"):
         steps = np.diff(curve_px, axis=0)
@@ -490,15 +500,23 @@ def _stretch_at(curve_px: np.ndarray, pos: float,
     if not len(measured):
         return None
     ends = np.cumsum(lengths)
-    target = pos * float(ends[-1])
+    total = float(ends[-1])
+    target = pos * total
+    breaks = np.flatnonzero(~drawn)
+    if len(breaks):
+        boundary = float(ends[breaks[np.argmin(np.abs(ends[breaks] - target))]])
+        if abs(boundary - target) <= _BOUNDARY_TOLERANCE * total:
+            target = boundary
     side: Literal["left", "right"] = "left" if anchor == "end" else "right"
     segment = int(np.clip(np.searchsorted(ends, target, side=side),
                           measured[0], measured[-1]))
-    # The stretch runs between the undrawn segments around ``segment``.
-    breaks = np.flatnonzero(~drawn)
+    # The stretch runs between the undrawn segments around ``segment``, from
+    # its first segment with a length to its last.
     first = int(breaks[breaks < segment].max(initial=-1)) + 1
     last = int(breaks[breaks > segment].min(initial=len(drawn)))
-    before = float(ends[first] - lengths[first])
+    inside = measured[(measured >= first) & (measured < last)]
+    first, last = int(inside[0]), int(inside[-1]) + 1
+    before = float(ends[first - 1]) if first else 0.0
     return curve_px[first:last + 1], target - before
 
 
@@ -827,7 +845,7 @@ class _OutlineSegment(mtext.Text):
 
     def _clear_placement(self) -> None:
         """Forget the last placement, so the segment draws nothing until it is
-        placed again: the label could not be placed this time."""
+        placed again."""
         self._frame = None
 
     @martist.allow_rasterization
@@ -1048,9 +1066,10 @@ class CurvedText(mtext.Text):
 
     ``pos``
         Where the label is anchored along the curve, as a fraction of the curve's
-        drawn arc length: ``0.0`` is the first point, ``1.0`` is the last. A
-        curve with gaps (NaN, infinite, or masked points) is measured along its
-        drawn stretches, and the label rides the stretch that holds its anchor.
+        drawn arc length: ``0.0`` is the start of the drawn curve, ``1.0`` its
+        end. A curve with gaps (NaN, infinite, or masked points) is measured
+        along its drawn stretches, and the label rides the stretch that holds
+        its anchor.
     ``anchor``
         Which part of the label lands at ``pos``: ``"start"``, ``"center"``, or
         ``"end"``.
@@ -1076,10 +1095,10 @@ class CurvedText(mtext.Text):
     A label that overruns either end of the curve, or of the stretch it rides
     on a curve with gaps -- because of ``pos`` and ``anchor`` -- is not clipped.
     The curve is extended along its end tangent and the overrunning glyphs are
-    placed on that straight extension; a label never crosses a gap. To run a
-    label across gaps, or along scattered points, pass it a smooth curve that
-    follows their overall shape, such as a fit: the label never draws the
-    curve it follows.
+    placed on that straight extension, over a gap if there is one: a label
+    never continues onto another stretch. To run a label along a curve with
+    gaps, or along scattered points, pass it a smooth curve that follows their
+    overall shape, such as a fit: the label never draws the curve it follows.
 
     Set ``box`` to draw a casing behind the label -- a band that follows the
     curve at the label's height, drawn under the glyphs -- so the label stays
@@ -1184,6 +1203,8 @@ class CurvedText(mtext.Text):
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                  box: bool | str | dict = False, crowding: str = "none",
                  valign: str = "center", **kwargs: Any) -> None:
+        if not math.isfinite(pos):
+            raise ValueError(f"pos must be finite, got {pos!r}")
         if anchor not in _ANCHORS:
             raise ValueError(f"anchor must be one of {_ANCHORS}, got {anchor!r}")
         if crowding not in _CROWDING:
@@ -1466,7 +1487,7 @@ class CurvedText(mtext.Text):
         whole-pixel glyph widths add up to. A hidden label, and one that cannot
         be placed (an empty label, a label off any axes, a curve with no
         stretch left to draw, or a degenerate curve), has an empty extent at
-        the curve's first point the axes show.
+        the curve's first shown point.
 
         Figure layout can measure the label several times a draw, and a legend
         measures it right after the label's own draw has placed it, so a
@@ -1564,7 +1585,7 @@ class CurvedText(mtext.Text):
 
     def _label_extent(self, renderer) -> Bbox:
         """The box of the placed glyphs' control points and the casing's band,
-        or an empty box at the curve's first finite point when the label could
+        or an empty box at the curve's first shown point when the label could
         not be placed; kept until the label is placed again."""
         if self._extent_cache is None:
             glyph_boxes = self._glyph_boxes(renderer)
@@ -1600,15 +1621,15 @@ class CurvedText(mtext.Text):
         return self._glyph_box_cache
 
     def _empty_extent(self) -> Bbox:
-        """An empty box at the curve's first point the axes show, which is the
+        """An empty box at the curve's first shown point, which is the
         label's own position unless the axes' scale masks it. Off any axes, or
         when the axes show no point of the curve, the box sits at the label's
-        position, which then has no pixel either: a NaN box, as matplotlib's
-        own text gives at a position without one, and which figure layout
-        leaves out."""
+        own position; when the axes give that position no pixel either, it is
+        a NaN box, as matplotlib's own text gives there, and figure layout
+        leaves it out."""
         curve_px = self._curve_px()
         if curve_px is not None:
-            shown = curve_px[_has_pixel(curve_px)]
+            shown = curve_px[_shown(curve_px)]
             if len(shown):
                 return Bbox.from_bounds(shown[0, 0], shown[0, 1], 0.0, 0.0)
         x, y = self.get_transform().transform(self.get_unitless_position())

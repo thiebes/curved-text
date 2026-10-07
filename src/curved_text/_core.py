@@ -469,10 +469,31 @@ class _CurveFrame:
 _BOUNDARY_TOLERANCE = 1e-9
 
 
+# The open interval of values each axis scale with a bounded domain can place.
+# With ``nonpositive="clip"``, the default on a log axis, a log axis sends 0
+# and below, and a logit axis anything outside (0, 1), to a finite pixel far
+# outside the axes, where a line's segment toward it leaves the view but a
+# label would follow it out.
+_SCALE_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0)}
+
+
+def _gaps_outside_domain(scale: str, values: np.ndarray) -> np.ndarray:
+    """``values`` with those outside the domain of the axis ``scale`` set to
+    NaN, so they leave a gap as a masked point does; values on any other
+    scale, including custom ones, as they are."""
+    domain = _SCALE_DOMAINS.get(scale)
+    if domain is None:
+        return values
+    low, high = domain
+    with np.errstate(invalid="ignore"):
+        return np.where((values > low) & (values < high), values, np.nan)
+
+
 def _shown(curve_px: np.ndarray) -> np.ndarray:
     """Which points of the curve, in display pixels, the axes show: those with
     finite coordinates. A NaN, infinite, or masked point is not shown, and nor
-    is a point the axes' scale masks."""
+    is a point the axes' scale masks or one outside a log or logit axis's
+    domain (:func:`_gaps_outside_domain`)."""
     return np.isfinite(curve_px).all(axis=1)
 
 
@@ -1156,6 +1177,7 @@ class CurvedText(mtext.Text):
         The curve in data coordinates: 1-D, equal length, and ordered along
         the curve. A NaN, infinite, or masked point leaves a gap, as in
         ``plot``, and the curve needs at least two consecutive finite points.
+        A value outside the domain of a log or logit axis leaves a gap too.
         Any type the axes' unit converters accept works, as for ``plot``:
         dates (``datetime64``, ``datetime``, pandas dates), category strings,
         and unit-aware values. An axis without units takes them from the
@@ -1550,14 +1572,20 @@ class CurvedText(mtext.Text):
         The points are converted by the axes' units here, where drawing,
         measuring, and picking all place the label, so each follows the axes'
         current units. The conversion is kept until either axis's units change
-        (:meth:`_forget_curve_floats`)."""
-        if self.axes is None:
+        (:meth:`_forget_curve_floats`). Values outside a log or logit axis's
+        domain leave gaps, checked against the axes' current scales each time,
+        since a scale can change after the label is made."""
+        axes = self.axes
+        if axes is None:
             return None
         self._follow_axis_units()
         if self._curve_floats is None:
-            self._curve_floats = (_axis_floats(self.axes.xaxis, self._cx),
-                                  _axis_floats(self.axes.yaxis, self._cy))
-        return self.axes.transData.transform(np.column_stack(self._curve_floats))
+            self._curve_floats = (_axis_floats(axes.xaxis, self._cx),
+                                  _axis_floats(axes.yaxis, self._cy))
+        x, y = self._curve_floats
+        return axes.transData.transform(np.column_stack(
+            [_gaps_outside_domain(axes.get_xscale(), x),
+             _gaps_outside_domain(axes.get_yscale(), y)]))
 
     def _follow_axis_units(self) -> None:
         """Have each axis tell the label when its units change, unless it
@@ -1624,15 +1652,22 @@ class CurvedText(mtext.Text):
         """An empty box at the curve's first shown point, which is the
         label's own position unless the axes' scale masks it. Off any axes, or
         when the axes show no point of the curve, the box sits at the label's
-        own position; when the axes give that position no pixel either, it is
-        a NaN box, as matplotlib's own text gives there, and figure layout
-        leaves it out."""
+        own position; when the axes do not show that position either, it is a
+        NaN box, as matplotlib's own text gives at a position without a pixel,
+        and figure layout leaves it out."""
         curve_px = self._curve_px()
         if curve_px is not None:
             shown = curve_px[_shown(curve_px)]
             if len(shown):
                 return Bbox.from_bounds(shown[0, 0], shown[0, 1], 0.0, 0.0)
-        x, y = self.get_transform().transform(self.get_unitless_position())
+        position = np.array(self.get_unitless_position(), dtype=float)
+        if self.axes is not None:
+            position = np.array([
+                _gaps_outside_domain(scale, value[None])[0]
+                for scale, value in zip(
+                    (self.axes.get_xscale(), self.axes.get_yscale()),
+                    position)])
+        x, y = self.get_transform().transform(position)
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
     def _place_on_curve(self, renderer, curve_px: np.ndarray | None) -> bool:

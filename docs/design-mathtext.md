@@ -174,7 +174,17 @@ All code lives in `src/curved_text/_core.py`.
   passes through unconverted.
 - Gaps: a point the projected curve gives no finite pixel (NaN, infinite, or
   masked, or one the axes' scale masks, such as x of 0 or less on a log axis
-  with `nonpositive="mask"`) breaks the curve, as it breaks a `Line2D`.
+  with `nonpositive="mask"`) breaks the curve, as it breaks a `Line2D`. So
+  does a value outside a log or logit axis's domain (`_gaps_outside_domain`),
+  which `_curve_px` sets to NaN against the axes' current scales: under
+  `nonpositive="clip"`, the default on a log axis, such a value projects to a
+  finite pixel far outside the axes, where a line's segment toward it leaves
+  the view but a label measured along it would follow it out. Only the "log"
+  and "logit" scales are checked, by name: "symlog" places every value, custom
+  scales keep their own projection, and "functionlog", whose domain is where
+  its forward function is positive rather than an interval of the data, is
+  not handled. A hidden label whose own position is outside the domain gets
+  the NaN box of a position without a pixel.
   `_place_on_curve` finds the stretch to ride on the projected curve
   (`_stretch_at`), so drawing, measuring, and picking, which all place through
   it, see the same stretches. The drawn length is that of the segments between
@@ -196,7 +206,8 @@ All code lives in `src/curved_text/_core.py`.
   at its ends, such as a repeated last point, so a label overrunning it follows
   a real end tangent. Lengths are on screen, so a zoom can move the anchor onto
   another stretch. With no stretch left at draw time, as after a switch to a
-  log axis that masks the whole curve, the label is not placed. The container's
+  log axis on which no part of the curve is in the domain, the label is not
+  placed. The container's
   `Text` position is the curve's first finite point, so it has a pixel wherever
   the curve does, and an empty extent sits at the curve's first shown point,
   the same test placement uses.
@@ -555,13 +566,18 @@ fontsize pass-through), these tests carry the design:
   before, after, or between stretches hold no point, and a curve ending on a
   repeated point is overrun along its last real segment. Infinite points and
   masked x or y leave the same gap as NaN, on a sine. A log axis that masks x
-  of 0 or less places the label as on the curve without those points. A curve
-  without two consecutive finite points raises, for NaN, infinite, isolated,
-  and masked points, and so does a `pos` that is not finite. A curve with no
-  stretch left at draw time draws none of its glyphs or casing, which fails if
-  the previous draw's frames are kept. The label's position is the first finite
-  point, and a hidden label's extent sits at the first shown point when the
-  axes give its position no pixel.
+  of 0 or less places the label as on the curve without those points, and so do
+  log x and y axes with the default clip, set before or after the label, on a
+  curve that starts at 0; negative values inside a curve on a log y axis leave
+  the gap a NaN does, a logit axis with clip skips values of 0 or less, and of
+  1 or more, a symlog axis keeps every value, and a hidden label with no point
+  in a log axis's domain has a NaN extent. A curve without two consecutive
+  finite points raises, for NaN, infinite, isolated, and masked points, and so
+  does a `pos` that is not finite. A curve with no stretch left at draw time
+  draws none of its glyphs or casing, which fails if the previous draw's frames
+  are kept. The label's position is the first finite point, and a hidden
+  label's extent sits at the first shown point when the axes give its position
+  no pixel.
 - Units: a label on `datetime64` in seconds, microseconds, or nanoseconds, a
   list of `datetime`, a `DatetimeIndex` (naive or timezone-aware), a pandas
   Series of dates, categories on either axis, or dates on y places every glyph

@@ -60,6 +60,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   ([#28](https://github.com/thiebes/curved-text/issues/28)). Before, the
   repeated point's segment, of no length, gave no direction, and the
   overrunning glyphs piled up on that point.
+- A value outside a log or logit axis's domain, such as 0 or below on a log
+  axis, leaves a gap whatever the axis's `nonpositive` setting
+  ([#29](https://github.com/thiebes/curved-text/issues/29)). Before, under
+  the default `nonpositive="clip"`, such a value projected far outside the
+  axes, and a label on a curve starting at 0 on `semilogx` was drawn there,
+  over a hundred thousand pixels away.
 
 ## 0.7.0
 

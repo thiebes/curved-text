@@ -78,8 +78,9 @@ continues straight in the direction it had at that end, and the extra letters
 sit on that straight line.
 
 A curve with NaN, infinite, or masked points has gaps, as `plot` draws it, and
-so does one with points the axes cannot show, such as zero on a log axis that
-masks it. `pos` then counts only the drawn length, and the label rides the
+so does one with points the axes cannot show: zero or below on a log axis, and
+zero, one, or beyond on a logit axis, whatever their `nonpositive` setting.
+`pos` then counts only the drawn length, and the label rides the
 stretch that holds its anchor, continuing straight past that stretch's ends as
 it does past the ends of a curve, over a gap if there is one; it never
 continues onto another stretch. Lengths are measured on screen, so zooming can

@@ -19,7 +19,7 @@ LABEL = r"mass $m$ and speed $c$ give $E = mc^2$"
 
 
 def make(images_dir):
-    fig = figure(16, 6, font_size=11)
+    fig = figure(17, 6.4, font_size=11)
     ax = fig.subplots()
     bare(ax)
 

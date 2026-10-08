@@ -17,7 +17,7 @@ from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, save
 
 
 def make(images_dir):
-    fig = figure(15, 7, font_size=11)
+    fig = figure(17, 7.9, font_size=11)
     ax = fig.subplots()
     bare(ax)
 

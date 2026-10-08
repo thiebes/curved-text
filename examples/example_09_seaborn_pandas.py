@@ -26,7 +26,7 @@ def make(images_dir):
     x = np.linspace(0, 10, 200)
     df = pd.DataFrame({"x": x, "y": np.sqrt(x)})
 
-    fig = figure(12, 8, font_size=10)
+    fig = figure(17, 11.3, font_size=10)
     ax = fig.subplots()
     sns.lineplot(data=df, x="x", y="y", ax=ax, color=CURVE_COLOR,
                  linewidth=2)

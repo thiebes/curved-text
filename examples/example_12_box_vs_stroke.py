@@ -20,7 +20,7 @@ LABEL = "crossing the gridlines"
 
 
 def make(images_dir):
-    fig = figure(20, 9, font_size=9)
+    fig = figure(17, 7.7, font_size=9)
     axes = fig.subplots(2, 1)
 
     # A gentle arch crossing a set of horizontal lines, so the casing has

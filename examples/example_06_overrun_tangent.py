@@ -16,7 +16,7 @@ from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, save
 
 
 def make(images_dir):
-    fig = figure(15, 7, font_size=10)
+    fig = figure(17, 7.9, font_size=10)
     ax = fig.subplots()
     bare(ax)
 
@@ -39,7 +39,8 @@ def make(images_dir):
                 pos=0.55, anchor="start", offset=6.0,
                 color=LABEL_COLOR, fontsize=12)
 
-    caption(ax, 'pos=0.55, anchor="start"  (curve solid, tangent dashed)')
+    caption(ax, 'curved_text(ax, x, y, "...", pos=0.55, anchor="start", '
+                'offset=6.0)')
 
     path = os.path.join(images_dir, "06_overrun_tangent.png")
     return save(fig, path)

@@ -58,7 +58,8 @@ plt.show()
 
 ### Placement
 
-Three independent parameters control where the label sits:
+Three independent parameters control where along the curve the label sits;
+`valign`, below, sets which line of the text rides it:
 
 - `pos` sets where the label is anchored along the curve, as a fraction of the
   curve's length. `0.0` is the start of the curve, `1.0` is its end.
@@ -68,8 +69,8 @@ Three independent parameters control where the label sits:
   shift is perpendicular to the curve. A positive value sits above a
   left-to-right curve.
 
-The figure below sweeps `pos` from the first point to the last. The green dot
-marks the anchor point in each panel.
+The figure below sweeps `pos` from the first point to the last. The ring marks
+the anchor point in each panel.
 
 ![A label at five positions along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/03_pos_sweep.png)
 
@@ -162,7 +163,8 @@ symbols sit level with the surrounding letters and a superscript lifts only the
 exponent, not the body -- the alignment is built in, not tuned:
 
 ```python
-curved_text(ax, x, y, r"mass $m$ and speed $c$ give $E = mc^2$")
+curved_text(ax, x, y, r"mass $m$ and speed $c$ give $E = mc^2$",
+            valign="baseline")
 ```
 
 ![Plain words and math runs on one shared baseline along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/15_mixed_alignment.png)
@@ -270,7 +272,7 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$",
 ```
 
 The figure below shows the difference on the same plain-text label: a wide
-stroke per character on top, the single `box` fill on the bottom.
+stroke per character in (a), the single `box` fill in (b).
 
 ![A wide per-character stroke leaves gaps; a box fill covers cleanly](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
 
@@ -291,9 +293,9 @@ It also has a deadband: a gentle bend or a straight run stays below it and is
 left unchanged, so only genuinely crowded text is spaced out. The default is
 `crowding="none"`, which leaves the spacing as ordinary text sets it.
 
-The figure below shows both regimes. Top row: a sharp bend, where the correction
-visibly separates the letters. Bottom row: a gentle bend of the same letters,
-left untouched because it falls below the deadband.
+The figure below shows both regimes. In (a) and (b), a sharp bend, where the
+correction visibly separates the letters. In (c) and (d), a gentle bend of the
+same letters, left untouched because it falls below the deadband.
 
 ![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
 

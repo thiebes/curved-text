@@ -1,8 +1,8 @@
 """Tier 1: direct labeling replaces the legend.
 
-The case for the tool, in one figure. Left: three cooling curves with a
+The case for the tool, in one figure. (a): three cooling curves with a
 conventional legend -- the eye must leave the data, find the key, decode a
-colour, and come back. Right: the same curves labeled along their own paths.
+colour, and come back. (b): the same curves labeled along their own paths.
 No legend, no colour key, no round trip.
 """
 from __future__ import annotations
@@ -12,22 +12,22 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, data_axes, save
+from _style import PALETTE, TEXT, data_axes, figure, panel_letters, save
 
 SERIES = [
-    (1.5, PALETTE["blue"], 0.30),
-    (3.0, PALETTE["gold"], 0.42),
-    (6.0, PALETTE["green"], 0.58),
+    (1.5, "blue", 0.38),
+    (3.0, "gold", 0.42),
+    (6.0, "green", 0.58),
 ]
 
 
 def _curves(ax):
     t = np.linspace(0, 10, 200)
     out = []
-    for tau, color, pos in SERIES:
+    for tau, hue, pos in SERIES:
         temp = 100.0 * np.exp(-t / tau)
-        ax.plot(t, temp, color=color, linewidth=2)
-        out.append((t, temp, tau, color, pos))
+        ax.plot(t, temp, color=PALETTE[hue], linewidth=2)
+        out.append((t, temp, tau, hue, pos))
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 105)
     ax.set_xlabel("time (s)")
@@ -41,18 +41,19 @@ def make(images_dir):
 
     curves = _curves(ax_legend)
     data_axes(ax_legend)
-    for _, _, tau, color, _ in curves:
-        ax_legend.plot([], [], color=color, linewidth=2,
+    for _, _, tau, hue, _ in curves:
+        ax_legend.plot([], [], color=PALETTE[hue], linewidth=2,
                        label=f"τ = {tau:g} s")
     ax_legend.legend(frameon=False, handlelength=1.2)
 
     curves = _curves(ax_direct)
     data_axes(ax_direct)
-    for t, temp, tau, color, pos in curves:
+    for t, temp, tau, hue, pos in curves:
         curved_text(ax_direct, t, temp, f"τ = {tau:g} s",
-                    pos=pos, anchor="center", offset=7.0,
-                    color=color, fontsize=9)
+                    pos=pos, anchor="center", offset=8.0,
+                    color=TEXT[hue], fontsize=9)
 
+    panel_letters([ax_legend, ax_direct])
     path = os.path.join(images_dir, "01_direct_labeling.png")
     return save(fig, path)
 

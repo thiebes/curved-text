@@ -1,8 +1,8 @@
 """Tier 2: the ``anchor`` control -- which part of the label lands at ``pos``.
 
 Same curve, same ``pos=0.5``; only ``anchor`` varies across start / center /
-end. The green dot is fixed at ``pos`` in every panel; watch which part of
-the word -- its start, middle, or end -- sits on the dot.
+end. The ring is fixed at ``pos`` in every panel; watch which part of the
+word -- its start, middle, or end -- sits on the ring.
 """
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import SPANISH, figure, bare, caption, anchor_xy, save
+from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare,
+                    caption, figure, panel_letters, save)
 
 ANCHORS = ["start", "center", "end"]
 POS = 0.5
@@ -26,18 +27,18 @@ def make(images_dir):
 
     for ax, anchor in zip(axes, ANCHORS):
         bare(ax)
-        ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
+        ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
         ax.set_xlim(-0.05, 1.05)
         ax.set_ylim(-0.1, 0.45)
         curved_text(ax, x, y, "anchored", pos=POS, anchor=anchor,
-                    offset=7.0, color=SPANISH["flag_red"], fontsize=11)
+                    offset=7.0, color=LABEL_COLOR, fontsize=11)
         caption(ax, f'anchor="{anchor}"')
 
     fig.canvas.draw()
     for ax in axes:
         ax_x, ax_y = anchor_xy(ax, x, y, POS)
-        ax.plot([ax_x], [ax_y], "o", color=SPANISH["flag_yellow"], markersize=6,
-                zorder=5)
+        anchor_mark(ax, ax_x, ax_y)
+    panel_letters(axes)
 
     path = os.path.join(images_dir, "04_anchor_triptych.png")
     return save(fig, path)

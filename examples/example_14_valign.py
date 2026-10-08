@@ -19,7 +19,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import SPANISH, figure, bare, save
+from _style import (CURVE_COLOR, LABEL_COLOR, bare, caption, figure,
+                    panel_letters, save)
 
 WORD = "Amplitude"
 MODES = ["center", "baseline", "ascender", "descender"]
@@ -43,12 +44,13 @@ def make(images_dir):
         ax.set_aspect("equal")
         # The guide line, so the reader sees where each alignment sits relative
         # to the curve.
-        ax.plot(x, y, color=SPANISH["indigo"], linewidth=1.5)
+        ax.plot(x, y, color=CURVE_COLOR, linewidth=1.5)
         ax.set_xlim(-0.62, 0.62)
         ax.set_ylim(-0.18, 0.30)
         curved_text(ax, x, y, WORD, pos=0.5, anchor="center", valign=mode,
-                    color=SPANISH["flag_red"], fontsize=FONTSIZE)
-        ax.set_title(f'valign="{mode}"')
+                    color=LABEL_COLOR, fontsize=FONTSIZE)
+        caption(ax, f'valign="{mode}"')
+    panel_letters(axes)
 
     path = os.path.join(images_dir, "14_valign.png")
     return save(fig, path)

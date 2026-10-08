@@ -1,6 +1,7 @@
 """Shared palette and helpers for the curved-text example gallery.
 
-Follows the repo's plot conventions: colorblind-safe palette, white opaque
+Follows the repo's plot conventions: the DICE palette with contrast-checked
+text shades, white opaque
 background, constrained layout, sizes in centimetres, explicit dpi. Most panels
 here are diagrams whose subject is the text-on-curve geometry, so they hide
 their axes -- the curve is the data, and bare quantitative ticks would be
@@ -9,20 +10,29 @@ with units.
 """
 from __future__ import annotations
 
+import matplotlib.patheffects as patheffects
 import numpy as np
 import matplotlib.pyplot as plt
 
-# DICE palette set: blue / gold / green -- the default for most panels.
+# DICE palette set: blue / gold / green, for lines and fills in every figure.
 PALETTE = {"blue": "#003f7f", "gold": "#f7941e", "green": "#0cce6b"}
-# Spanish-flag palette set: a more saturated, categorical identity used on a few
-# panels for variety. Indigo is the darkest colour and anchors the pairings.
-SPANISH = {
-    "flag_red": "#c60b1e",
-    "flag_yellow": "#ffc400",
-    "fern_green": "#4a7729",
-    "blue": "#0077c8",
-    "indigo": "#540d6e",
+# The same hues dark enough for text, at least 4.5:1 against white by the WCAG 2
+# contrast formula (lines and marks need 3:1). DICE gold and green are 2.28:1
+# and 2.09:1, too light to read as text; DICE blue is 10.4:1 already.
+TEXT = {
+    "blue": "#003f7f",   # 10.41:1
+    "gold": "#b06306",   # 4.53:1
+    "green": "#088847",  # 4.54:1
 }
+# Colour roles in the diagrams, where the curve and the label are the subject:
+# the curve in DICE blue, the label in dark gold, and a reference mark (such as
+# the anchor point) as a dark green ring drawn above the label, so it never
+# hides behind the text. Data figures colour each series in its DICE hue and
+# its label in the matching text shade. One exception: 08 shows ``alpha``, which
+# lightens its label, and only dark blue stays above 4.5:1 at alpha 0.85.
+CURVE_COLOR = PALETTE["blue"]
+LABEL_COLOR = TEXT["gold"]
+MARK_COLOR = TEXT["green"]
 INCH = 1 / 2.54
 DPI = 150
 
@@ -38,9 +48,9 @@ def figure(width_cm, height_cm, font_size=9):
 
 
 def data_axes(ax, font_size=9, tick_len=4, tick_w=1):
-    """Inward ticks on all four sides, so the frame reads as a box."""
+    """Inward ticks on the bottom and left; the frame still closes the box."""
     ax.tick_params(axis="both", which="both", direction="in",
-                   top=True, right=True, labelsize=font_size,
+                   top=False, right=False, labelsize=font_size,
                    length=tick_len, width=tick_w)
     return ax
 
@@ -52,9 +62,42 @@ def bare(ax):
 
 
 def caption(ax, text, font_size=8):
-    """A monospace caption under a panel -- usually the call that drew it."""
-    ax.text(0.5, -0.06, text, transform=ax.transAxes, ha="center", va="top",
-            fontsize=font_size, family="monospace", color="0.30")
+    """A monospace caption under a panel, usually the call that drew it.
+
+    Dollar signs are escaped, so the caption shows the call as written, not a
+    mathtext rendering of it, and the lines of a long call keep their
+    indentation, aligned left within the centred block.
+    """
+    ax.text(0.5, -0.06, text.replace("$", r"\$"), transform=ax.transAxes,
+            ha="center", va="top", multialignment="left", fontsize=font_size,
+            family="monospace", color="0.30")
+
+
+def panel_letters(axes, font_size=9):
+    """Letter the panels of a multi-panel figure (a), (b), ... in bold.
+
+    Each letter sits just above its panel's upper left corner, in reading
+    order, clear of the panel's tick labels and data.
+    """
+    for index, ax in enumerate(np.ravel(axes)):
+        ax.annotate(f"({chr(ord('a') + index)})", xy=(0.0, 1.0),
+                    xycoords="axes fraction", xytext=(0.0, 3.0),
+                    textcoords="offset points", ha="left", va="bottom",
+                    fontsize=font_size, fontweight="bold")
+
+
+def anchor_mark(ax, x, y):
+    """A ring at data point ``(x, y)`` in the reference-mark colour.
+
+    It is drawn above the label, so the text never covers it, with a thin
+    white halo, so it stays apart from a glyph it crosses even where its hue
+    and the label's look alike, as dark green and dark gold do to a reader
+    with red-green colour blindness (both have the same luminance).
+    """
+    ax.plot([x], [y], "o", markersize=7, markerfacecolor="none",
+            markeredgecolor=MARK_COLOR, markeredgewidth=1.5, zorder=10,
+            path_effects=[patheffects.withStroke(linewidth=3.5,
+                                                 foreground="white")])
 
 
 def anchor_xy(ax, x, y, pos):

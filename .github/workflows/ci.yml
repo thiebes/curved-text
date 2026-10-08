@@ -10,9 +10,10 @@ env:
   # TeX packages for the usetex tests, defined once for every job that installs
   # LaTeX so the jobs cannot drift apart. matplotlib's usetex preamble loads
   # type1cm (texlive-latex-extra) and type1ec (cm-super). Outlines are read from
-  # the DVI file, so dvipng and dvips are not needed. lmodern and
-  # texlive-fonts-recommended (Times and Helvetica) let the valign tests run
-  # their preamble-font cases.
+  # the DVI file, so the library needs neither dvipng nor dvips; the one job
+  # that runs the usetex gallery figure installs dvipng for its tick labels.
+  # lmodern and texlive-fonts-recommended (Times and Helvetica) let the valign
+  # tests run their preamble-font cases.
   TEX_PACKAGES: texlive-latex-extra cm-super lmodern texlive-fonts-recommended
   # The uv release every setup-uv step installs. Pinned so the action checks it
   # against its bundled checksums instead of fetching whatever is latest.
@@ -82,12 +83,22 @@ jobs:
         run: uv pip install --system -e ".[test]"
       - name: Install LaTeX
         # A usetex break on the newest stable matplotlib fails the build here;
-        # the prerelease job only warns.
+        # the prerelease job only warns. dvipng lets the usetex gallery figure
+        # draw its tick labels, so the gallery smoke test runs it.
         if: matrix.usetex
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends $TEX_PACKAGES
+          sudo apt-get install -y --no-install-recommends $TEX_PACKAGES dvipng
+      - name: Install the gallery's optional dependencies
+        # seaborn and pandas, so the gallery smoke test runs every figure here,
+        # the seaborn one included, instead of skipping it.
+        if: matrix.usetex
+        run: uv pip install --system -e ".[test,examples]"
       - name: Run tests
+        # Where every optional dependency of the gallery is installed, a gallery
+        # figure that skips fails the test instead.
+        env:
+          CURVED_TEXT_GALLERY_COMPLETE: ${{ matrix.usetex && '1' || '' }}
         run: pytest -q
 
   # The matplotlib floor declared in pyproject.toml. Mathtext support relies on

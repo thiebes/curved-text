@@ -206,7 +206,7 @@ curved_text(ax, x, y, "winds", pos=0.5, anchor="center", offset=-13.0,
 ### Why a label reads upside down: direction of travel
 
 A label reads in the order of its curve's points as they appear on screen; the
-arrow on each curve marks that direction from the first point. On the same
+arrowhead at the end of each curve marks that direction. On the same
 sine, (a) the points run from left to right and the label is upright; (b) the
 arrays are reversed, so the curve runs from right to left and the label reads
 upside down; (c) an inverted x axis puts the points right to left on screen

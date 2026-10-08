@@ -161,27 +161,32 @@ are identical. Only the tight bend, (a) and (b), is changed.
 
 [example_13_crowding.py](example_13_crowding.py)
 
-### Text reads along the points
+### Why a label reads upside down: direction of travel
 
-A label reads in the order of its curve's points as they appear on screen. On
-the same sine, (a) the points run from left to right and the label is upright;
-(b) the arrays are reversed, so the curve runs from right to left and the label
-reads upside down; (c) an inverted x axis puts the points right to left on
-screen too. Reversing the arrays of a curve that runs from right to left on
-screen turns its label upright.
+A label reads in the order of its curve's points as they appear on screen; the
+arrow on each curve marks that direction from the first point. On the same
+sine, (a) the points run from left to right and the label is upright; (b) the
+arrays are reversed, so the curve runs from right to left and the label reads
+upside down; (c) an inverted x axis puts the points right to left on screen
+too, with the same result. `pos` counts from the first point and `offset` turns
+with the direction, so the label also moves along the curve and to its other
+side. Reversing the arrays of a curve that runs from right to left on screen
+turns its label upright. An option to keep labels upright automatically is
+planned ([#30](https://github.com/thiebes/curved-text/issues/30)).
 
-![The same label upright, reversed, and on an inverted axis](images/17_direction_of_travel.png)
+![The same label upright, upside down on reversed arrays, and upside down on an inverted x axis](images/17_direction_of_travel.png)
 
 [example_17_direction_of_travel.py](example_17_direction_of_travel.py)
 
 ### Gaps in the curve
 
-A curve breaks where `plot` breaks it: at NaN points (a), at masked points (b),
-and at values a log axis has no place for (c). `pos` is measured along the
-drawn length, and the label rides the stretch that holds its anchor. To run a
-label across gaps, pass a smooth curve that follows the data instead.
+A curve has gaps where it has no value to draw: at NaN points (a), at masked
+points (b), and at zeros on a log axis (c), which has no place for them. `pos`
+is measured along the drawn length, and the label rides the stretch that holds
+its anchor. To run a label across gaps, pass a smooth curve that follows the
+data instead.
 
-![A label on curves with NaN, masked, and log-axis gaps](images/26_gaps.png)
+![A label riding one stretch of curves with NaN, masked, and log-axis gaps](images/26_gaps.png)
 
 [example_26_gaps.py](example_26_gaps.py)
 
@@ -201,7 +206,8 @@ per-character glyph and each mathtext run.
 `box=True` draws a casing that follows the curve at the label's height, under
 the glyphs, so the label stays legible where it crosses the lines it labels. It
 is a single fill, so it covers plain text and mathtext alike. (For a lighter
-glyph-hugging casing, pass a white `withStroke` through `path_effects` instead.)
+casing that hugs each glyph, a halo, pass a white `withStroke` through
+`path_effects` instead.)
 
 ![A label cleared from the lines it crosses by a white casing](images/11_box.png)
 
@@ -213,7 +219,8 @@ The same plain-text label over the same lines, two ways. A wide `withStroke` is
 applied per character, so neighbouring letters blur together and the lines show
 through the gaps. `box` is a single fill under the whole label, so it covers
 plain text cleanly. This is why `box` is the way to get solid coverage under
-plain text.
+plain text. A thin halo still has its place, as [the next figure](#a-halo-or-a-box)
+shows.
 
 ![A wide per-character stroke leaves gaps; a box fill covers cleanly](images/12_box_vs_stroke.png)
 
@@ -221,21 +228,26 @@ plain text.
 
 ### A halo or a box
 
-Over a dense grid of thin lines, (a) a thin white halo around each glyph hides
-the lines only where they touch the letters, so the grid stays readable around
-the label, while (b) a casing, here in its colour-string form, gives one solid
-band under the whole label. Use the halo for thin lines and dense figures, and
-the box where the lines behind the label are heavy.
+The same label over a family of thin lines that cross it, cleared two ways.
+(a) A halo, a thin white `withStroke` around each glyph, hides the lines only
+where they touch the letters, so they stay readable on either side of each
+letter. (b) A casing, here in its colour-string form, white to match the page,
+gives one band under the whole label, which clears heavy lines completely but
+erases every line inside the band. Use the halo for thin lines and dense
+figures, and the box where the lines behind the label are heavy. A wide halo is
+another matter: [it blurs the letters together](#box-versus-a-path-effects-stroke).
 
-![A label cleared by a thin halo and by a box over a dense grid](images/19_halo_or_box.png)
+![A label cleared by a thin halo and by a box over a family of thin lines](images/19_halo_or_box.png)
 
 [example_19_halo_or_box.py](example_19_halo_or_box.py)
 
 ### Several labels on one curve
 
 One call per label, each at its own `pos`, repeats a curve's name along it, as
-inline contour labels do. Each label here clears the line with a casing in its
-dict form, which sets the band's colour and its height.
+inline contour labels do. Each label here clears the faint reference lines
+behind it with a casing in its dict form: `color` sets the band's colour, white
+to match the page, and `pad` its height relative to the tallest glyph, which
+shows where the band cuts the reference lines.
 
 ![A long curve labelled three times along its length](images/18_repeated_labels.png)
 

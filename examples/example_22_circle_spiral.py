@@ -3,11 +3,10 @@
 (a) A circle labelled on both halves, each traced from nine o'clock to three
 o'clock: the top half clockwise and the bottom half counterclockwise, so both
 labels run left to right on screen and read upright, outside the circle. (b) An
-Archimedean spiral, r = aθ, traced clockwise from near its centre outward:
-its turns keep an even spacing of 2πa, and its curvature grows toward the
-centre, so the label opens its letterspacing there with
-``crowding="curvature"``. Both labels sit outside their curves, to the left
-of a clockwise direction of travel.
+Archimedean spiral, r = aθ, traced clockwise from near its centre outward,
+with a sentence on the inside of its turns, which keep an even spacing of
+2πa. Along the bottom of each turn the text runs right to left on screen and
+reads upside down, as figure 17 explains.
 """
 from __future__ import annotations
 
@@ -25,13 +24,13 @@ SPIRAL_TEXT = (r"an Archimedean spiral, $r = a\theta$, keeps the same distance "
                r"between its turns, so a long sentence can wind out from its "
                r"centre at an even spacing")
 # The spiral's growth per radian, a, so its turns are 2πa apart; and the
-# angles it spans: from just over one turn, where the curvature is high but
-# finite, to where the sentence ends.
+# angles it spans: from just over half a turn, so the first words have room
+# on the inside, to where the sentence ends.
 SPIRAL_A = 1.0
-SPIRAL_THETA = (2.2 * np.pi, 5.4 * np.pi)
-# The axes span -SPIRAL_LIMIT to SPIRAL_LIMIT, fixed apart from the spiral's
-# end: the end is set where the sentence ends at this scale.
-SPIRAL_LIMIT = 20.5
+SPIRAL_THETA = (1.2 * np.pi, 5.05 * np.pi)
+# Half the width of the spiral's axes, in data units, around the spiral's
+# centre: it sets the scale, and so where the sentence ends.
+SPIRAL_HALF_SPAN = 18.0
 
 
 def make(images_dir):
@@ -61,11 +60,16 @@ def make(images_dir):
     r = SPIRAL_A * theta
     x, y = r * np.cos(theta), -r * np.sin(theta)
     ax_spiral.plot(x, y, color=CURVE_COLOR, linewidth=1.0)
+    # A negative offset puts the text to the right of a clockwise travel:
+    # inside each turn.
     curved_text(ax_spiral, x, y, SPIRAL_TEXT, pos=0.0, anchor="start",
-                offset=5.0, crowding="curvature", color=LABEL_COLOR,
-                fontsize=9)
-    ax_spiral.set_xlim(-SPIRAL_LIMIT, SPIRAL_LIMIT)
-    ax_spiral.set_ylim(-SPIRAL_LIMIT, SPIRAL_LIMIT)
+                offset=-5.0, color=LABEL_COLOR, fontsize=9)
+    # Centred on the spiral's extent, not on its origin, which sits off
+    # centre in the drawn shape.
+    centre_x = (x.min() + x.max()) / 2
+    centre_y = (y.min() + y.max()) / 2
+    ax_spiral.set_xlim(centre_x - SPIRAL_HALF_SPAN, centre_x + SPIRAL_HALF_SPAN)
+    ax_spiral.set_ylim(centre_y - SPIRAL_HALF_SPAN, centre_y + SPIRAL_HALF_SPAN)
 
     for ax in (ax_circle, ax_spiral):
         bare(ax)

@@ -1,11 +1,14 @@
-"""The direction of travel decides which way up a label reads.
+"""Why a label reads upside down: the direction of travel.
 
-Text reads in the order of the curve's points as they appear on screen. The
-same sine, labelled three ways: (a) the points from left to right, upright;
-(b) the arrays reversed, so the curve runs from right to left and the label
-reads upside down; (c) the points from left to right on an inverted x axis,
-which also puts them right to left on screen. Reversing the arrays of a curve
-that runs from right to left on screen turns its label upright.
+Text reads in the order of the curve's points as they appear on screen, and
+an arrow on each curve marks that direction from its first point. The same
+sine, labelled three ways: (a) the points from left to right, upright; (b)
+the arrays reversed, so the curve runs from right to left and the label reads
+upside down; (c) the points from left to right on an inverted x axis, which
+also puts them right to left on screen. ``pos`` counts from the first point
+and ``offset`` turns with the direction too, so the label also moves along
+and across the curve. Reversing the arrays of a curve that runs from right to
+left on screen turns its label upright.
 """
 from __future__ import annotations
 
@@ -14,12 +17,21 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import (CURVE_COLOR, LABEL_COLOR, bare, caption, figure,
-                    panel_letters, save)
+from _style import (CURVE_COLOR, LABEL_COLOR, MARK_COLOR, bare, caption,
+                    figure, panel_letters, save)
+
+
+def _direction_arrow(ax, x, y):
+    """An arrow along the curve from its first point, in the direction the
+    points run."""
+    ax.annotate("", xy=(x[60], y[60]), xytext=(x[0], y[0]),
+                arrowprops={"arrowstyle": "-|>", "color": MARK_COLOR,
+                            "linewidth": 1.5, "shrinkA": 0, "shrinkB": 0},
+                zorder=4)
 
 
 def make(images_dir):
-    fig = figure(17, 5, font_size=8)
+    fig = figure(17, 5.5, font_size=8)
     axes = fig.subplots(1, 3)
 
     x = np.linspace(0, 2 * np.pi, 400)
@@ -27,19 +39,18 @@ def make(images_dir):
     panels = [
         (x, y, False, "curved_text(ax, x, y, ...)"),
         (x[::-1], y[::-1], False, "curved_text(ax, x[::-1], y[::-1], ...)"),
-        (x, y, True, "ax.invert_xaxis()"),
+        (x, y, True, "ax.invert_xaxis()\ncurved_text(ax, x, y, ...)"),
     ]
     for ax, (cx, cy, invert, call) in zip(axes, panels):
         bare(ax)
         ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
-        # Room on either side, so a label near an end is not clipped.
-        ax.set_xlim(-1.2, 2 * np.pi + 1.2)
-        ax.set_ylim(-1.5, 1.5)
+        ax.set_xlim(-0.3, 2 * np.pi + 0.3)
+        ax.set_ylim(-1.6, 1.6)
         if invert:
             ax.invert_xaxis()
-        curved_text(ax, cx, cy, "reads along the points", pos=0.25,
-                    anchor="center", offset=6.0, color=LABEL_COLOR,
-                    fontsize=10)
+        _direction_arrow(ax, cx, cy)
+        curved_text(ax, cx, cy, "reads this way", pos=0.3, anchor="center",
+                    offset=9.0, color=LABEL_COLOR, fontsize=10)
         caption(ax, call)
     panel_letters(axes)
 

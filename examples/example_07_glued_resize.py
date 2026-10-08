@@ -13,28 +13,30 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, caption, save
+from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, panel_letters, save
 
 
 def _panel(ax, label):
     bare(ax)
     x = np.linspace(0, 2 * np.pi, 400)
     y = np.sin(x)
-    ax.plot(x, y, color=PALETTE["blue"], linewidth=2)
+    ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
     ax.set_xlim(0, 2 * np.pi)
     ax.set_ylim(-1.5, 1.5)
     curved_text(ax, x, y, "same call, glued",
                 pos=0.5, anchor="center", offset=8.0,
-                color=PALETTE["gold"], fontsize=12)
+                color=LABEL_COLOR, fontsize=12)
     caption(ax, label)
 
 
 def make(images_dir):
     fig = figure(18, 9, font_size=9)
     # A wide panel and a narrow one, same data and same label call.
-    axes = fig.subplots(1, 2, width_ratios=[2.2, 1.0])
+    # gridspec_kw, not width_ratios, which matplotlib 3.5 does not take.
+    axes = fig.subplots(1, 2, gridspec_kw={"width_ratios": [2.2, 1.0]})
     _panel(axes[0], "wide aspect")
     _panel(axes[1], "narrow aspect")
+    panel_letters(axes)
 
     path = os.path.join(images_dir, "07_glued_resize.png")
     return save(fig, path)

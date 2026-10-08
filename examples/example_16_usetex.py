@@ -18,12 +18,12 @@ import matplotlib as mpl
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, data_axes, save
+from _style import PALETTE, TEXT, figure, data_axes, save
 
 SERIES = [
-    (1.5, PALETTE["blue"], 0.30),
-    (3.0, PALETTE["gold"], 0.42),
-    (6.0, PALETTE["green"], 0.58),
+    (1.5, "blue", 0.30),
+    (3.0, "gold", 0.42),
+    (6.0, "green", 0.58),
 ]
 TOOLS = ("latex", "dvipng")
 
@@ -38,15 +38,15 @@ def make(images_dir):
         fig = figure(12, 8, font_size=10)
         ax = data_axes(fig.subplots(), font_size=10)
         t = np.linspace(0, 10, 200)
-        for tau, color, pos in SERIES:
+        for tau, hue, pos in SERIES:
             temp = 100.0 * np.exp(-t / tau)
-            ax.plot(t, temp, color=color, linewidth=2)
+            ax.plot(t, temp, color=PALETTE[hue], linewidth=2)
             # A math run for the symbol and plain text for the rest, so the
             # label reads like example 01's and shows both paths LaTeX
             # typesets.
             curved_text(ax, t, temp, rf"$\tau$ = {tau:g} s",
-                        pos=pos, anchor="center", offset=7.0,
-                        color=color, fontsize=10)
+                        pos=pos, anchor="center", offset=9.0,
+                        color=TEXT[hue], fontsize=10)
         ax.set_xlim(0, 10)
         ax.set_ylim(0, 105)
         ax.set_xlabel(r"time $t\ (\mathrm{s})$")

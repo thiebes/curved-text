@@ -18,7 +18,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import SPANISH, figure, bare, save
+from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, panel_letters, save
 
 WORD = "winds"
 MODES = ["none", "curvature"]
@@ -56,11 +56,11 @@ def make(images_dir):
         for ax, mode in zip(row, MODES):
             bare(ax)
             ax.set_aspect("equal")
-            ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
+            ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
             ax.set_xlim(*xlim)
             ax.set_ylim(*ylim)
             curved_text(ax, x, y, WORD, pos=0.5, anchor="center", offset=OFFSET,
-                        crowding=mode, color=SPANISH["flag_red"],
+                        crowding=mode, color=LABEL_COLOR,
                         fontsize=FONTSIZE)
         row[0].set_ylabel(row_label, labelpad=10)
         row[0].set_axis_on()
@@ -69,8 +69,10 @@ def make(images_dir):
         for spine in row[0].spines.values():
             spine.set_visible(False)
 
-    for ax, mode in zip(axes[0], MODES):
-        ax.set_title(f'crowding="{mode}"')
+    for row in axes:
+        for ax, mode in zip(row, MODES):
+            caption(ax, f'crowding="{mode}"')
+    panel_letters(axes)
 
     path = os.path.join(images_dir, "13_crowding.png")
     return save(fig, path)

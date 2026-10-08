@@ -1,6 +1,6 @@
 """Tier 2: the ``pos`` control, as a small-multiple sweep.
 
-Same curve, same word, ``anchor="center"``; only ``pos`` varies. A dot marks
+Same curve, same word, ``anchor="center"``; only ``pos`` varies. A ring marks
 the anchor point so the reader sees the label slide from the first point
 (0.0) to the last (1.0) along arc length.
 """
@@ -11,7 +11,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import SPANISH, figure, bare, caption, anchor_xy, save
+from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare, caption,
+                    figure, panel_letters, save)
 
 POSITIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 
@@ -25,21 +26,21 @@ def make(images_dir):
 
     for ax, pos in zip(axes, POSITIONS):
         bare(ax)
-        ax.plot(x, y, color=SPANISH["indigo"], linewidth=2)
+        ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
         # Wide enough that a centred label at pos 0.0 / 1.0 shows in full
         # (it overruns the endpoint along the tangent rather than clipping).
         ax.set_xlim(-0.35, 1.35)
         ax.set_ylim(-0.15, 0.55)
         curved_text(ax, x, y, "label", pos=pos, anchor="center",
-                    offset=7.0, color=SPANISH["flag_red"], fontsize=11)
+                    offset=7.0, color=LABEL_COLOR, fontsize=11)
         caption(ax, f"pos={pos}")
 
     # Mark each anchor point after a draw, when transData is valid.
     fig.canvas.draw()
     for ax, pos in zip(axes, POSITIONS):
         ax_x, ax_y = anchor_xy(ax, x, y, pos)
-        ax.plot([ax_x], [ax_y], "o", color=SPANISH["flag_yellow"], markersize=5,
-                zorder=5)
+        anchor_mark(ax, ax_x, ax_y)
+    panel_letters(axes)
 
     path = os.path.join(images_dir, "03_pos_sweep.png")
     return save(fig, path)

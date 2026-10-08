@@ -13,7 +13,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import SPANISH, figure, bare, caption, save
+from _style import CURVE_COLOR, LABEL_COLOR, figure, bare, caption, save
 
 
 def make(images_dir):
@@ -23,16 +23,17 @@ def make(images_dir):
 
     x = np.linspace(0, 10, 400)
     y = 1.6 * np.sin(np.pi * x / 10.0)
-    ax.plot(x, y, color=SPANISH["fern_green"], linewidth=2)
+    ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
     ax.set_xlim(-0.3, 10.3)
     ax.set_ylim(-0.4, 2.6)
 
     curved_text(ax, x, y, r"$E = \sqrt{(pc)^2 + (mc^2)^2}$",
                 pos=0.5, anchor="center", offset=14.0,
-                color=SPANISH["indigo"], fontsize=16)
+                color=LABEL_COLOR, fontsize=16)
 
-    caption(ax, r'curved_text(ax, x, y, r"$E = \sqrt{(pc)^2 + (mc^2)^2}$", '
-                r'pos=0.5, anchor="center", offset=14.0)')
+    caption(ax, r'curved_text(ax, x, y, r"$E = \sqrt{(pc)^2 + (mc^2)^2}$",'
+                "\n"
+                r'            pos=0.5, anchor="center", offset=14.0)')
 
     path = os.path.join(images_dir, "10_mathtext.png")
     return save(fig, path)

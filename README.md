@@ -68,8 +68,8 @@ Three independent parameters control where the label sits:
   shift is perpendicular to the curve. A positive value sits above a
   left-to-right curve.
 
-The figure below sweeps `pos` from the first point to the last. The green dot
-marks the anchor point in each panel.
+The figure below sweeps `pos` from the first point to the last. The ring marks
+the anchor point in each panel.
 
 ![A label at five positions along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/03_pos_sweep.png)
 

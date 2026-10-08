@@ -13,7 +13,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, figure, bare, caption, save
+from _style import LABEL_COLOR, bare, caption, figure, panel_letters, save
 
 LABEL = r"signal $s(t) = A\,e^{-t/\tau}$"
 
@@ -33,9 +33,10 @@ def make(images_dir):
         ax.set_xlim(-0.2, 10.2)
         ax.set_ylim(-0.9, 2.4)
         curved_text(ax, x, y, LABEL, pos=0.5, anchor="center", offset=0.0,
-                    color=PALETTE["gold"], fontsize=16, box=box)
+                    color=LABEL_COLOR, fontsize=16, box=box)
         caption(ax, f"box={box}")
 
+    panel_letters(axes)
     path = os.path.join(images_dir, "11_box.png")
     return save(fig, path)
 

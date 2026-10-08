@@ -57,6 +57,14 @@ stay connected and follow the curve. Plain and math runs mix in one string.
 
 [example_10_mathtext.py](example_10_mathtext.py)
 
+Plain words and math runs in one label share a single baseline, so the math
+symbols sit level with the surrounding letters and a superscript lifts only the
+exponent, not the body.
+
+![Plain words and math runs on one shared baseline along a curve](images/15_mixed_alignment.png)
+
+[example_15_mixed_alignment.py](example_15_mixed_alignment.py)
+
 ### LaTeX typesets the labels under usetex
 
 With matplotlib's `text.usetex` rcParam on and the serif font family, LaTeX
@@ -69,15 +77,15 @@ any matplotlib usetex figure does, and skips the figure without them.
 
 [example_16_usetex.py](example_16_usetex.py)
 
-## The three placement controls
+## The placement controls
 
-`pos`, `anchor`, and `offset` are independent. Each small-multiple below varies
-one and holds the others fixed.
+`pos`, `anchor`, `offset`, and `valign` are independent. Each small-multiple
+below varies one and holds the others fixed.
 
 ### `pos` -- where the label is anchored, as a fraction of arc length
 
-The green dot marks the anchor point as `pos` runs from the first point (0.0) to
-the last (1.0).
+The ring marks the anchor point as `pos` runs from the first point (0.0) to the
+last (1.0).
 
 ![A label at five positions along a curve](images/03_pos_sweep.png)
 
@@ -85,8 +93,8 @@ the last (1.0).
 
 ### `anchor` -- which part of the label lands at `pos`
 
-The green dot is fixed at `pos=0.5` in every panel; the word's start, middle, or
-end sits on it.
+The ring is fixed at `pos=0.5` in every panel; the word's start, middle, or end
+sits on it.
 
 ![Start, center, and end anchoring](images/04_anchor_triptych.png)
 
@@ -95,11 +103,24 @@ end sits on it.
 ### `offset` -- a perpendicular shift off the curve
 
 In points, along the chord normal. Positive is to the left of the direction of
-travel -- above a left-to-right curve. The dot marks the on-curve anchor.
+travel -- above a left-to-right curve. The ring marks the on-curve anchor, and
+stays visible over the label at `offset=0`.
 
 ![Negative, zero, and positive offset](images/05_offset_ladder.png)
 
 [example_05_offset_ladder.py](example_05_offset_ladder.py)
+
+### `valign` -- which line of the text rides the curve
+
+By default the text straddles the curve (`valign="center"`). `"baseline"` runs
+the text baseline along the curve, so the body sits above it with descenders
+below, and `"ascender"` and `"descender"` ride the top or bottom of the text.
+The shift is a single font metric applied to the whole label, so it never
+disturbs the spacing or the alignment of plain text with mathtext.
+
+![The same word on a curve under each valign option](images/14_valign.png)
+
+[example_14_valign.py](example_14_valign.py)
 
 ## Edge behaviors
 

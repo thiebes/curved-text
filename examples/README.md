@@ -161,6 +161,30 @@ are identical. Only the tight bend, (a) and (b), is changed.
 
 [example_13_crowding.py](example_13_crowding.py)
 
+### Text reads along the points
+
+A label reads in the order of its curve's points as they appear on screen. On
+the same sine, (a) the points run from left to right and the label is upright;
+(b) the arrays are reversed, so the curve runs from right to left and the label
+reads upside down; (c) an inverted x axis puts the points right to left on
+screen too. Reversing the arrays of a curve that runs from right to left on
+screen turns its label upright.
+
+![The same label upright, reversed, and on an inverted axis](images/17_direction_of_travel.png)
+
+[example_17_direction_of_travel.py](example_17_direction_of_travel.py)
+
+### Gaps in the curve
+
+A curve breaks where `plot` breaks it: at NaN points (a), at masked points (b),
+and at values a log axis has no place for (c). `pos` is measured along the
+drawn length, and the label rides the stretch that holds its anchor. To run a
+label across gaps, pass a smooth curve that follows the data instead.
+
+![A label on curves with NaN, masked, and log-axis gaps](images/26_gaps.png)
+
+[example_26_gaps.py](example_26_gaps.py)
+
 ## Styling and integration
 
 ### Keyword arguments reach every character
@@ -194,6 +218,28 @@ plain text.
 ![A wide per-character stroke leaves gaps; a box fill covers cleanly](images/12_box_vs_stroke.png)
 
 [example_12_box_vs_stroke.py](example_12_box_vs_stroke.py)
+
+### A halo or a box
+
+Over a dense grid of thin lines, (a) a thin white halo around each glyph hides
+the lines only where they touch the letters, so the grid stays readable around
+the label, while (b) a casing, here in its colour-string form, gives one solid
+band under the whole label. Use the halo for thin lines and dense figures, and
+the box where the lines behind the label are heavy.
+
+![A label cleared by a thin halo and by a box over a dense grid](images/19_halo_or_box.png)
+
+[example_19_halo_or_box.py](example_19_halo_or_box.py)
+
+### Several labels on one curve
+
+One call per label, each at its own `pos`, repeats a curve's name along it, as
+inline contour labels do. Each label here clears the line with a casing in its
+dict form, which sets the band's colour and its height.
+
+![A long curve labelled three times along its length](images/18_repeated_labels.png)
+
+[example_18_repeated_labels.py](example_18_repeated_labels.py)
 
 ### Any matplotlib-backed axes (seaborn, pandas)
 

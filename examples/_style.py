@@ -64,6 +64,10 @@ def bare(ax):
 def caption(ax, text, font_size=8):
     """A monospace caption under a panel, usually the call that drew it.
 
+    When every panel of a figure makes the same call, each caption shows only
+    what differs between them, and the figure's README paragraph gives the
+    shared call.
+
     Dollar signs are escaped, so the caption shows the call as written, not a
     mathtext rendering of it, and the lines of a long call keep their
     indentation, aligned left within the centred block.

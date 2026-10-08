@@ -35,7 +35,7 @@ def make(images_dir):
         return None
 
     with mpl.rc_context({"text.usetex": True, "font.family": "serif"}):
-        fig = figure(17, 11.3, font_size=10)
+        fig = figure(17, 8.5, font_size=10)
         ax = data_axes(fig.subplots(), font_size=10)
         t = np.linspace(0, 10, 200)
         for tau, hue, pos in SERIES:

@@ -6,7 +6,8 @@ background, constrained layout, sizes in centimetres, explicit dpi. Most panels
 here are diagrams whose subject is the text-on-curve geometry, so they hide
 their axes -- the curve is the data, and bare quantitative ticks would be
 chartjunk. The data figures (direct labeling and its usetex version) keep axes
-with units.
+with units, and so does the log-axis panel of the gaps figure, whose subject
+is the scale.
 """
 from __future__ import annotations
 

@@ -1123,11 +1123,10 @@ class CurvedText(mtext.Text):
 
     Set ``box`` to draw a casing behind the label -- a band that follows the
     curve at the label's height, drawn under the glyphs -- so the label stays
-    legible where it crosses the lines it labels. For a lighter, glyph-hugging
-    casing instead, a halo, pass a white ``withStroke`` through
-    ``path_effects``; a wide
-    stroke there merges adjacent per-character glyphs, so ``box`` is the way to
-    get solid coverage under plain text.
+    legible where it crosses the lines it labels. For a lighter casing that
+    hugs each glyph (a halo), pass a white ``withStroke`` through
+    ``path_effects``; a wide stroke there merges adjacent per-character
+    glyphs, so ``box`` is the way to get solid coverage under plain text.
 
     Mathtext is supported: each ``$...$`` run in ``text`` is laid out by
     matplotlib's mathtext engine and bent continuously along the curve -- every

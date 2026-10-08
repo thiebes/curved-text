@@ -3,8 +3,8 @@
 Set ``box`` to draw a band that follows the curve at the label's height,
 under the glyphs, so the label stays legible where it crosses the lines it
 labels. The casing is a single fill, so it gives solid coverage behind plain
-and mathtext alike. For a lighter, glyph-hugging casing instead, pass a white
-``withStroke`` through ``path_effects``.
+and mathtext alike. For a lighter casing that hugs each glyph (a halo), pass
+a white ``withStroke`` through ``path_effects``.
 """
 from __future__ import annotations
 

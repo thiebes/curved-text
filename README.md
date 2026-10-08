@@ -90,6 +90,9 @@ or along scattered points, pass `curved_text` a smooth curve that follows
 their overall shape, such as a fit or a running mean, and leave it unplotted:
 the label never draws the curve it follows.
 
+The figure below shows a label riding one stretch of three curves with gaps:
+NaN points in (a), masked points in (b), and zeros on a log axis in (c).
+
 ![A label riding one stretch of curves with NaN, masked, and log-axis gaps](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/26_gaps.png)
 
 A label is clipped to the axes, as lines are, so letters that run past the
@@ -258,7 +261,7 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$", box=True)
 
 ![A label cleared from the lines it crosses by a white casing](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_box.png)
 
-For a lighter casing that hugs each letter instead, a halo, pass a white
+For a lighter casing that hugs each letter instead (a halo), pass a white
 `withStroke` through matplotlib's
 [`path_effects`](https://matplotlib.org/stable/users/explain/artists/patheffects_guide.html).
 Path effects reach every letter and every mathtext run, as they do on any
@@ -276,8 +279,9 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$",
 The figure below shows the difference on the same plain-text label: a wide
 stroke per character in (a), the single `box` fill in (b). A thin halo has its
 own use: over thin lines and dense figures it hides the lines only where they
-touch the letters, as the
-[halo-or-box figure](https://github.com/thiebes/curved-text/tree/main/examples#a-halo-or-a-box) in the gallery shows.
+touch the letters, as the gallery's
+[halo-or-box figure](https://github.com/thiebes/curved-text/tree/main/examples#a-halo-or-a-box)
+shows.
 
 ![A wide per-character stroke leaves gaps; a box fill covers cleanly](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
 

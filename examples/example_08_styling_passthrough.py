@@ -34,7 +34,7 @@ def make(images_dir):
                 fontweight="bold", fontfamily="serif")
 
     caption(ax, 'curved_text(ax, x, y, "styled per character", ...,\n'
-                '            color="#003f7f", fontsize=15, alpha=0.85,\n'
+                f'            color="{TEXT["blue"]}", fontsize=15, alpha=0.85,\n'
                 '            fontweight="bold", fontfamily="serif")')
 
     path = os.path.join(images_dir, "08_styling_passthrough.png")

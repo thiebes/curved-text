@@ -8,7 +8,9 @@ Most scripts need only matplotlib and numpy (already installed with the
 package). The one integration example also needs seaborn and pandas; install
 those with the `examples` extra. The usetex example also needs a LaTeX
 installation with `dvipng`, which pip does not install; without it that script
-skips its figure. Then regenerate everything into [images/](images/):
+skips its figure. The seaborn figure and the stock price figure read the
+`Stocks.csv` sample data, which matplotlib 3.5 does not ship; there both skip.
+Then regenerate everything into [images/](images/):
 
 ```bash
 pip install -e ".[examples]"
@@ -26,9 +28,9 @@ label text in shades that meet the WCAG 4.5:1 contrast minimum, a white
 background, sizes in centimetres, explicit dpi). Most panels hide their
 axes on purpose: the subject is the text-on-curve geometry, so quantitative
 ticks would only get in the way. The figures that plot data -- direct
-labeling, its usetex version, the seaborn figure, and the applications --
-keep their axes and units, and so does the log-axis panel of the gaps figure,
-whose subject is the scale.
+labeling, its usetex version, the seaborn figure, and the applications on real
+data or physical laws -- keep their axes and units, and so does the log-axis
+panel of the gaps figure, whose subject is the scale.
 
 The caption under a panel gives the call that drew it. Where every panel of a
 figure makes the same call, its section gives that call once, and each caption
@@ -361,10 +363,12 @@ curve's length is its steep left flank, which falls far below the axes, so a
 
 (a) Each half of the circle is traced from nine o'clock to three o'clock, the
 top half clockwise and the bottom half counterclockwise, so both labels run
-left to right on screen and read upright, outside the circle. (b) An
-Archimedean spiral, r = aθ, keeps an even spacing between its turns, and its
-curvature grows toward the centre, so the label opens its letterspacing there
-with `crowding="curvature"`.
+left to right on screen and read upright, outside the circle. (b) A sentence
+winds out along the inside of an Archimedean spiral, r = aθ, whose turns keep
+an even spacing. Along the bottom of each turn the text runs right to left on
+screen and reads upside down, as
+[the direction-of-travel figure](#why-a-label-reads-upside-down-direction-of-travel)
+explains.
 
 ![Text over and under a circle, and a sentence winding out along a spiral](images/22_circle_spiral.png)
 
@@ -372,14 +376,18 @@ with `crowding="curvature"`.
 
 ### Stock prices on real dates
 
-Monthly prices from the `Stocks.csv` sample data, relative to January 1990 and
-smoothed with a 12-month rolling mean, on a log axis. The dates go to `plot` and
+Monthly values from the `Stocks.csv` sample data on a log axis: adjusted
+closing prices for three stocks, which include reinvested dividends, and the
+S&P 500 price index, which does not, each relative to January 1990 and
+smoothed with a 12-month rolling mean. The dates go to `plot` and
 `curved_text` as `datetime64` values. Even smoothed, a monthly line wiggles at
 the scale of a letter, which tilts neighbouring letters into each other, so
 each label rides its line smoothed once more, by a Gaussian about a letter
 wide: a path that follows the line without those wiggles, and is never drawn.
-The seaborn figure labels its lines the same way.
+The seaborn figure labels its lines the same way, and
+[#61](https://github.com/thiebes/curved-text/issues/61) tracks handling this in
+the library.
 
-![Four stock prices since 1990 on a log axis, each labelled along its line](images/23_stocks.png)
+![Three stocks and the S&P 500 since 1990 on a log axis, each labelled along its line](images/23_stocks.png)
 
 [example_23_stocks.py](example_23_stocks.py)

@@ -3,7 +3,7 @@
 One call per label, each at its own ``pos``, so a long curve carries its name
 wherever the reader's eye meets it. Each label sits on a slope between a peak
 and a trough, so the decay of the oscillation stays visible, and clears the
-faint reference lines behind it with a casing, given here in its dict form:
+thin reference lines behind it with a casing, given here in its dict form:
 ``pad`` sets the band's height relative to the tallest glyph, and ``color``
 its colour, white to match the page.
 """
@@ -29,10 +29,10 @@ def make(images_dir):
     y = np.exp(-x / 12.0) * np.sin(x)
     ax.set_xlim(-0.3, 6 * np.pi + 0.3)
     ax.set_ylim(-1.2, 1.2)
-    # Faint reference lines, so the casing's band, and its height, show where
+    # Thin reference lines, so the casing's band, and its height, show where
     # it clears them.
     for level in np.arange(-1.0, 1.01, 0.25):
-        ax.axhline(level, color="0.85", linewidth=0.6, zorder=1)
+        ax.axhline(level, color="0.55", linewidth=0.6, zorder=1)
     ax.plot(x, y, color=CURVE_COLOR, linewidth=1.5, zorder=2)
 
     for pos in POSITIONS:

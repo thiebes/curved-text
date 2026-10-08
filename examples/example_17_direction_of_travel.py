@@ -21,13 +21,22 @@ from _style import (CURVE_COLOR, LABEL_COLOR, MARK_COLOR, bare, caption,
                     figure, panel_letters, save)
 
 
+# How many points the direction arrow spans from the first one: a short
+# chord, well clear of the label.
+ARROW_POINTS = 45
+
+
 def _direction_arrow(ax, x, y):
-    """An arrow along the curve from its first point, in the direction the
-    points run."""
-    ax.annotate("", xy=(x[60], y[60]), xytext=(x[0], y[0]),
+    """An arrow from the curve's first point, in the direction the points run.
+
+    It is a reference mark, so it sits above the label, as ``anchor_mark``
+    does, but without a halo, which would erase the curve it runs along.
+    """
+    tip = (x[ARROW_POINTS], y[ARROW_POINTS])
+    ax.annotate("", xy=tip, xytext=(x[0], y[0]),
                 arrowprops={"arrowstyle": "-|>", "color": MARK_COLOR,
                             "linewidth": 1.5, "shrinkA": 0, "shrinkB": 0},
-                zorder=4)
+                zorder=10)
 
 
 def make(images_dir):
@@ -49,8 +58,8 @@ def make(images_dir):
         if invert:
             ax.invert_xaxis()
         _direction_arrow(ax, cx, cy)
-        curved_text(ax, cx, cy, "reads this way", pos=0.3, anchor="center",
-                    offset=9.0, color=LABEL_COLOR, fontsize=10)
+        curved_text(ax, cx, cy, "reads this way", pos=0.4, anchor="center",
+                    offset=7.0, color=LABEL_COLOR, fontsize=10)
         caption(ax, call)
     panel_letters(axes)
 

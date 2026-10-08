@@ -1,14 +1,15 @@
 """Shared palette and helpers for the curved-text example gallery.
 
 Follows the repo's plot conventions: the DICE palette with contrast-checked
-text shades, white opaque
-background, constrained layout, sizes in centimetres, explicit dpi. Most panels
-here are diagrams whose subject is the text-on-curve geometry, so they hide
-their axes -- the curve is the data, and bare quantitative ticks would be
-chartjunk. The figures that plot data (direct labeling, its usetex version,
-the seaborn figure, and the applications on real data or physical laws) keep
-axes with units, and so does the log-axis panel of the gaps figure, whose subject
-is the scale.
+text shades, white opaque background, constrained layout, sizes in
+centimetres, explicit dpi. Most panels here are diagrams whose subject is the
+text-on-curve geometry, so they hide their axes -- the curve is the data, and
+bare quantitative ticks would be chartjunk. The figures that plot data (direct
+labeling, its usetex version, the seaborn figure, and the applications on real
+data or physical laws) keep axes with units, and so does the log-axis panel of
+the gaps figure, whose subject is the scale. Two data helpers sit here as
+well: ``sample_data`` finds matplotlib's sample data, and ``smooth_path``
+smooths the path a label rides on a line of real data.
 """
 from __future__ import annotations
 
@@ -19,11 +20,13 @@ import matplotlib.patheffects as patheffects
 import numpy as np
 import matplotlib.pyplot as plt
 
-# DICE palette set: blue / gold / green, for lines and fills in every figure.
+# DICE palette set: blue / gold / green.
 PALETTE = {"blue": "#003f7f", "gold": "#f7941e", "green": "#0cce6b"}
 # The same hues dark enough for text, at least 4.5:1 against white by the WCAG 2
-# contrast formula (lines and marks need 3:1). DICE gold and green are 2.28:1
-# and 2.09:1, too light to read as text; DICE blue is 10.4:1 already.
+# contrast formula. DICE gold and green are 2.28:1 and 2.09:1, too light to
+# read as text, and below the 3:1 that WCAG asks of lines and marks; DICE blue
+# is 10.4:1 already. A labelled data series uses its text shade for both its
+# line and its label, so the two match exactly and both pass.
 TEXT = {
     "blue": "#003f7f",   # 10.41:1
     "gold": "#b06306",   # 4.53:1
@@ -32,12 +35,16 @@ TEXT = {
 # Colour roles in the diagrams, where the curve and the label are the subject:
 # the curve in DICE blue, the label in dark gold, and a reference mark (such as
 # the anchor point) as a dark green ring drawn above the label, so it never
-# hides behind the text. Data figures colour each series in its DICE hue and
-# its label in the matching text shade. One exception: 08 shows ``alpha``, which
-# lightens its label, and only dark blue stays above 4.5:1 at alpha 0.85.
+# hides behind the text. Data figures colour each series, line and label
+# alike, in one text shade, and draw a reference series that the others are
+# read against (the Sun among the blackbodies, the S&P 500 among the stocks)
+# in near-black (15:1). One exception: 08
+# shows ``alpha``, which lightens its label, and only dark blue stays above
+# 4.5:1 at alpha 0.85.
 CURVE_COLOR = PALETTE["blue"]
 LABEL_COLOR = TEXT["gold"]
 MARK_COLOR = TEXT["green"]
+REFERENCE_COLOR = "0.15"
 INCH = 1 / 2.54
 DPI = 150
 
@@ -130,13 +137,16 @@ def anchor_xy(ax, x, y, pos):
 
 
 def smooth_path(values, sigma, log=False):
-    """``values`` smoothed by a Gaussian ``sigma`` samples wide, on a log scale
-    if ``log``, with the ends held at their values so the path keeps its span.
+    """``values`` smoothed by a Gaussian with a standard deviation of
+    ``sigma`` samples, on a log scale if ``log``.
+
+    Each end is padded with its own value, so the result has as many samples
+    as ``values`` and covers the same span.
 
     A label on a line of real data rides this path rather than the line: even
     smoothed, a line of monthly data wiggles at the scale of a letter, which
-    tilts neighbouring letters into each other. With ``sigma`` about a letter
-    wide, the path follows the line without those wiggles.
+    tilts neighbouring letters into each other. With ``sigma`` about a letter's
+    width, the path follows the line without those wiggles.
     """
     values = np.asarray(values, dtype=float)
     reach = int(4 * sigma)

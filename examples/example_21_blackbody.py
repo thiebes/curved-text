@@ -14,7 +14,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, TEXT, data_axes, figure, save
+from _style import REFERENCE_COLOR, TEXT, data_axes, figure, save
 
 # The SI defining constants: Planck, the speed of light, and Boltzmann; and
 # Wien's displacement constant, which puts the peak at WIEN_UM_K / T.
@@ -23,19 +23,25 @@ C = 299792458.0
 K_B = 1.380649e-23
 WIEN_UM_K = 2897.771955
 
-# Temperature (K), line and text colour, label, and offset (points). The Sun
-# is the reference curve, so it is drawn in near-black, and its label sits
+# Temperature (K), colour of the line and its label, label, and offset
+# (points). The Sun is the reference curve, so it is drawn in near-black, and
+# its label sits
 # above it, in the open space; the others sit below their curves, where the
 # gap to the next curve is widest.
 SERIES = [
-    (5772, "0.15", "0.15", "5772 K, the Sun", 8.0),
-    (5000, PALETTE["blue"], TEXT["blue"], "5000 K", -8.0),
-    (4000, PALETTE["green"], TEXT["green"], "4000 K", -8.0),
-    (3000, PALETTE["gold"], TEXT["gold"], "3000 K", -8.0),
+    (5772, REFERENCE_COLOR, "5772 K, the Sun", 8.0),
+    (5000, TEXT["blue"], "5000 K", -8.0),
+    (4000, TEXT["green"], "4000 K", -8.0),
+    (3000, TEXT["gold"], "3000 K", -8.0),
 ]
 # Each label rides the stretch of its curve just past the peak, from 0.9 to
 # 1.8 times the peak wavelength, centred.
-LABEL_SPAN = (0.9, 1.8)
+LABEL_SPAN_OVER_PEAK = (0.9, 1.8)
+WAVELENGTH_UM = (0.1, 3.0)
+# The radiance axis: the top leaves room for the Sun's label above its peak,
+# and the bottom cuts off the steep short-wavelength flanks, which fall many
+# decades lower.
+RADIANCE_LIMITS = (1e4, 6e7)
 
 
 def spectral_radiance(wavelength_um, temperature):
@@ -50,18 +56,18 @@ def make(images_dir):
     fig = figure(17, 9, font_size=9)
     ax = data_axes(fig.subplots())
 
-    wavelength = np.linspace(0.1, 3.0, 1000)
-    for temperature, line, text, label, offset in SERIES:
+    wavelength = np.linspace(*WAVELENGTH_UM, 1000)
+    for temperature, color, label, offset in SERIES:
         radiance = spectral_radiance(wavelength, temperature)
-        ax.plot(wavelength, radiance, color=line, linewidth=2)
+        ax.plot(wavelength, radiance, color=color, linewidth=2)
         peak = WIEN_UM_K / temperature
-        span = ((wavelength >= LABEL_SPAN[0] * peak)
-                & (wavelength <= LABEL_SPAN[1] * peak))
+        span = ((wavelength >= LABEL_SPAN_OVER_PEAK[0] * peak)
+                & (wavelength <= LABEL_SPAN_OVER_PEAK[1] * peak))
         curved_text(ax, wavelength[span], radiance[span], label, pos=0.5,
-                    anchor="center", offset=offset, color=text, fontsize=9)
+                    anchor="center", offset=offset, color=color, fontsize=9)
     ax.set_yscale("log")
-    ax.set_xlim(0.1, 3.0)
-    ax.set_ylim(1e4, 6e7)
+    ax.set_xlim(*WAVELENGTH_UM)
+    ax.set_ylim(*RADIANCE_LIMITS)
     ax.set_xlabel("wavelength (μm)")
     ax.set_ylabel("spectral radiance (W sr⁻¹ m⁻² μm⁻¹)")
 

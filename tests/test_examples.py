@@ -3,7 +3,8 @@
 Runs each script ``examples/generate_all.py`` lists, as that script does, into
 a temporary folder, so a change to the library that breaks a gallery figure
 fails here. A script returns ``None`` when an optional dependency (seaborn,
-pandas, LaTeX with dvipng) is missing, and its figure is skipped, unless the
+pandas, LaTeX with dvipng, or the ``Stocks.csv`` sample data, which
+matplotlib 3.5 does not ship) is missing, and its figure is skipped, unless the
 environment variable ``CURVED_TEXT_GALLERY_COMPLETE`` is set, as in the CI job
 that installs every one of them, where a skip would hide a figure from CI.
 """
@@ -53,7 +54,7 @@ def test_gallery_figure_draws(name, tmp_path):
     finally:
         plt.close("all")
     if path is None:
-        message = f"{name} needs an optional dependency that is missing"
+        message = f"{name} needs an optional dependency or data that is missing"
         if os.environ.get("CURVED_TEXT_GALLERY_COMPLETE"):
             pytest.fail(message)
         pytest.skip(message)

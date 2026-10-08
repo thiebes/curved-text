@@ -25,13 +25,15 @@ The scripts follow the repository's plot conventions (the DICE palette, with
 label text in shades that meet the WCAG 4.5:1 contrast minimum, a white
 background, sizes in centimetres, explicit dpi). Most panels hide their
 axes on purpose: the subject is the text-on-curve geometry, so quantitative
-ticks would only get in the way. The data figures -- direct labeling and its
-usetex version -- keep their axes and units, and so does the log-axis panel of
-the gaps figure, whose subject is the scale.
+ticks would only get in the way. The figures that plot data -- direct
+labeling, its usetex version, the seaborn figure, and the applications --
+keep their axes and units, and so does the log-axis panel of the gaps figure,
+whose subject is the scale.
 
 The caption under a panel gives the call that drew it. Where every panel of a
 figure makes the same call, its section gives that call once, and each caption
-shows only what differs.
+shows only what differs. The applications have no captions; their paragraphs
+explain them.
 
 ## The case for the tool
 
@@ -329,10 +331,55 @@ reference lines show where the band cuts them.
 ### Any matplotlib-backed axes (seaborn, pandas)
 
 `curved_text` only needs a `matplotlib.axes.Axes`, so it composes with seaborn,
-`pandas.DataFrame.plot`, and anything else that draws on matplotlib. This script
-renders only if seaborn and pandas are installed (they come with the `examples`
-extra); they are not runtime dependencies of curved-text.
+`pandas.DataFrame.plot`, and anything else that draws on matplotlib. Here pandas
+reads the `Stocks.csv` sample data that ships with matplotlib, and
+`sns.lineplot` draws two stock market indexes in seaborn's `whitegrid` theme,
+with each line labelled along its path in place of seaborn's legend. This
+script renders only if seaborn and pandas are installed (they come with the
+`examples` extra); they are not runtime dependencies of curved-text.
 
-![A label drawn on a seaborn axes](images/09_seaborn_pandas.png)
+![Two stock market indexes drawn by seaborn, each labelled along its line](images/09_seaborn_pandas.png)
 
 [example_09_seaborn_pandas.py](example_09_seaborn_pandas.py)
+
+## Applications
+
+### Blackbody spectra
+
+Planck's law for four temperatures, from a cool star to the Sun's effective
+temperature, 5772 K, on a logarithmic radiance axis. Each label rides its own
+curve just past the peak, which Wien's law puts at 2898 μm K / T. The script
+passes `curved_text` only that stretch of each curve: on this axis most of a
+curve's length is its steep left flank, which falls far below the axes, so a
+`pos` along the whole curve would count length the reader never sees.
+
+![Four blackbody spectra, each labelled with its temperature along its path](images/21_blackbody.png)
+
+[example_21_blackbody.py](example_21_blackbody.py)
+
+### Text around a circle and along a spiral
+
+(a) Each half of the circle is traced from nine o'clock to three o'clock, the
+top half clockwise and the bottom half counterclockwise, so both labels run
+left to right on screen and read upright, outside the circle. (b) An
+Archimedean spiral, r = aθ, keeps an even spacing between its turns, and its
+curvature grows toward the centre, so the label opens its letterspacing there
+with `crowding="curvature"`.
+
+![Text over and under a circle, and a sentence winding out along a spiral](images/22_circle_spiral.png)
+
+[example_22_circle_spiral.py](example_22_circle_spiral.py)
+
+### Stock prices on real dates
+
+Monthly prices from the `Stocks.csv` sample data, relative to January 1990 and
+smoothed with a 12-month rolling mean, on a log axis. The dates go to `plot` and
+`curved_text` as `datetime64` values. Even smoothed, a monthly line wiggles at
+the scale of a letter, which tilts neighbouring letters into each other, so
+each label rides its line smoothed once more, by a Gaussian about a letter
+wide: a path that follows the line without those wiggles, and is never drawn.
+The seaborn figure labels its lines the same way.
+
+![Four stock prices since 1990 on a log axis, each labelled along its line](images/23_stocks.png)
+
+[example_23_stocks.py](example_23_stocks.py)

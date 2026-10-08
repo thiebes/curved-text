@@ -5,12 +5,16 @@ text shades, white opaque
 background, constrained layout, sizes in centimetres, explicit dpi. Most panels
 here are diagrams whose subject is the text-on-curve geometry, so they hide
 their axes -- the curve is the data, and bare quantitative ticks would be
-chartjunk. The data figures (direct labeling and its usetex version) keep axes
-with units, and so does the log-axis panel of the gaps figure, whose subject
+chartjunk. The figures that plot data (direct labeling, its usetex version,
+the seaborn figure, and the applications on real data or physical laws) keep
+axes with units, and so does the log-axis panel of the gaps figure, whose subject
 is the scale.
 """
 from __future__ import annotations
 
+import os
+
+import matplotlib.cbook as cbook
 import matplotlib.patheffects as patheffects
 import numpy as np
 import matplotlib.pyplot as plt
@@ -123,6 +127,32 @@ def anchor_xy(ax, x, y, pos):
     px = xf[i] + f * (xf[i + 1] - xf[i])
     py = yf[i] + f * (yf[i + 1] - yf[i])
     return tuple(ax.transData.inverted().transform((px, py)))
+
+
+def smooth_path(values, sigma, log=False):
+    """``values`` smoothed by a Gaussian ``sigma`` samples wide, on a log scale
+    if ``log``, with the ends held at their values so the path keeps its span.
+
+    A label on a line of real data rides this path rather than the line: even
+    smoothed, a line of monthly data wiggles at the scale of a letter, which
+    tilts neighbouring letters into each other. With ``sigma`` about a letter
+    wide, the path follows the line without those wiggles.
+    """
+    values = np.asarray(values, dtype=float)
+    reach = int(4 * sigma)
+    kernel = np.exp(-0.5 * (np.arange(-reach, reach + 1) / sigma) ** 2)
+    scaled = np.log(values) if log else values
+    padded = np.concatenate([np.full(reach, scaled[0]), scaled,
+                             np.full(reach, scaled[-1])])
+    smoothed = np.convolve(padded, kernel / kernel.sum(), mode="valid")
+    return np.exp(smoothed) if log else smoothed
+
+
+def sample_data(name):
+    """The path to one of matplotlib's sample data files, or ``None`` where the
+    installed matplotlib does not ship it (3.5 has no ``Stocks.csv``)."""
+    path = cbook.get_sample_data(name, asfileobj=False)
+    return str(path) if os.path.exists(path) else None
 
 
 def save(fig, path):

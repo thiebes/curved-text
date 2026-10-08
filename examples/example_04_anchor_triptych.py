@@ -1,8 +1,8 @@
 """Tier 2: the ``anchor`` control -- which part of the label lands at ``pos``.
 
 Same curve, same ``pos=0.5``; only ``anchor`` varies across start / center /
-end. The green dot is fixed at ``pos`` in every panel; watch which part of
-the word -- its start, middle, or end -- sits on the dot.
+end. The ring is fixed at ``pos`` in every panel; watch which part of the
+word -- its start, middle, or end -- sits on the ring.
 """
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare, caption,
-                    figure, panel_letters, save)
+from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare,
+                    caption, figure, panel_letters, save)
 
 ANCHORS = ["start", "center", "end"]
 POS = 0.5

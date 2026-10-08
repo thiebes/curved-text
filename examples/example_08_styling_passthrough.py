@@ -29,6 +29,7 @@ def make(images_dir):
 
     curved_text(ax, x, y, "styled per character",
                 pos=0.18, anchor="start", offset=9.0,
+                # Dark blue: alpha 0.85 lightens dark gold below 4.5:1.
                 color=TEXT["blue"], fontsize=15, alpha=0.85,
                 fontweight="bold", fontfamily="serif")
 

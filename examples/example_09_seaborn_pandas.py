@@ -12,7 +12,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import CURVE_COLOR, LABEL_COLOR, data_axes, figure, save
+from _style import CURVE_COLOR, TEXT, data_axes, figure, save
 
 
 def make(images_dir):
@@ -33,7 +33,7 @@ def make(images_dir):
     data_axes(ax)
     curved_text(ax, df["x"], df["y"], "drawn on a seaborn axes",
                 pos=0.5, anchor="center", offset=8.0,
-                color=LABEL_COLOR, fontsize=11)
+                color=TEXT["blue"], fontsize=11)
 
     path = os.path.join(images_dir, "09_seaborn_pandas.png")
     return save(fig, path)

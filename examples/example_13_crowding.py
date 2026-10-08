@@ -7,8 +7,8 @@ gap that grows with the local curvature, so the inside edges stop colliding. The
 gap is the same between every pair of letters, so the tracking stays even, and
 it has a deadband: a gentle bend or a straight run is left untouched.
 
-Top row: a sharp bend, where the correction visibly separates the letters.
-Bottom row: a gentle bend of the same letters, where the bend is below the
+(a) and (b): a sharp bend, where the correction visibly separates the letters.
+(c) and (d): a gentle bend of the same letters, where the bend is below the
 deadband and the two columns are identical.
 """
 from __future__ import annotations
@@ -18,7 +18,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, panel_letters, save
+from _style import (CURVE_COLOR, LABEL_COLOR, bare, caption, figure,
+                    panel_letters, save)
 
 WORD = "winds"
 MODES = ["none", "curvature"]

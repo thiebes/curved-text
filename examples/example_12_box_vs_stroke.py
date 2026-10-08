@@ -14,7 +14,7 @@ import numpy as np
 import matplotlib.patheffects as pe
 
 from curved_text import curved_text
-from _style import TEXT, bare, caption, figure, panel_letters, save
+from _style import LABEL_COLOR, bare, caption, figure, panel_letters, save
 
 LABEL = "crossing the gridlines"
 
@@ -40,7 +40,7 @@ def make(images_dir):
         ax.set_xlim(-0.2, 10.2)
         ax.set_ylim(-0.9, 2.4)
         curved_text(ax, x, y, LABEL, pos=0.5, anchor="center", offset=0.0,
-                    color=TEXT["blue"], fontsize=18, **kwargs)
+                    color=LABEL_COLOR, fontsize=18, **kwargs)
         caption(ax, label)
 
     panel_letters(axes)

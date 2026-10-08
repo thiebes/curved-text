@@ -13,7 +13,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import CURVE_COLOR, LABEL_COLOR, figure, bare, caption, save
+from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, save
 
 
 def make(images_dir):

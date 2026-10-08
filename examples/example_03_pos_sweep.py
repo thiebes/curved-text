@@ -11,8 +11,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare, caption,
-                    figure, panel_letters, save)
+from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare,
+                    caption, figure, panel_letters, save)
 
 POSITIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 

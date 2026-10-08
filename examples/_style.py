@@ -1,6 +1,7 @@
 """Shared palette and helpers for the curved-text example gallery.
 
-Follows the repo's plot conventions: colorblind-safe palette, white opaque
+Follows the repo's plot conventions: the DICE palette with contrast-checked
+text shades, white opaque
 background, constrained layout, sizes in centimetres, explicit dpi. Most panels
 here are diagrams whose subject is the text-on-curve geometry, so they hide
 their axes -- the curve is the data, and bare quantitative ticks would be
@@ -9,6 +10,7 @@ with units.
 """
 from __future__ import annotations
 
+import matplotlib.patheffects as patheffects
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -26,7 +28,8 @@ TEXT = {
 # the curve in DICE blue, the label in dark gold, and a reference mark (such as
 # the anchor point) as a dark green ring drawn above the label, so it never
 # hides behind the text. Data figures colour each series in its DICE hue and
-# its label in the matching text shade.
+# its label in the matching text shade. One exception: 08 shows ``alpha``, which
+# lightens its label, and only dark blue stays above 4.5:1 at alpha 0.85.
 CURVE_COLOR = PALETTE["blue"]
 LABEL_COLOR = TEXT["gold"]
 MARK_COLOR = TEXT["green"]
@@ -59,18 +62,23 @@ def bare(ax):
 
 
 def caption(ax, text, font_size=8):
-    """A monospace caption under a panel -- usually the call that drew it.
-    Dollar signs are escaped, so the caption shows the call as written, not
-    a mathtext rendering of it."""
+    """A monospace caption under a panel, usually the call that drew it.
+
+    Dollar signs are escaped, so the caption shows the call as written, not a
+    mathtext rendering of it, and the lines of a long call keep their
+    indentation, aligned left within the centred block.
+    """
     ax.text(0.5, -0.06, text.replace("$", r"\$"), transform=ax.transAxes,
-            ha="center", va="top", fontsize=font_size, family="monospace",
-            color="0.30")
+            ha="center", va="top", multialignment="left", fontsize=font_size,
+            family="monospace", color="0.30")
 
 
 def panel_letters(axes, font_size=9):
-    """Letter the panels of a multi-panel figure (a), (b), ... in bold, just
-    above each panel's upper left corner, in reading order, clear of the
-    panel's tick labels and data."""
+    """Letter the panels of a multi-panel figure (a), (b), ... in bold.
+
+    Each letter sits just above its panel's upper left corner, in reading
+    order, clear of the panel's tick labels and data.
+    """
     for index, ax in enumerate(np.ravel(axes)):
         ax.annotate(f"({chr(ord('a') + index)})", xy=(0.0, 1.0),
                     xycoords="axes fraction", xytext=(0.0, 3.0),
@@ -79,10 +87,17 @@ def panel_letters(axes, font_size=9):
 
 
 def anchor_mark(ax, x, y):
-    """A ring at data point ``(x, y)``, drawn above the label so the text
-    never covers it, in the reference-mark colour."""
+    """A ring at data point ``(x, y)`` in the reference-mark colour.
+
+    It is drawn above the label, so the text never covers it, with a thin
+    white halo, so it stays apart from a glyph it crosses even where its hue
+    and the label's look alike, as dark green and dark gold do to a reader
+    with red-green colour blindness (both have the same luminance).
+    """
     ax.plot([x], [y], "o", markersize=7, markerfacecolor="none",
-            markeredgecolor=MARK_COLOR, markeredgewidth=1.5, zorder=10)
+            markeredgecolor=MARK_COLOR, markeredgewidth=1.5, zorder=10,
+            path_effects=[patheffects.withStroke(linewidth=3.5,
+                                                 foreground="white")])
 
 
 def anchor_xy(ax, x, y, pos):

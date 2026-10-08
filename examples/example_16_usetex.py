@@ -18,10 +18,10 @@ import matplotlib as mpl
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, TEXT, figure, data_axes, save
+from _style import PALETTE, TEXT, data_axes, figure, save
 
 SERIES = [
-    (1.5, "blue", 0.30),
+    (1.5, "blue", 0.38),
     (3.0, "gold", 0.42),
     (6.0, "green", 0.58),
 ]
@@ -45,7 +45,7 @@ def make(images_dir):
             # label reads like example 01's and shows both paths LaTeX
             # typesets.
             curved_text(ax, t, temp, rf"$\tau$ = {tau:g} s",
-                        pos=pos, anchor="center", offset=9.0,
+                        pos=pos, anchor="center", offset=8.0,
                         color=TEXT[hue], fontsize=10)
         ax.set_xlim(0, 10)
         ax.set_ylim(0, 105)

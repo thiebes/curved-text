@@ -13,7 +13,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import CURVE_COLOR, LABEL_COLOR, figure, bare, caption, save
+from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, save
 
 LABEL = r"mass $m$ and speed $c$ give $E = mc^2$"
 
@@ -34,8 +34,8 @@ def make(images_dir):
     curved_text(ax, x, y, LABEL, pos=0.5, anchor="center",
                 valign="baseline", color=LABEL_COLOR, fontsize=15)
 
-    caption(ax, 'plain words and math runs ride one baseline '
-                '(valign="baseline")')
+    caption(ax, 'curved_text(ax, x, y, r"mass $m$ and speed $c$ give '
+                '$E = mc^2$",\n            valign="baseline")')
 
     path = os.path.join(images_dir, "15_mixed_alignment.png")
     return save(fig, path)

@@ -21,8 +21,9 @@ Or run one script on its own:
 python examples/example_02_sine_hello.py
 ```
 
-The scripts follow the repository's plot conventions (colorblind-safe palette,
-white background, sizes in centimetres, explicit dpi). Most panels hide their
+The scripts follow the repository's plot conventions (the DICE palette, with
+label text in shades that meet the WCAG 4.5:1 contrast minimum, a white
+background, sizes in centimetres, explicit dpi). Most panels hide their
 axes on purpose: the subject is the text-on-curve geometry, so quantitative
 ticks would only get in the way. The data figures -- direct labeling and its
 usetex version -- keep their axes and units.
@@ -31,9 +32,9 @@ usetex version -- keep their axes and units.
 
 ### Direct labeling replaces the legend
 
-The reason the package exists. Left: a conventional legend forces the eye off
-the data to decode a colour key. Right: each curve is labeled along its own
-path -- no legend, no round trip.
+The reason the package exists. In (a), a conventional legend forces the eye
+off the data to decode a colour key. In (b), each curve is labeled along its
+own path -- no legend, no round trip.
 
 ![Direct labeling versus a legend](images/01_direct_labeling.png)
 
@@ -56,6 +57,8 @@ stay connected and follow the curve. Plain and math runs mix in one string.
 ![A mathtext expression following a sine wave](images/10_mathtext.png)
 
 [example_10_mathtext.py](example_10_mathtext.py)
+
+### Plain words and math share one baseline
 
 Plain words and math runs in one label share a single baseline, so the math
 symbols sit level with the surrounding letters and a superscript lifts only the
@@ -151,8 +154,8 @@ they crowd together on the inside of the curve, where each rigid letter box fans
 into its neighbour. `crowding="curvature"` opens an even letterspacing gap that
 grows with the local curvature, so the inside edges stop colliding. The gap is
 the same between every pair of letters, so the tracking stays even, and it has a
-deadband: a gentle bend (bottom row) stays below it, so the two columns there
-are identical. Only the tight bend (top row) is changed.
+deadband: a gentle bend, (c) and (d), stays below it, so the two columns there
+are identical. Only the tight bend, (a) and (b), is changed.
 
 ![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](images/13_crowding.png)
 

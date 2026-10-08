@@ -1,8 +1,8 @@
 """Tier 1: direct labeling replaces the legend.
 
-The case for the tool, in one figure. Left: three cooling curves with a
+The case for the tool, in one figure. (a): three cooling curves with a
 conventional legend -- the eye must leave the data, find the key, decode a
-colour, and come back. Right: the same curves labeled along their own paths.
+colour, and come back. (b): the same curves labeled along their own paths.
 No legend, no colour key, no round trip.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from curved_text import curved_text
 from _style import PALETTE, TEXT, data_axes, figure, panel_letters, save
 
 SERIES = [
-    (1.5, "blue", 0.30),
+    (1.5, "blue", 0.38),
     (3.0, "gold", 0.42),
     (6.0, "green", 0.58),
 ]
@@ -50,7 +50,7 @@ def make(images_dir):
     data_axes(ax_direct)
     for t, temp, tau, hue, pos in curves:
         curved_text(ax_direct, t, temp, f"τ = {tau:g} s",
-                    pos=pos, anchor="center", offset=9.0,
+                    pos=pos, anchor="center", offset=8.0,
                     color=TEXT[hue], fontsize=9)
 
     panel_letters([ax_legend, ax_direct])

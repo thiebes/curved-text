@@ -13,8 +13,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare, caption,
-                    figure, panel_letters, save)
+from _style import (CURVE_COLOR, LABEL_COLOR, anchor_mark, anchor_xy, bare,
+                    caption, figure, panel_letters, save)
 
 OFFSETS = [-14.0, 0.0, 14.0]
 POS = 0.5
@@ -33,8 +33,7 @@ def make(images_dir):
         ax.set_xlim(-0.05, 1.05)
         ax.set_ylim(-0.35, 0.95)
         curved_text(ax, x, y, "offset", pos=POS, anchor="center",
-                            offset=offset, color=LABEL_COLOR,
-                            fontsize=11)
+                    offset=offset, color=LABEL_COLOR, fontsize=11)
         caption(ax, f"offset={offset:g}")
 
     # Mark the on-curve anchor the offset is measured from: a ring above the

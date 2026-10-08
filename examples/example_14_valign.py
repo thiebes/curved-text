@@ -19,7 +19,8 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import CURVE_COLOR, LABEL_COLOR, bare, caption, figure, panel_letters, save
+from _style import (CURVE_COLOR, LABEL_COLOR, bare, caption, figure,
+                    panel_letters, save)
 
 WORD = "Amplitude"
 MODES = ["center", "baseline", "ascender", "descender"]

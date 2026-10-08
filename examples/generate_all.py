@@ -30,6 +30,10 @@ MODULES = [
     "example_14_valign",
     "example_15_mixed_alignment",
     "example_16_usetex",
+    "example_17_direction_of_travel",
+    "example_18_repeated_labels",
+    "example_19_halo_or_box",
+    "example_26_gaps",
 ]
 
 

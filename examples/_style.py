@@ -6,7 +6,8 @@ background, constrained layout, sizes in centimetres, explicit dpi. Most panels
 here are diagrams whose subject is the text-on-curve geometry, so they hide
 their axes -- the curve is the data, and bare quantitative ticks would be
 chartjunk. The data figures (direct labeling and its usetex version) keep axes
-with units.
+with units, and so does the log-axis panel of the gaps figure, whose subject
+is the scale.
 """
 from __future__ import annotations
 
@@ -63,6 +64,10 @@ def bare(ax):
 
 def caption(ax, text, font_size=8):
     """A monospace caption under a panel, usually the call that drew it.
+
+    When every panel of a figure makes the same call, each caption shows only
+    what differs between them, and the figure's README paragraph gives the
+    shared call.
 
     Dollar signs are escaped, so the caption shows the call as written, not a
     mathtext rendering of it, and the lines of a long call keep their

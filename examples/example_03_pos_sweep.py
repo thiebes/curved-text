@@ -18,7 +18,7 @@ POSITIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 
 
 def make(images_dir):
-    fig = figure(20, 5, font_size=8)
+    fig = figure(17, 4.2, font_size=8)
     axes = fig.subplots(1, len(POSITIONS))
 
     x = np.linspace(0, 1, 200)

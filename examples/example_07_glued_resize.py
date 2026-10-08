@@ -31,7 +31,7 @@ def _panel(ax, label):
 
 
 def make(images_dir):
-    fig = figure(18, 9, font_size=9)
+    fig = figure(17, 8.5, font_size=9)
     # A wide panel and a narrow one, same data and same label call.
     # gridspec_kw, not width_ratios, which matplotlib 3.5 does not take.
     axes = fig.subplots(1, 2, gridspec_kw={"width_ratios": [2.2, 1.0]})

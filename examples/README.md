@@ -26,7 +26,12 @@ label text in shades that meet the WCAG 4.5:1 contrast minimum, a white
 background, sizes in centimetres, explicit dpi). Most panels hide their
 axes on purpose: the subject is the text-on-curve geometry, so quantitative
 ticks would only get in the way. The data figures -- direct labeling and its
-usetex version -- keep their axes and units.
+usetex version -- keep their axes and units, and so does the log-axis panel of
+the gaps figure, whose subject is the scale.
+
+The caption under a panel gives the call that drew it. Where every panel of a
+figure makes the same call, its section gives that call once, and each caption
+shows only what differs.
 
 ## The case for the tool
 
@@ -90,6 +95,12 @@ below varies one and holds the others fixed.
 The ring marks the anchor point as `pos` runs from the first point (0.0) to the
 last (1.0).
 
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, x, y, "label", pos=pos, anchor="center", offset=7.0)
+```
+
 ![A label at five positions along a curve](images/03_pos_sweep.png)
 
 [example_03_pos_sweep.py](example_03_pos_sweep.py)
@@ -98,6 +109,12 @@ last (1.0).
 
 The ring is fixed at `pos=0.5` in every panel; the word's start, middle, or end
 sits on it.
+
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, x, y, "anchored", pos=0.5, anchor=anchor, offset=7.0)
+```
 
 ![Start, center, and end anchoring](images/04_anchor_triptych.png)
 
@@ -108,6 +125,12 @@ sits on it.
 In points, along the chord normal. Positive is to the left of the direction of
 travel -- above a left-to-right curve. The ring marks the on-curve anchor, and
 stays visible over the label at `offset=0`.
+
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, x, y, "offset", pos=0.5, anchor="center", offset=offset)
+```
 
 ![Negative, zero, and positive offset](images/05_offset_ladder.png)
 
@@ -120,6 +143,12 @@ the text baseline along the curve, so the body sits above it with descenders
 below, and `"ascender"` and `"descender"` ride the top or bottom of the text.
 The shift is a single font metric applied to the whole label, so it never
 disturbs the spacing or the alignment of plain text with mathtext.
+
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, x, y, "Amplitude", pos=0.5, anchor="center", valign=valign)
+```
 
 ![The same word on a curve under each valign option](images/14_valign.png)
 
@@ -143,6 +172,12 @@ recomputed per draw in display space, so spacing and offset stay correct -- the
 label does not stretch or shear. This is the static stand-in for interactive
 pan and zoom.
 
+Both panels make this call:
+
+```python
+curved_text(ax, x, y, "same call, glued", pos=0.5, anchor="center", offset=8.0)
+```
+
 ![The same label glued at two aspect ratios](images/07_glued_resize.png)
 
 [example_07_glued_resize.py](example_07_glued_resize.py)
@@ -157,9 +192,55 @@ the same between every pair of letters, so the tracking stays even, and it has a
 deadband: a gentle bend, (c) and (d), stays below it, so the two columns there
 are identical. Only the tight bend, (a) and (b), is changed.
 
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, x, y, "winds", pos=0.5, anchor="center", offset=-13.0,
+            crowding=crowding)
+```
+
 ![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](images/13_crowding.png)
 
 [example_13_crowding.py](example_13_crowding.py)
+
+### Why a label reads upside down: direction of travel
+
+A label reads in the order of its curve's points as they appear on screen; the
+arrowhead at the end of each curve marks that direction. On the same
+sine, (a) the points run from left to right and the label is upright; (b) the
+arrays are reversed, so the curve runs from right to left and the label reads
+upside down; (c) an inverted x axis puts the points right to left on screen
+too, with the same result. `pos` counts from the first point and `offset` turns
+with the direction, so the label also moves along the curve and to its other
+side. Reversing the arrays of a curve that runs from right to left on screen
+turns its label upright. An option to keep labels upright automatically is
+planned ([#30](https://github.com/thiebes/curved-text/issues/30)). In each
+caption, `...` stands for the same arguments:
+`pos=0.4, anchor="center", offset=7.0`.
+
+![The same label upright, upside down on reversed arrays, and upside down on an inverted x axis](images/17_direction_of_travel.png)
+
+[example_17_direction_of_travel.py](example_17_direction_of_travel.py)
+
+### Gaps in the curve
+
+A curve has gaps where it has no value to draw: at NaN points (a), at masked
+points (b), and at zeros on a log axis (c), which has no place for them. The
+log axis in (c) masks the zeros (`nonpositive="mask"`), so the plotted line
+breaks where the label's stretch does; the label treats them as gaps whatever
+that setting. `pos` is measured along the drawn length, and the label rides the
+stretch that holds its anchor. To run a label across gaps, pass a smooth curve
+that follows the data instead.
+
+Every panel makes this call, on the curve its caption builds:
+
+```python
+curved_text(ax, x, y, "a stretch", pos=0.5, anchor="center", offset=6.0)
+```
+
+![A label riding one stretch of curves with NaN, masked, and log-axis gaps](images/26_gaps.png)
+
+[example_26_gaps.py](example_26_gaps.py)
 
 ## Styling and integration
 
@@ -177,7 +258,15 @@ per-character glyph and each mathtext run.
 `box=True` draws a casing that follows the curve at the label's height, under
 the glyphs, so the label stays legible where it crosses the lines it labels. It
 is a single fill, so it covers plain text and mathtext alike. (For a lighter
-glyph-hugging casing, pass a white `withStroke` through `path_effects` instead.)
+casing that hugs each glyph (a halo), pass a white `withStroke` through
+`path_effects` instead.)
+
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$", pos=0.5,
+            anchor="center", offset=0.0, box=box)
+```
 
 ![A label cleared from the lines it crosses by a white casing](images/11_box.png)
 
@@ -189,11 +278,53 @@ The same plain-text label over the same lines, two ways. A wide `withStroke` is
 applied per character, so neighbouring letters blur together and the lines show
 through the gaps. `box` is a single fill under the whole label, so it covers
 plain text cleanly. This is why `box` is the way to get solid coverage under
-plain text.
+plain text. A thin halo still has its place, as
+[the next figure](#a-halo-or-a-box) shows.
+
+Every panel makes this call, with the keyword arguments its caption names:
+
+```python
+curved_text(ax, x, y, "crossing the gridlines", pos=0.5, anchor="center",
+            offset=0.0, ...)
+```
 
 ![A wide per-character stroke leaves gaps; a box fill covers cleanly](images/12_box_vs_stroke.png)
 
 [example_12_box_vs_stroke.py](example_12_box_vs_stroke.py)
+
+### A halo or a box
+
+The same label over a family of thin lines that cross it, cleared two ways.
+(a) A halo, a thin white `withStroke` around each glyph, hides the lines only
+where they touch the letters, so they stay readable between and around the
+letters. (b) A casing, here in its colour-string form, white to match the page,
+gives one band under the whole label, which clears heavy lines completely but
+erases every line inside the band. Use the halo for thin lines and dense
+figures, and the box where the lines behind the label are heavy. A wide halo is
+another matter: [it blurs the letters together](#box-versus-a-path-effects-stroke).
+
+Every panel makes this call, with the keyword arguments its caption names:
+
+```python
+curved_text(ax, x, y, "legible over thin lines", pos=0.5, anchor="center",
+            offset=10.0, ...)
+```
+
+![A label cleared by a thin halo and by a box over a family of thin lines](images/19_halo_or_box.png)
+
+[example_19_halo_or_box.py](example_19_halo_or_box.py)
+
+### Several labels on one curve
+
+One call per label, each at its own `pos`, repeats a curve's name along it, as
+inline contour labels do. Each label here clears the thin reference lines
+behind it with a casing in its dict form: `color` sets the band's colour, white
+to match the page, and `pad` its height relative to the tallest glyph. The
+reference lines show where the band cuts them.
+
+![A damped oscillation labelled three times, each label's white band cutting the reference lines behind it](images/18_repeated_labels.png)
+
+[example_18_repeated_labels.py](example_18_repeated_labels.py)
 
 ### Any matplotlib-backed axes (seaborn, pandas)
 

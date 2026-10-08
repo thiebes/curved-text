@@ -21,7 +21,7 @@ POS = 0.5
 
 
 def make(images_dir):
-    fig = figure(18, 5.5, font_size=8)
+    fig = figure(17, 5.2, font_size=8)
     axes = fig.subplots(1, len(OFFSETS))
 
     x = np.linspace(0, 1, 200)

@@ -17,7 +17,7 @@ from _style import CURVE_COLOR, TEXT, bare, caption, figure, save
 
 
 def make(images_dir):
-    fig = figure(15, 7, font_size=10)
+    fig = figure(17, 7.9, font_size=10)
     ax = fig.subplots()
     bare(ax)
 
@@ -33,8 +33,9 @@ def make(images_dir):
                 color=TEXT["blue"], fontsize=15, alpha=0.85,
                 fontweight="bold", fontfamily="serif")
 
-    caption(ax, 'color=..., fontsize=15, alpha=0.85, '
-                'fontweight="bold", fontfamily="serif"')
+    caption(ax, 'curved_text(ax, x, y, "styled per character", ...,\n'
+                f'            color="{TEXT["blue"]}", fontsize=15, alpha=0.85,\n'
+                '            fontweight="bold", fontfamily="serif")')
 
     path = os.path.join(images_dir, "08_styling_passthrough.png")
     return save(fig, path)

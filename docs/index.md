@@ -8,6 +8,7 @@
 :hidden:
 :maxdepth: 2
 
+Gallery <gallery>
 API reference <api>
 Design: mathtext and LaTeX <design-mathtext>
 ```

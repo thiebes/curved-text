@@ -27,6 +27,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   under a mask placed the label, and a label on a log axis with
   `nonpositive="mask"` and some x of 0 or less was not drawn. The curve needs
   two consecutive finite points.
+- The example gallery is a page on the
+  [documentation site](https://thiebes.github.io/curved-text/), and every
+  public option has a teaching figure in it, including new ones for why a label
+  reads upside down, several labels on one curve, a halo or a box, and gaps.
+  Applications on real data and physical laws show what the package is for:
+  blackbody spectra, text around a circle and along a spiral, stock prices on
+  real dates, and a seaborn figure. An animation shows a label staying on its
+  curve through pan and zoom. Every figure meets the WCAG contrast minimums,
+  and CI runs every gallery script
+  ([#31](https://github.com/thiebes/curved-text/issues/31)).
 
 ### Changed
 

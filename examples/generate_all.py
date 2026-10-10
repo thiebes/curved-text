@@ -36,6 +36,7 @@ MODULES = [
     "example_21_blackbody",
     "example_22_circle_spiral",
     "example_23_stocks",
+    "example_25_pan_zoom",
     "example_26_gaps",
 ]
 

@@ -12,7 +12,7 @@ import os
 import numpy as np
 
 from curved_text import curved_text
-from _style import PALETTE, TEXT, data_axes, figure, panel_letters, save
+from _style import TEXT, data_axes, figure, panel_letters, save
 
 SERIES = [
     (1.5, "blue", 0.38),
@@ -26,7 +26,7 @@ def _curves(ax):
     out = []
     for tau, hue, pos in SERIES:
         temp = 100.0 * np.exp(-t / tau)
-        ax.plot(t, temp, color=PALETTE[hue], linewidth=2)
+        ax.plot(t, temp, color=TEXT[hue], linewidth=2)
         out.append((t, temp, tau, hue, pos))
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 105)
@@ -42,7 +42,7 @@ def make(images_dir):
     curves = _curves(ax_legend)
     data_axes(ax_legend)
     for _, _, tau, hue, _ in curves:
-        ax_legend.plot([], [], color=PALETTE[hue], linewidth=2,
+        ax_legend.plot([], [], color=TEXT[hue], linewidth=2,
                        label=f"τ = {tau:g} s")
     ax_legend.legend(frameon=False, handlelength=1.2)
 

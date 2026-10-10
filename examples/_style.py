@@ -1,39 +1,52 @@
 """Shared palette and helpers for the curved-text example gallery.
 
 Follows the repo's plot conventions: the DICE palette with contrast-checked
-text shades, white opaque
-background, constrained layout, sizes in centimetres, explicit dpi. Most panels
-here are diagrams whose subject is the text-on-curve geometry, so they hide
-their axes -- the curve is the data, and bare quantitative ticks would be
-chartjunk. The data figures (direct labeling and its usetex version) keep axes
-with units, and so does the log-axis panel of the gaps figure, whose subject
-is the scale.
+text shades, white opaque background, constrained layout, sizes in
+centimetres, explicit dpi. Most panels here are diagrams whose subject is the
+text-on-curve geometry, so they hide their axes -- the curve is the data, and
+bare quantitative ticks would be chartjunk. The figures that plot data (direct
+labeling, its usetex version, the seaborn figure, and the applications on real
+data or physical laws) keep axes with units, and so does the log-axis panel of
+the gaps figure, whose subject is the scale. Two data helpers sit here as
+well: ``sample_data`` finds matplotlib's sample data, and ``smooth_path``
+smooths the path a label rides on a line of real data.
 """
 from __future__ import annotations
 
+import os
+
+import matplotlib.cbook as cbook
 import matplotlib.patheffects as patheffects
 import numpy as np
 import matplotlib.pyplot as plt
 
-# DICE palette set: blue / gold / green, for lines and fills in every figure.
+# DICE palette set: blue / gold / green. These are the source hues; only blue
+# is drawn as is, because DICE gold and green are too light to draw.
 PALETTE = {"blue": "#003f7f", "gold": "#f7941e", "green": "#0cce6b"}
 # The same hues dark enough for text, at least 4.5:1 against white by the WCAG 2
-# contrast formula (lines and marks need 3:1). DICE gold and green are 2.28:1
-# and 2.09:1, too light to read as text; DICE blue is 10.4:1 already.
+# contrast formula. DICE gold and green are 2.28:1 and 2.09:1, too light to
+# read as text, and below the 3:1 that WCAG asks of lines and marks; DICE blue
+# is 10.4:1 already. Every drawn colour comes from these shades.
 TEXT = {
     "blue": "#003f7f",   # 10.41:1
     "gold": "#b06306",   # 4.53:1
     "green": "#088847",  # 4.54:1
 }
 # Colour roles in the diagrams, where the curve and the label are the subject:
-# the curve in DICE blue, the label in dark gold, and a reference mark (such as
-# the anchor point) as a dark green ring drawn above the label, so it never
-# hides behind the text. Data figures colour each series in its DICE hue and
-# its label in the matching text shade. One exception: 08 shows ``alpha``, which
+# the curve in DICE blue, the label in dark gold, and an anchor mark (the
+# point a label is placed from) as a dark green ring drawn above the label, so
+# it never hides behind the text. One exception: 08 shows ``alpha``, which
 # lightens its label, and only dark blue stays above 4.5:1 at alpha 0.85.
+#
+# In the data figures, each series draws its line and its label in one text
+# shade, so the two match exactly and both pass. A reference series, which
+# the others are read against (the Sun among the blackbodies, the S&P 500
+# among the stocks), is near-black, and is drawn beneath the others so a
+# coloured line that overlaps it stays on top.
 CURVE_COLOR = PALETTE["blue"]
 LABEL_COLOR = TEXT["gold"]
 MARK_COLOR = TEXT["green"]
+REFERENCE_COLOR = "0.15"  # 15.08:1
 INCH = 1 / 2.54
 DPI = 150
 
@@ -92,7 +105,7 @@ def panel_letters(axes, font_size=9):
 
 
 def anchor_mark(ax, x, y):
-    """A ring at data point ``(x, y)`` in the reference-mark colour.
+    """A ring at data point ``(x, y)`` in the anchor-mark colour.
 
     It is drawn above the label, so the text never covers it, with a thin
     white halo, so it stays apart from a glyph it crosses even where its hue
@@ -123,6 +136,35 @@ def anchor_xy(ax, x, y, pos):
     px = xf[i] + f * (xf[i + 1] - xf[i])
     py = yf[i] + f * (yf[i + 1] - yf[i])
     return tuple(ax.transData.inverted().transform((px, py)))
+
+
+def smooth_path(values, sigma, log=False):
+    """``values`` smoothed by a Gaussian with a standard deviation of
+    ``sigma`` samples, on a log scale if ``log``.
+
+    Each end is padded with its own value, so the result has as many samples
+    as ``values`` and covers the same span.
+
+    A label on a line of real data rides this path rather than the line: even
+    smoothed, a line of monthly data wiggles at the scale of a letter, which
+    tilts neighbouring letters into each other. With ``sigma`` about a letter's
+    width, the path follows the line without those wiggles.
+    """
+    values = np.asarray(values, dtype=float)
+    reach = int(4 * sigma)
+    kernel = np.exp(-0.5 * (np.arange(-reach, reach + 1) / sigma) ** 2)
+    scaled = np.log(values) if log else values
+    padded = np.concatenate([np.full(reach, scaled[0]), scaled,
+                             np.full(reach, scaled[-1])])
+    smoothed = np.convolve(padded, kernel / kernel.sum(), mode="valid")
+    return np.exp(smoothed) if log else smoothed
+
+
+def sample_data(name):
+    """The path to one of matplotlib's sample data files, or ``None`` where the
+    installed matplotlib does not ship it (3.5 has no ``Stocks.csv``)."""
+    path = cbook.get_sample_data(name, asfileobj=False)
+    return str(path) if os.path.exists(path) else None
 
 
 def save(fig, path):

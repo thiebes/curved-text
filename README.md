@@ -335,12 +335,21 @@ figure-level functions expose one through `.axes`, and `pandas`
 ```python
 import seaborn as sns
 
-ax = sns.lineplot(data=df, x="x", y="y")
-curved_text(ax, df["x"], df["y"], "along the curve",
-            pos=0.5, anchor="center", offset=6.0)
+palette = {"NASDAQ Composite": "#003f7f", "S&P 500": "#b06306"}
+ax = sns.lineplot(data=df, x="date", y="level", hue="series",
+                  palette=palette, legend=False)
+for name, line in df.groupby("series"):
+    curved_text(ax, line["date"], line["level"], name, color=palette[name],
+                pos=0.6, anchor="center", offset=8.0)
 ```
 
-![A label drawn on a seaborn axes](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/09_seaborn_pandas.png)
+The gallery figure below labels two stock market indexes with the same calls,
+in seaborn's `whitegrid` theme, with each label in place of a legend entry. It
+also passes `curved_text` a smoothed copy of each line, which keeps the letters
+of a label on monthly data from tilting into each other
+([#61](https://github.com/thiebes/curved-text/issues/61)).
+
+![Two stock market indexes drawn by seaborn, each labelled along its line](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/09_seaborn_pandas.png)
 
 ## How it works
 

@@ -1,8 +1,10 @@
 # Examples
 
-A small gallery showing what [`curved-text`](../README.md) does and how to drive
-it. Each figure is produced by a self-contained script in this directory; the
-link under each panel points to the script that drew it.
+A small gallery showing what
+[`curved-text`](https://github.com/thiebes/curved-text#readme) does and how to
+drive it. Each figure is produced by a self-contained script in the
+repository's [`examples/`](https://github.com/thiebes/curved-text/tree/main/examples)
+directory; the link under each figure points to the script that drew it.
 
 Most scripts need only matplotlib and numpy (already installed with the
 package). The one integration example also needs seaborn and pandas; install
@@ -10,7 +12,7 @@ those with the `examples` extra. The usetex example also needs a LaTeX
 installation with `dvipng`, which pip does not install; without it that script
 skips its figure. The seaborn figure and the stock price figure read the
 `Stocks.csv` sample data, which matplotlib 3.5 does not ship; there both skip.
-Then regenerate everything into [images/](images/):
+Then regenerate everything into [images/](https://github.com/thiebes/curved-text/tree/main/examples/images):
 
 ```bash
 pip install -e ".[examples]"
@@ -46,17 +48,17 @@ The reason the package exists. In (a), a conventional legend forces the eye
 off the data to decode a colour key. In (b), each curve is labeled along its
 own path -- no legend, no round trip.
 
-![Direct labeling versus a legend](images/01_direct_labeling.png)
+![Direct labeling versus a legend](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/01_direct_labeling.png)
 
-[example_01_direct_labeling.py](example_01_direct_labeling.py)
+[example_01_direct_labeling.py](https://github.com/thiebes/curved-text/blob/main/examples/example_01_direct_labeling.py)
 
 ### Hello, curve
 
 One curve, one centred label riding it with a small perpendicular offset.
 
-![A label following a sine wave](images/02_sine_hello.png)
+![A label following a sine wave](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/02_sine_hello.png)
 
-[example_02_sine_hello.py](example_02_sine_hello.py)
+[example_02_sine_hello.py](https://github.com/thiebes/curved-text/blob/main/examples/example_02_sine_hello.py)
 
 ### Mathtext rides the curve too
 
@@ -64,9 +66,9 @@ A `$...$` run is laid out by matplotlib's mathtext engine and bent through the
 same arc-length frame as plain text, so the radical, fraction, and superscript
 stay connected and follow the curve. Plain and math runs mix in one string.
 
-![A mathtext expression following a sine wave](images/10_mathtext.png)
+![A mathtext expression following a sine wave](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/10_mathtext.png)
 
-[example_10_mathtext.py](example_10_mathtext.py)
+[example_10_mathtext.py](https://github.com/thiebes/curved-text/blob/main/examples/example_10_mathtext.py)
 
 ### Plain words and math share one baseline
 
@@ -74,9 +76,9 @@ Plain words and math runs in one label share a single baseline, so the math
 symbols sit level with the surrounding letters and a superscript lifts only the
 exponent, not the body.
 
-![Plain words and math runs on one shared baseline along a curve](images/15_mixed_alignment.png)
+![Plain words and math runs on one shared baseline along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/15_mixed_alignment.png)
 
-[example_15_mixed_alignment.py](example_15_mixed_alignment.py)
+[example_15_mixed_alignment.py](https://github.com/thiebes/curved-text/blob/main/examples/example_15_mixed_alignment.py)
 
 ### LaTeX typesets the labels under usetex
 
@@ -86,9 +88,9 @@ figure reads in one face. This is the direct-labeling figure drawn under
 usetex. The script needs `latex`, and `dvipng` for the tick and axis labels, as
 any matplotlib usetex figure does, and skips the figure without them.
 
-![Cooling curves labelled along their paths, with every text typeset by LaTeX](images/16_usetex.png)
+![Cooling curves labelled along their paths, with every text typeset by LaTeX](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
 
-[example_16_usetex.py](example_16_usetex.py)
+[example_16_usetex.py](https://github.com/thiebes/curved-text/blob/main/examples/example_16_usetex.py)
 
 ## The placement controls
 
@@ -106,9 +108,9 @@ Every panel makes this call, with the argument its caption names:
 curved_text(ax, x, y, "label", pos=pos, anchor="center", offset=7.0)
 ```
 
-![A label at five positions along a curve](images/03_pos_sweep.png)
+![A label at five positions along a curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/03_pos_sweep.png)
 
-[example_03_pos_sweep.py](example_03_pos_sweep.py)
+[example_03_pos_sweep.py](https://github.com/thiebes/curved-text/blob/main/examples/example_03_pos_sweep.py)
 
 ### `anchor` -- which part of the label lands at `pos`
 
@@ -121,9 +123,9 @@ Every panel makes this call, with the argument its caption names:
 curved_text(ax, x, y, "anchored", pos=0.5, anchor=anchor, offset=7.0)
 ```
 
-![Start, center, and end anchoring](images/04_anchor_triptych.png)
+![Start, center, and end anchoring](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/04_anchor_triptych.png)
 
-[example_04_anchor_triptych.py](example_04_anchor_triptych.py)
+[example_04_anchor_triptych.py](https://github.com/thiebes/curved-text/blob/main/examples/example_04_anchor_triptych.py)
 
 ### `offset` -- a perpendicular shift off the curve
 
@@ -137,9 +139,9 @@ Every panel makes this call, with the argument its caption names:
 curved_text(ax, x, y, "offset", pos=0.5, anchor="center", offset=offset)
 ```
 
-![Negative, zero, and positive offset](images/05_offset_ladder.png)
+![Negative, zero, and positive offset](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/05_offset_ladder.png)
 
-[example_05_offset_ladder.py](example_05_offset_ladder.py)
+[example_05_offset_ladder.py](https://github.com/thiebes/curved-text/blob/main/examples/example_05_offset_ladder.py)
 
 ### `valign` -- which line of the text rides the curve
 
@@ -155,9 +157,9 @@ Every panel makes this call, with the argument its caption names:
 curved_text(ax, x, y, "Amplitude", pos=0.5, anchor="center", valign=valign)
 ```
 
-![The same word on a curve under each valign option](images/14_valign.png)
+![The same word on a curve under each valign option](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/14_valign.png)
 
-[example_14_valign.py](example_14_valign.py)
+[example_14_valign.py](https://github.com/thiebes/curved-text/blob/main/examples/example_14_valign.py)
 
 ## Edge behaviors
 
@@ -166,16 +168,16 @@ curved_text(ax, x, y, "Amplitude", pos=0.5, anchor="center", valign=valign)
 A long label on a short curve is not clipped: the curve is extended along its
 end tangent (dashed) and the overrunning glyphs sit on that straight line.
 
-![A label overrunning the curve end](images/06_overrun_tangent.png)
+![A label overrunning the curve end](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/06_overrun_tangent.png)
 
-[example_06_overrun_tangent.py](example_06_overrun_tangent.py)
+[example_06_overrun_tangent.py](https://github.com/thiebes/curved-text/blob/main/examples/example_06_overrun_tangent.py)
 
 ### Glued through a change of aspect
 
 The same curve and the same call, drawn at two aspect ratios. Layout is
 recomputed per draw in display space, so spacing and offset stay correct -- the
 label does not stretch or shear. This is the static stand-in for interactive
-pan and zoom.
+pan and zoom, which the next figure animates.
 
 Both panels make this call:
 
@@ -183,9 +185,26 @@ Both panels make this call:
 curved_text(ax, x, y, "same call, glued", pos=0.5, anchor="center", offset=8.0)
 ```
 
-![The same label glued at two aspect ratios](images/07_glued_resize.png)
+![The same label glued at two aspect ratios](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/07_glued_resize.png)
 
-[example_07_glued_resize.py](example_07_glued_resize.py)
+[example_07_glued_resize.py](https://github.com/thiebes/curved-text/blob/main/examples/example_07_glued_resize.py)
+
+### Glued through pan and zoom
+
+The animated version: one call draws the label, and then only the axis limits
+change, every frame, as interactive panning and zooming change them. The view
+zooms in toward the label and back out, and the label follows its curve
+through every change of scale. It rides the rising slope after the first
+trough, which the script passes as its curve, so it stays in the close view:
+
+```python
+curved_text(ax, x[stretch], y[stretch], "stays on the curve", pos=0.5,
+            anchor="center", offset=7.0)
+```
+
+![An animation zooming in on a labelled damped oscillation and back out, with the label staying on its curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/25_pan_zoom.gif)
+
+[example_25_pan_zoom_animation.py](https://github.com/thiebes/curved-text/blob/main/examples/example_25_pan_zoom_animation.py)
 
 ### Even spacing on a tight bend
 
@@ -204,9 +223,9 @@ curved_text(ax, x, y, "winds", pos=0.5, anchor="center", offset=-13.0,
             crowding=crowding)
 ```
 
-![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](images/13_crowding.png)
+![A sharp bend with crowded letters spaced out, a gentle bend left unchanged](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
 
-[example_13_crowding.py](example_13_crowding.py)
+[example_13_crowding.py](https://github.com/thiebes/curved-text/blob/main/examples/example_13_crowding.py)
 
 ### Why a label reads upside down: direction of travel
 
@@ -223,9 +242,9 @@ planned ([#30](https://github.com/thiebes/curved-text/issues/30)). In each
 caption, `...` stands for the same arguments:
 `pos=0.4, anchor="center", offset=7.0`.
 
-![The same label upright, upside down on reversed arrays, and upside down on an inverted x axis](images/17_direction_of_travel.png)
+![The same label upright, upside down on reversed arrays, and upside down on an inverted x axis](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/17_direction_of_travel.png)
 
-[example_17_direction_of_travel.py](example_17_direction_of_travel.py)
+[example_17_direction_of_travel.py](https://github.com/thiebes/curved-text/blob/main/examples/example_17_direction_of_travel.py)
 
 ### Gaps in the curve
 
@@ -243,9 +262,9 @@ Every panel makes this call, on the curve its caption builds:
 curved_text(ax, x, y, "a stretch", pos=0.5, anchor="center", offset=6.0)
 ```
 
-![A label riding one stretch of curves with NaN, masked, and log-axis gaps](images/26_gaps.png)
+![A label riding one stretch of curves with NaN, masked, and log-axis gaps](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/26_gaps.png)
 
-[example_26_gaps.py](example_26_gaps.py)
+[example_26_gaps.py](https://github.com/thiebes/curved-text/blob/main/examples/example_26_gaps.py)
 
 ## Styling and integration
 
@@ -254,9 +273,9 @@ curved_text(ax, x, y, "a stretch", pos=0.5, anchor="center", offset=6.0)
 Anything beyond the placement controls is forwarded verbatim to each
 per-character glyph and each mathtext run.
 
-![A label styled with color, size, weight, and family](images/08_styling_passthrough.png)
+![A label styled with color, size, weight, and family](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/08_styling_passthrough.png)
 
-[example_08_styling_passthrough.py](example_08_styling_passthrough.py)
+[example_08_styling_passthrough.py](https://github.com/thiebes/curved-text/blob/main/examples/example_08_styling_passthrough.py)
 
 ### Clear the lines behind the label
 
@@ -273,9 +292,9 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$", pos=0.5,
             anchor="center", offset=0.0, box=box)
 ```
 
-![A label cleared from the lines it crosses by a white casing](images/11_box.png)
+![A label cleared from the lines it crosses by a white casing](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/11_box.png)
 
-[example_11_box.py](example_11_box.py)
+[example_11_box.py](https://github.com/thiebes/curved-text/blob/main/examples/example_11_box.py)
 
 ### Box versus a path-effects stroke
 
@@ -293,9 +312,9 @@ curved_text(ax, x, y, "crossing the gridlines", pos=0.5, anchor="center",
             offset=0.0, ...)
 ```
 
-![A wide per-character stroke leaves gaps; a box fill covers cleanly](images/12_box_vs_stroke.png)
+![A wide per-character stroke leaves gaps; a box fill covers cleanly](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
 
-[example_12_box_vs_stroke.py](example_12_box_vs_stroke.py)
+[example_12_box_vs_stroke.py](https://github.com/thiebes/curved-text/blob/main/examples/example_12_box_vs_stroke.py)
 
 ### A halo or a box
 
@@ -315,9 +334,9 @@ curved_text(ax, x, y, "legible over thin lines", pos=0.5, anchor="center",
             offset=10.0, ...)
 ```
 
-![A label cleared by a thin halo and by a box over a family of thin lines](images/19_halo_or_box.png)
+![A label cleared by a thin halo and by a box over a family of thin lines](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/19_halo_or_box.png)
 
-[example_19_halo_or_box.py](example_19_halo_or_box.py)
+[example_19_halo_or_box.py](https://github.com/thiebes/curved-text/blob/main/examples/example_19_halo_or_box.py)
 
 ### Several labels on one curve
 
@@ -327,9 +346,9 @@ behind it with a casing in its dict form: `color` sets the band's colour, white
 to match the page, and `pad` its height relative to the tallest glyph. The
 reference lines show where the band cuts them.
 
-![A damped oscillation labelled three times, each label's white band cutting the reference lines behind it](images/18_repeated_labels.png)
+![A damped oscillation labelled three times, each label's white band cutting the reference lines behind it](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/18_repeated_labels.png)
 
-[example_18_repeated_labels.py](example_18_repeated_labels.py)
+[example_18_repeated_labels.py](https://github.com/thiebes/curved-text/blob/main/examples/example_18_repeated_labels.py)
 
 ### Any matplotlib-backed axes (seaborn, pandas)
 
@@ -341,9 +360,9 @@ with each line labelled along its path in place of seaborn's legend. This
 script renders only if seaborn and pandas are installed (they come with the
 `examples` extra); they are not runtime dependencies of curved-text.
 
-![Two stock market indexes drawn by seaborn, each labelled along its line](images/09_seaborn_pandas.png)
+![Two stock market indexes drawn by seaborn, each labelled along its line](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/09_seaborn_pandas.png)
 
-[example_09_seaborn_pandas.py](example_09_seaborn_pandas.py)
+[example_09_seaborn_pandas.py](https://github.com/thiebes/curved-text/blob/main/examples/example_09_seaborn_pandas.py)
 
 ## Applications
 
@@ -356,9 +375,9 @@ passes `curved_text` only that stretch of each curve: on this axis most of a
 curve's length is its steep left flank, which falls far below the axes, so a
 `pos` along the whole curve would count length the reader never sees.
 
-![Four blackbody spectra, each labelled with its temperature along its path](images/21_blackbody.png)
+![Four blackbody spectra, each labelled with its temperature along its path](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/21_blackbody.png)
 
-[example_21_blackbody.py](example_21_blackbody.py)
+[example_21_blackbody.py](https://github.com/thiebes/curved-text/blob/main/examples/example_21_blackbody.py)
 
 ### Text around a circle and along a spiral
 
@@ -371,9 +390,9 @@ screen and reads upside down, as
 [the direction-of-travel figure](#why-a-label-reads-upside-down-direction-of-travel)
 explains.
 
-![Text over and under a circle, and a sentence winding out along a spiral](images/22_circle_spiral.png)
+![Text over and under a circle, and a sentence winding out along a spiral](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/22_circle_spiral.png)
 
-[example_22_circle_spiral.py](example_22_circle_spiral.py)
+[example_22_circle_spiral.py](https://github.com/thiebes/curved-text/blob/main/examples/example_22_circle_spiral.py)
 
 ### Stock prices on real dates
 
@@ -389,6 +408,6 @@ The seaborn figure labels its lines the same way, and
 [#61](https://github.com/thiebes/curved-text/issues/61) tracks handling this in
 the library.
 
-![Three stocks and the S&P 500 since 1990 on a log axis, each labelled along its line](images/23_stocks.png)
+![Three stocks and the S&P 500 since 1990 on a log axis, each labelled along its line](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/23_stocks.png)
 
-[example_23_stocks.py](example_23_stocks.py)
+[example_23_stocks.py](https://github.com/thiebes/curved-text/blob/main/examples/example_23_stocks.py)

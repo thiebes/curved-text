@@ -22,6 +22,10 @@ extensions = [
 # The README and the gallery reference each other and external pages by absolute
 # URL, so no relative-link rewriting is needed when they are included here.
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
+# The gallery links between its own sections by GitHub's heading anchors (for
+# example #a-halo-or-a-box); generate the same anchors here so they resolve on
+# the site too.
+myst_heading_anchors = 3
 
 html_theme = "furo"
 html_title = f"curved-text {version}"

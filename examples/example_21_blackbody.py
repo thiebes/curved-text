@@ -24,10 +24,10 @@ K_B = 1.380649e-23
 WIEN_UM_K = 2897.771955
 
 # Temperature (K), colour of the line and its label, label, and offset
-# (points). The Sun is the reference curve, so it is drawn in near-black, and
-# its label sits
-# above it, in the open space; the others sit below their curves, where the
-# gap to the next curve is widest.
+# (points). The Sun is the reference curve: it is drawn in near-black and
+# first, so beneath the others, and its label sits above it, in the open
+# space. The others sit below their curves, where the gap to the next curve
+# is widest.
 SERIES = [
     (5772, REFERENCE_COLOR, "5772 K, the Sun", 8.0),
     (5000, TEXT["blue"], "5000 K", -8.0),
@@ -37,6 +37,7 @@ SERIES = [
 # Each label rides the stretch of its curve just past the peak, from 0.9 to
 # 1.8 times the peak wavelength, centred.
 LABEL_SPAN_OVER_PEAK = (0.9, 1.8)
+# The wavelengths drawn, in μm: the ultraviolet to the near infrared.
 WAVELENGTH_UM = (0.1, 3.0)
 # The radiance axis: the top leaves room for the Sun's label above its peak,
 # and the bottom cuts off the steep short-wavelength flanks, which fall many

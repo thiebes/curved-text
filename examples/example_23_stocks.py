@@ -36,11 +36,12 @@ from _style import (REFERENCE_COLOR, TEXT, data_axes, figure, sample_data,
 
 # Column, label, colour of the line and its label, the dates the label rides
 # (centred on them), and its offset in points: positive above the line,
-# negative below.
+# negative below. The reference series comes first, so it is drawn beneath
+# the others.
 SERIES = [
+    ("^GSPC", "S&P 500", REFERENCE_COLOR, ("2013-06-01", "2019-06-01"), -8.0),
     ("MSFT", "Microsoft", TEXT["blue"], ("2013-01-01", "2019-01-01"), 8.0),
     ("IBM", "IBM", TEXT["green"], ("2010-06-01", "2015-06-01"), 8.0),
-    ("^GSPC", "S&P 500", REFERENCE_COLOR, ("2013-06-01", "2019-06-01"), -8.0),
     ("XRX", "Xerox", TEXT["gold"], ("2016-01-01", "2019-06-01"), 8.0),
 ]
 WINDOW_MONTHS = 12

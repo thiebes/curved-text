@@ -20,31 +20,33 @@ import matplotlib.patheffects as patheffects
 import numpy as np
 import matplotlib.pyplot as plt
 
-# DICE palette set: blue / gold / green.
+# DICE palette set: blue / gold / green. These are the source hues; only blue
+# is drawn as is, because DICE gold and green are too light to draw.
 PALETTE = {"blue": "#003f7f", "gold": "#f7941e", "green": "#0cce6b"}
 # The same hues dark enough for text, at least 4.5:1 against white by the WCAG 2
 # contrast formula. DICE gold and green are 2.28:1 and 2.09:1, too light to
 # read as text, and below the 3:1 that WCAG asks of lines and marks; DICE blue
-# is 10.4:1 already. A labelled data series uses its text shade for both its
-# line and its label, so the two match exactly and both pass.
+# is 10.4:1 already. Every drawn colour comes from these shades.
 TEXT = {
     "blue": "#003f7f",   # 10.41:1
     "gold": "#b06306",   # 4.53:1
     "green": "#088847",  # 4.54:1
 }
 # Colour roles in the diagrams, where the curve and the label are the subject:
-# the curve in DICE blue, the label in dark gold, and a reference mark (such as
-# the anchor point) as a dark green ring drawn above the label, so it never
-# hides behind the text. Data figures colour each series, line and label
-# alike, in one text shade, and draw a reference series that the others are
-# read against (the Sun among the blackbodies, the S&P 500 among the stocks)
-# in near-black (15:1). One exception: 08
-# shows ``alpha``, which lightens its label, and only dark blue stays above
-# 4.5:1 at alpha 0.85.
+# the curve in DICE blue, the label in dark gold, and an anchor mark (the
+# point a label is placed from) as a dark green ring drawn above the label, so
+# it never hides behind the text. One exception: 08 shows ``alpha``, which
+# lightens its label, and only dark blue stays above 4.5:1 at alpha 0.85.
+#
+# In the data figures, each series draws its line and its label in one text
+# shade, so the two match exactly and both pass. A reference series, which
+# the others are read against (the Sun among the blackbodies, the S&P 500
+# among the stocks), is near-black, and is drawn beneath the others so a
+# coloured line that overlaps it stays on top.
 CURVE_COLOR = PALETTE["blue"]
 LABEL_COLOR = TEXT["gold"]
 MARK_COLOR = TEXT["green"]
-REFERENCE_COLOR = "0.15"
+REFERENCE_COLOR = "0.15"  # 15.08:1
 INCH = 1 / 2.54
 DPI = 150
 
@@ -103,7 +105,7 @@ def panel_letters(axes, font_size=9):
 
 
 def anchor_mark(ax, x, y):
-    """A ring at data point ``(x, y)`` in the reference-mark colour.
+    """A ring at data point ``(x, y)`` in the anchor-mark colour.
 
     It is drawn above the label, so the text never covers it, with a thin
     white halo, so it stays apart from a glyph it crosses even where its hue

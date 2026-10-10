@@ -42,12 +42,14 @@ def make(images_dir):
     if path is None:
         print("  (skipped 09_seaborn_pandas: this matplotlib has no Stocks.csv)")
         return None
-    # Without the dividend-date rows, which have no prices, and without the
-    # file's last row, which repeats June 2022.
+    # Without the dividend-date rows, which have no prices, and without a row
+    # that repeats the one before it, as the file's last row repeats June 2022.
     stocks = (pd.read_csv(path, comment="#", parse_dates=["Date"])
               .dropna(how="all", subset=[column for column, *_ in SERIES])
               .set_index("Date"))
-    stocks = stocks[~stocks.duplicated()]
+    previous = stocks.shift()
+    repeats = ((stocks == previous) | (stocks.isna() & previous.isna())).all(axis=1)
+    stocks = stocks[~repeats]
     # A rolling mean over the window, dated at the middle of the window.
     smoothed = stocks.rolling(WINDOW_MONTHS, center=True).mean()
     long_form = (smoothed[[column for column, *_ in SERIES]]

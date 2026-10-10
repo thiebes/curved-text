@@ -65,7 +65,9 @@ def test_gallery_figure_draws(name, tmp_path):
 def test_gallery_text_shades_are_legible():
     # Label text in the gallery is at least 4.5:1 against its white
     # background, the WCAG 2 minimum for text; the gold and green shades pass
-    # by a few hundredths, so retuning one must not drop it below.
+    # by a few hundredths, so retuning one must not drop it below. The
+    # near-black of a reference series labels text too.
     style = _load_example("_style")
-    for hue, color in style.TEXT.items():
-        assert _wcag_contrast_on_white(color) >= 4.5, hue
+    for role, color in [*style.TEXT.items(),
+                        ("reference", style.REFERENCE_COLOR)]:
+        assert _wcag_contrast_on_white(color) >= 4.5, role

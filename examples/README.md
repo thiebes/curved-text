@@ -1,9 +1,9 @@
-# Examples
+# Gallery
 
-A small gallery showing what
-[`curved-text`](https://github.com/thiebes/curved-text#readme) does and how to
-drive it. Each figure is produced by a self-contained script in the
-repository's [`examples/`](https://github.com/thiebes/curved-text/tree/main/examples)
+Figures showing what [`curved-text`](https://github.com/thiebes/curved-text#readme)
+does and how to drive it. Each figure is produced by a self-contained script in
+the repository's
+[`examples/`](https://github.com/thiebes/curved-text/tree/main/examples)
 directory; the link under each figure points to the script that drew it.
 
 Most scripts need only matplotlib and numpy (already installed with the
@@ -12,7 +12,9 @@ those with the `examples` extra. The usetex example also needs a LaTeX
 installation with `dvipng`, which pip does not install; without it that script
 skips its figure. The seaborn figure and the stock price figure read the
 `Stocks.csv` sample data, which matplotlib 3.5 does not ship; there both skip.
-Then regenerate everything into [images/](https://github.com/thiebes/curved-text/tree/main/examples/images):
+To run the scripts, work from a clone of the repository. Install the extras,
+then regenerate everything into
+[images/](https://github.com/thiebes/curved-text/tree/main/examples/images):
 
 ```bash
 pip install -e ".[examples]"
@@ -192,19 +194,21 @@ curved_text(ax, x, y, "same call, glued", pos=0.5, anchor="center", offset=8.0)
 ### Glued through pan and zoom
 
 The animated version: one call draws the label, and then only the axis limits
-change, every frame, as interactive panning and zooming change them. The view
-zooms in toward the label and back out, and the label follows its curve
-through every change of scale. It rides the rising slope after the first
-trough, which the script passes as its curve, so it stays in the close view:
+change, every frame, as interactive zooming and panning change them. The view
+zooms in toward the label, pans along the curve, and zooms back out to where it
+began, and the label follows its curve through every change of scale and
+position. The axes box and the tick label widths are fixed, so nothing else on
+the figure moves. The label rides the rising slope after the first trough,
+which the script passes as its curve, so it stays in view throughout:
 
 ```python
 curved_text(ax, x[stretch], y[stretch], "stays on the curve", pos=0.5,
             anchor="center", offset=7.0)
 ```
 
-![An animation zooming in on a labelled damped oscillation and back out, with the label staying on its curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/25_pan_zoom.gif)
+![An animation zooming in on a labelled damped oscillation, panning along it, and zooming back out, with the label staying on its curve](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/25_pan_zoom.gif)
 
-[example_25_pan_zoom_animation.py](https://github.com/thiebes/curved-text/blob/main/examples/example_25_pan_zoom_animation.py)
+[example_25_pan_zoom.py](https://github.com/thiebes/curved-text/blob/main/examples/example_25_pan_zoom.py)
 
 ### Even spacing on a tight bend
 

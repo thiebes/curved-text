@@ -390,7 +390,7 @@ instead of being cut off at the path's end.
 Full documentation, including the API reference and the design notes, is at
 [thiebes.github.io/curved-text](https://thiebes.github.io/curved-text/). More
 worked examples are in the
-[example gallery](https://github.com/thiebes/curved-text/tree/main/examples).
+[example gallery](https://thiebes.github.io/curved-text/gallery.html).
 
 ## Contributing
 

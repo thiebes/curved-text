@@ -7,8 +7,9 @@ text-on-curve geometry, so they hide their axes -- the curve is the data, and
 bare quantitative ticks would be chartjunk. The figures that plot data (direct
 labeling, its usetex version, the seaborn figure, and the applications on real
 data or physical laws) keep axes with units, and so does the log-axis panel of
-the gaps figure, whose subject is the scale. Two data helpers sit here as
-well: ``sample_data`` finds matplotlib's sample data, and ``smooth_path``
+the gaps figure, whose subject is the scale, and the pan-and-zoom animation,
+whose moving ticks are what show the view changing. Two data helpers sit here
+as well: ``sample_data`` finds matplotlib's sample data, and ``smooth_path``
 smooths the path a label rides on a line of real data.
 """
 from __future__ import annotations

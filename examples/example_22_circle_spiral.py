@@ -27,9 +27,10 @@ SPIRAL_TEXT = (r"an Archimedean spiral, $r = a\theta$, keeps the same distance "
 # angles it spans: from just over half a turn, so the first words have room
 # on the inside, to where the sentence ends.
 SPIRAL_A = 1.0
-SPIRAL_THETA = (1.2 * np.pi, 5.05 * np.pi)
-# Half the width of the spiral's axes, in data units, around the spiral's
-# centre: it sets the scale, and so where the sentence ends.
+SPIRAL_THETA = (1.2 * np.pi, 5.0 * np.pi)
+# Half the width of the spiral's axes, in data units, around the centre of the
+# spiral's extent: it sets the scale, and so where the sentence ends, which
+# leaves about 3 points of bare line past its last letter.
 SPIRAL_HALF_SPAN = 18.0
 
 
@@ -61,9 +62,9 @@ def make(images_dir):
     x, y = r * np.cos(theta), -r * np.sin(theta)
     ax_spiral.plot(x, y, color=CURVE_COLOR, linewidth=1.0)
     # A negative offset puts the text to the right of a clockwise travel:
-    # inside each turn.
+    # inside each turn, far enough that tall letters clear the line.
     curved_text(ax_spiral, x, y, SPIRAL_TEXT, pos=0.0, anchor="start",
-                offset=-5.0, color=LABEL_COLOR, fontsize=9)
+                offset=-6.5, color=LABEL_COLOR, fontsize=9)
     # Centred on the spiral's extent, not on its origin, which sits off
     # centre in the drawn shape.
     centre_x = (x.min() + x.max()) / 2

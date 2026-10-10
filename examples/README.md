@@ -23,9 +23,10 @@ Or run one script on its own:
 python examples/example_02_sine_hello.py
 ```
 
-The scripts follow the repository's plot conventions (the DICE palette, with
-label text in shades that meet the WCAG 4.5:1 contrast minimum, a white
-background, sizes in centimetres, explicit dpi). Most panels hide their
+The scripts follow the repository's plot conventions (the DICE palette in
+shades that meet the WCAG 4.5:1 contrast minimum for text, with each data
+series drawing its line and its label in the same shade, a white background,
+sizes in centimetres, explicit dpi). Most panels hide their
 axes on purpose: the subject is the text-on-curve geometry, so quantitative
 ticks would only get in the way. The figures that plot data -- direct
 labeling, its usetex version, the seaborn figure, and the applications on real

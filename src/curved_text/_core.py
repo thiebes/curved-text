@@ -915,7 +915,7 @@ class _OutlineSegment(mtext.Text):
         verts, codes = self._outline_units()
         if len(verts) == 0:
             return None
-        size = self.get_fontsize()
+        size = self.get_fontproperties().get_size_in_points()
         em_px = renderer.points_to_pixels(size)
         px_per_unit = _px_per_unit(renderer, size)
         u = verts[:, 0] * px_per_unit
@@ -1000,7 +1000,8 @@ class _PlainGlyph(_OutlineSegment):
         run = self._run_layout()
         if run is None:
             return super()._size_px(renderer)
-        px_per_unit = _px_per_unit(renderer, self.get_fontsize())
+        size = self.get_fontproperties().get_size_in_points()
+        px_per_unit = _px_per_unit(renderer, size)
         return (run.widths[self._index] * px_per_unit,
                 run.heights[self._index] * px_per_unit)
 

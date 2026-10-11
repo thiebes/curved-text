@@ -36,6 +36,14 @@ public API: placement (`pos`, `anchor`, `offset`), mathtext, the box casing,
 redraw stability, and error handling for bad input. Add to this file when you
 change behaviour.
 
+[tests/test_examples.py](tests/test_examples.py) runs every figure script the
+gallery lists, so a change that breaks one fails there. A figure whose
+requirement is missing skips: seaborn and pandas, LaTeX with `dvipng`, or the
+`Stocks.csv` sample data, which matplotlib 3.5 does not ship. Set the
+environment variable `CURVED_TEXT_GALLERY_COMPLETE` to make such a skip fail
+instead, as the CI job that installs every requirement does. The module skips
+itself in a source distribution, which ships `tests/` but not `examples/`.
+
 The usetex tests need a LaTeX installation and skip without one, so a run with
 no LaTeX can pass while testing less. To run them, install LaTeX with the
 packages named in `TEX_PACKAGES` in
@@ -72,9 +80,10 @@ python examples/generate_all.py
 ```
 
 This needs the `examples` extra (seaborn and pandas) for the one integration
-figure, and a LaTeX installation with `dvipng` for the usetex figure. Each of
-those scripts skips its figure when its requirement is missing, so the other
-figures still regenerate.
+figure, a LaTeX installation with `dvipng` for the usetex figure, and a
+matplotlib that ships the `Stocks.csv` sample data (3.5 does not) for the
+seaborn and stock price figures. Each of those scripts skips its figure when
+its requirement is missing, so the other figures still regenerate.
 
 ## Building the documentation
 

@@ -751,6 +751,16 @@ def _layout_units(converter: TextToPath) -> float:
     return _text_to_path.FONT_SCALE / em_px
 
 
+def _px_per_unit(renderer, size_points: float) -> float:
+    """Display pixels per 1/100-em layout unit, for text ``size_points`` high.
+
+    Outlines and advances come in layout units, 100 to the em at the shared
+    converter's ``FONT_SCALE``, so this is the em in pixels over that scale. A
+    :func:`_tex_to_path` outline also needs :func:`_layout_units`.
+    """
+    return renderer.points_to_pixels(size_points) / _text_to_path.FONT_SCALE
+
+
 def _measuring_renderer(figure) -> RendererAgg:
     """A renderer to measure a label with outside a draw: the canvas's own on
     Agg canvases, which make one on request, or else an Agg renderer at the
@@ -905,8 +915,9 @@ class _OutlineSegment(mtext.Text):
         verts, codes = self._outline_units()
         if len(verts) == 0:
             return None
-        em_px = renderer.points_to_pixels(self.get_fontsize())
-        px_per_unit = em_px / _text_to_path.FONT_SCALE
+        size = self.get_fontsize()
+        em_px = renderer.points_to_pixels(size)
+        px_per_unit = _px_per_unit(renderer, size)
         u = verts[:, 0] * px_per_unit
         v = (verts[:, 1] - self._datum) * px_per_unit
         if self._bend:
@@ -989,8 +1000,7 @@ class _PlainGlyph(_OutlineSegment):
         run = self._run_layout()
         if run is None:
             return super()._size_px(renderer)
-        px_per_unit = (renderer.points_to_pixels(self.get_fontsize())
-                       / _text_to_path.FONT_SCALE)
+        px_per_unit = _px_per_unit(renderer, self.get_fontsize())
         return (run.widths[self._index] * px_per_unit,
                 run.heights[self._index] * px_per_unit)
 
@@ -1433,8 +1443,7 @@ class CurvedText(mtext.Text):
                                               self._segments[1:])):
             if isinstance(left, _PlainGlyph) and isinstance(right, _PlainGlyph):
                 prop = left.get_fontproperties()
-                px_per_unit = (renderer.points_to_pixels(prop.get_size_in_points())
-                               / _text_to_path.FONT_SCALE)
+                px_per_unit = _px_per_unit(renderer, prop.get_size_in_points())
                 if left.get_usetex():
                     kern = left._tex_kern_units()
                 else:
@@ -1755,9 +1764,8 @@ class CurvedText(mtext.Text):
         # little off the frame; shift the casing centreline by that band offset so
         # it sits over the ink rather than over the bare datum line.
         if self._box is not None:
-            ppu = (renderer.points_to_pixels(prop.get_size_in_points())
-                   / _text_to_path.FONT_SCALE)
-            band_px = band * ppu
+            px_per_unit = _px_per_unit(renderer, prop.get_size_in_points())
+            band_px = band * px_per_unit
             s_box = np.linspace(cursor, cursor + total, _BOX_SAMPLES)
             bx, by, bang = frame.points_and_angles(s_box)
             bx = bx - band_px * np.sin(bang)

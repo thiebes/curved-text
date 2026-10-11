@@ -29,8 +29,8 @@ from matplotlib.transforms import Bbox
 
 from curved_text import CurvedText, _core, curved_text
 from curved_text._core import (
-    _font_lines, _layout_units, _MathRun, _PlainGlyph, _split_runs, _tex_source,
-    _tex_to_path, _text_to_path, _valign_datum)
+    _font_lines, _layout_units, _MathRun, _PlainGlyph, _px_per_unit, _split_runs,
+    _tex_source, _tex_to_path, _text_to_path, _valign_datum)
 
 # usetex outline extraction runs latex and reads the DVI, which needs kpsewhich
 # to locate the fonts.
@@ -567,6 +567,20 @@ def test_parse_math_false_disables_math_runs():
     plt.close(fig)
 
 
+@pytest.mark.parametrize("dpi", [72, 100, 200])
+def test_px_per_unit_is_the_em_in_pixels_over_a_hundred(dpi):
+    # Layout units are 1/100 em, and the em of text ``size`` points high is
+    # ``size * dpi / 72`` pixels. The expected value is written out from those
+    # definitions, so it pins the helper that placement, kerning, size, and the
+    # casing all share.
+    fig = plt.figure(dpi=dpi)
+    renderer = fig.canvas.get_renderer()
+    for size in (6.0, 12.0, 30.5):
+        assert _px_per_unit(renderer, size) == pytest.approx(
+            size * dpi / 72.0 / 100.0)
+    plt.close(fig)
+
+
 def test_math_run_straight_line_reduces_to_affine():
     # On a straight horizontal curve every tangent angle is zero, so the bend
     # map must collapse to a plain affine: the layout scaled by the per-unit
@@ -673,8 +687,7 @@ def test_math_run_follows_tight_arc():
     verts, _ = run._outline_units()
     lines = _font_lines(run.get_fontproperties(), usetex=False)
     datum = _valign_datum(ct._valign, lines)
-    px_per_unit = (renderer.points_to_pixels(run.get_fontsize())
-                   / _text_to_path.FONT_SCALE)
+    px_per_unit = _px_per_unit(renderer, run.get_fontsize())
     reach = np.abs(verts[:, 1] - datum).max() * px_per_unit
     bound = reach + 2.0
     half_span = width / 2.0 / radius  # half the label arc, radians
@@ -1047,8 +1060,7 @@ def test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text(family, pair,
         font = font_manager.get_font(font_manager.findfont(prop))
         font.set_size(_text_to_path.FONT_SCALE, _text_to_path.DPI)
         glyphs = _text_to_path.get_glyphs_with_font(font, text)[0]
-        px_per_unit = (renderer.points_to_pixels(fontsize)
-                       / _text_to_path.FONT_SCALE)
+        px_per_unit = _px_per_unit(renderer, fontsize)
         plt.close(fig)
         return second._s_left - first._s_left, glyphs[1][1] * px_per_unit
 
@@ -2499,8 +2511,8 @@ def test_usetex_plain_glyphs_are_kerned_as_tex_sets_them(pair, reference):
         converter = _tex_to_path(fontsize)
         glyphs = converter.get_glyphs_tex(
             font_manager.FontProperties(size=fontsize), text)[0]
-        px_per_unit = (fig.canvas.get_renderer().points_to_pixels(fontsize)
-                       / _text_to_path.FONT_SCALE * _layout_units(converter))
+        px_per_unit = (_px_per_unit(fig.canvas.get_renderer(), fontsize)
+                       * _layout_units(converter))
         plt.close(fig)
         return (second._s_left - first._s_left,
                 (glyphs[1][1] - glyphs[0][1]) * px_per_unit)

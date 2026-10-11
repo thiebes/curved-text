@@ -15,7 +15,7 @@ Even smoothed, a monthly line wiggles at the scale of a letter, which would
 tilt neighbouring letters into each other, so each label rides the line
 smoothed once more by a Gaussian about a letter wide, on the log scale the
 axis shows: a path that follows the line without those wiggles, and is not
-drawn (#61 tracks handling this in the library).
+drawn.
 
 The file is read with the ``csv`` module rather than pandas, so this figure
 runs without the ``examples`` extra; the seaborn figure, 09, shows pandas.

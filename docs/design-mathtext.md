@@ -344,7 +344,7 @@ and the last puts the `valign` lines on the drawn font.
   was rejected: a new string could reuse characters already in TeX's cache, but
   each distinct character costs a run (9 to 10 s for the same label), and TeX
   never sets two characters together, so nothing is kerned. One LaTeX job per
-  draw for every new run would cut the many-labels cost (#43).
+  draw for every new run would cut the many-labels cost.
 - **Cache.** Runs are cached per run, size, and the rcParams matplotlib's
   `TexManager` writes the LaTeX preamble from: the user's
   preamble, `font.family`, and each family's font list, such as `font.serif`,
@@ -613,7 +613,7 @@ fontsize pass-through), these tests carry the design:
   kerning. Pairing items with characters there needs a way to tell which items
   belong to which character.
 - One LaTeX job per draw for every usetex run not yet cached, so a figure with
-  many short new labels starts LaTeX once rather than once per label (#43).
+  many short new labels starts LaTeX once rather than once per label.
 
 ## Ecosystem constraints
 

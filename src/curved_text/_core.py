@@ -1100,8 +1100,8 @@ class CurvedText(mtext.Text):
         Where the label is anchored along the curve, as a fraction of the curve's
         drawn arc length: ``0.0`` is the start of the drawn curve, ``1.0`` its
         end. A curve with gaps (NaN, infinite, or masked points) is measured
-        along its drawn stretches, and the label rides the stretch that holds
-        its anchor.
+        along its drawn stretches, on screen, so zooming can move the anchor onto
+        another stretch, and the label rides the stretch that holds its anchor.
     ``anchor``
         Which part of the label lands at ``pos``: ``"start"``, ``"center"``, or
         ``"end"``.
@@ -1200,8 +1200,9 @@ class CurvedText(mtext.Text):
         The axes to draw into.
     pos : float, default 0.5
         Arc-length fraction in ``[0, 1]`` for the anchor point. On a curve with
-        gaps it is a fraction of the drawn length, and the label rides the
-        stretch that holds its anchor.
+        gaps it is a fraction of the drawn length, measured on screen, so
+        zooming can move the anchor onto another stretch, and the label rides
+        the stretch that holds its anchor.
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0

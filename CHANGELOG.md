@@ -3,7 +3,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.8.0
 
 ### Added
 
@@ -12,16 +12,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   and values with units. The axes convert the curve as they convert a plotted
   line, so the label stays on the line and follows a later change of the axis
   units ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
-  the curve was cast to float: a `datetime64` curve put the label far outside
-  the axes, and `datetime` objects and strings raised. A label made before
-  anything is plotted sets up the axis for its data, as `plot` does, and
-  category strings not yet on an axis are added to it, as ticks, as for
-  `ax.text` and `plot`.
+  the curve was cast to float: a `datetime64` curve in any unit but days put
+  the label far from its line, and `datetime` objects and non-numeric strings
+  raised. A label made before anything is plotted sets up the axis for its
+  data, as `plot` does, and category strings not yet on an axis are added to
+  it, as ticks, as `plot` does, and as `ax.text` does on an axis that already
+  has categories.
 - A NaN, infinite, or masked point leaves a gap in the curve, as in `plot`
   ([#28](https://github.com/thiebes/curved-text/issues/28)).
-  `pos` is a fraction of the drawn length, and the label rides the stretch
-  that holds its anchor, past whose ends it follows the stretch's end
-  tangents, as at the ends of a curve. A point the axes' scale gives no pixel,
+  `pos` is a fraction of the drawn length, measured on screen, so zooming can
+  move the anchor onto another stretch, and the label rides the stretch that
+  holds its anchor, past whose ends it follows the stretch's end tangents, as
+  at the ends of a curve. A point the axes' scale gives no pixel,
   such as x of 0 or less on a log axis with `nonpositive="mask"`, leaves a
   gap too. Before, NaN and infinite points raised `ValueError`, the value
   under a mask placed the label, and a label on a log axis with
@@ -34,7 +36,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Applications on real data and physical laws show what the package is for:
   blackbody spectra, text around a circle and along a spiral, stock prices on
   real dates, and a seaborn figure. An animation shows a label staying on its
-  curve through pan and zoom. Every figure meets the WCAG contrast minimums,
+  curve through zoom and pan. Every figure meets the WCAG contrast minimums,
   and CI runs every gallery script
   ([#31](https://github.com/thiebes/curved-text/issues/31)).
 
@@ -43,8 +45,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Data an axis cannot convert, such as strings on a date axis, raises
   matplotlib's `ConversionError`, a `TypeError`, when the label is made
   ([#24](https://github.com/thiebes/curved-text/issues/24)). Before,
-  strings raised `ValueError`, so code that catches `ValueError` no longer
-  catches them.
+  non-numeric strings raised `ValueError`, so code that catches `ValueError`
+  no longer catches them.
+- Numeric strings, such as `["0", "1", "2"]`, are categories, as in `plot`, and
+  put a category converter on the axis; an axis that held plain numbers shows
+  the category names as ticks
+  ([#24](https://github.com/thiebes/curved-text/issues/24)). Before, the cast
+  to float took them for numbers.
 - `pos` must be finite, and a NaN or infinite `pos` raises `ValueError`
   ([#28](https://github.com/thiebes/curved-text/issues/28)). Before, a NaN
   `pos` placed the glyphs at NaN coordinates.

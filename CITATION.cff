@@ -15,8 +15,8 @@ repository-code: https://github.com/thiebes/curved-text
 url: https://thiebes.github.io/curved-text/
 doi: 10.5281/zenodo.20725006
 license: MIT
-version: 0.7.0
-date-released: "2026-10-05"
+version: 0.8.0
+date-released: "2026-10-11"
 keywords:
   - matplotlib
   - text

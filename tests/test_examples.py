@@ -20,6 +20,11 @@ import pytest
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
+# A source distribution ships the tests but not the examples they run.
+if not EXAMPLES.is_dir():
+    pytest.skip("the examples folder is not in this source tree",
+                allow_module_level=True)
+
 
 def _load_example(name):
     """The module ``examples/<name>.py``, loaded with the examples folder on

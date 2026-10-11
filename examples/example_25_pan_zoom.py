@@ -35,6 +35,10 @@ VIEWS = [WHOLE, CLOSE_START, CLOSE_END]
 # The label rides the rising slope after the first trough, centred on it, so
 # it stays in the close view.
 LABEL_STRETCH = (4.9, 7.5)
+# The axes box gives up this much of the figure's width on the right, so the
+# last x tick label, which hangs half its width past the box, fits in every
+# frame.
+RIGHT_ROOM = 0.025
 
 
 def _view(frame):
@@ -46,10 +50,11 @@ def _view(frame):
 
 
 def _freeze_layout(fig):
-    """Keep the axes box where constrained layout put it, so changing tick
-    labels cannot shift it from frame to frame."""
+    """Keep the axes box where constrained layout put it, less ``RIGHT_ROOM``,
+    so changing tick labels cannot shift it from frame to frame."""
     fig.canvas.draw()
     box = fig.axes[0].get_position().frozen()
+    box = box.shrunk(1.0 - RIGHT_ROOM / box.width, 1.0)
     if hasattr(fig, "set_layout_engine"):
         fig.set_layout_engine("none")
     else:  # matplotlib 3.5

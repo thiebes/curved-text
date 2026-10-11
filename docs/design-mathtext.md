@@ -149,9 +149,9 @@ All code lives in `src/curved_text/_core.py`.
   kept until either axis's units change, as matplotlib's lines keep theirs:
   each axis's public `"units"` callback, which also makes the lines convert
   again, drops it. Converting on every measurement would cost a long curve of
-  `datetime` objects a quarter of a second or more per measurement at 100,000
-  points, several times a draw under constrained layout or a legend at
-  `loc="best"`. The callbacks are connected at construction, since the curve
+  `datetime` objects about 0.15 s per measurement at 100,000 points, several
+  times a draw under constrained layout or a legend at `loc="best"`. The
+  callbacks are connected at construction, since the curve
   converted there is already kept, and removal disconnects each from the
   registry it was connected to: clearing the axes replaces the registries,
   whose new ids can repeat a removed label's. The callbacks are not

@@ -242,10 +242,8 @@ upside down; (c) an inverted x axis puts the points right to left on screen
 too, with the same result. `pos` counts from the first point and `offset` turns
 with the direction, so the label also moves along the curve and to its other
 side. Reversing the arrays of a curve that runs from right to left on screen
-turns its label upright. An option to keep labels upright automatically is
-planned ([#30](https://github.com/thiebes/curved-text/issues/30)). In each
-caption, `...` stands for the same arguments:
-`pos=0.4, anchor="center", offset=7.0`.
+turns its label upright. In each caption, `...` stands for the same
+arguments: `pos=0.4, anchor="center", offset=7.0`.
 
 ![The same label upright, upside down on reversed arrays, and upside down on an inverted x axis](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/17_direction_of_travel.png)
 
@@ -409,9 +407,7 @@ smoothed with a 12-month rolling mean. The dates go to `plot` and
 the scale of a letter, which tilts neighbouring letters into each other, so
 each label rides its line smoothed once more, by a Gaussian about a letter
 wide: a path that follows the line without those wiggles, and is never drawn.
-The seaborn figure labels its lines the same way, and
-[#61](https://github.com/thiebes/curved-text/issues/61) tracks handling this in
-the library.
+The seaborn figure labels its lines the same way.
 
 ![Three stocks and the S&P 500 since 1990 on a log axis, each labelled along its line](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/23_stocks.png)
 

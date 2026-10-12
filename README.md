@@ -346,8 +346,7 @@ for name, line in df.groupby("series"):
 The gallery figure below labels two stock market indexes with the same calls,
 in seaborn's `whitegrid` theme, with each label in place of a legend entry. It
 also passes `curved_text` a smoothed copy of each line, which keeps the letters
-of a label on monthly data from tilting into each other
-([#61](https://github.com/thiebes/curved-text/issues/61)).
+of a label on monthly data from tilting into each other.
 
 ![Two stock market indexes drawn by seaborn, each labelled along its line](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/09_seaborn_pandas.png)
 

@@ -1,8 +1,11 @@
 # API reference
 
-The package exposes a function and an artist class. Use the `curved_text`
-function for the common case. Use the `CurvedText` class when you need to keep a
-reference to the label and change it after drawing.
+This application programming interface (API) reference covers a function and
+an artist class: `curved_text` and `CurvedText`. They take the same arguments
+and make the same artist. Keep the returned object to hide it (`set_visible`),
+restack it (`set_zorder`), change its clipping, or remove it (`remove()`). To
+change the text, color, size, or curve, remove the label and make a new one.
+`get_text()` does not return the label's string.
 
 ```{eval-rst}
 .. autofunction:: curved_text.curved_text

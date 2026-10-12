@@ -1,15 +1,8 @@
-"""Edge behavior: the ``crowding`` control -- even spacing on a tight bend.
+"""The ``crowding`` control: even spacing on a tight bend.
 
-On a sharp bend the letters, set one after another by their flat advance widths,
-crowd together on the inside (concave) edge of the curve where the rigid glyph
-boxes fan into each other. ``crowding="curvature"`` opens an even letterspacing
-gap that grows with the local curvature, so the inside edges stop colliding. The
-gap is the same between every pair of letters, so the tracking stays even, and
-it has a deadband: a gentle bend or a straight run is left untouched.
-
-(a) and (b): a sharp bend, where the correction visibly separates the letters.
-(c) and (d): a gentle bend of the same letters, where the bend is below the
-deadband and the two columns are identical.
+(a) and (b): a sharp bend, without and with ``crowding="curvature"``. (c) and
+(d): a gentle bend, where the correction does nothing and the two panels are
+identical.
 """
 from __future__ import annotations
 

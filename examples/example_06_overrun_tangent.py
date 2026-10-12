@@ -1,9 +1,7 @@
-"""Tier 3: an overrunning label rides the end tangent, it is not clipped.
+"""A label that overruns the end of its curve follows the end tangent.
 
-A long label on a short curve, anchored so it begins on the curve and runs
-past the end. Rather than clip or bunch the overrunning glyphs, ``CurvedText``
-extends the curve along its end tangent and places them on that straight line
-(dashed). The behaviour is guarded by the test suite.
+A long label on a short curve begins on the curve and runs past its end. The
+overrunning glyphs lie on the straight extension of the end tangent (dashed).
 """
 from __future__ import annotations
 

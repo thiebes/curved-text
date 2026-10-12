@@ -1,17 +1,16 @@
 """Shared palette and helpers for the curved-text example gallery.
 
-The gallery's house style: the palette of the author's DICE project (Diffusion
-Insight Computation Engine) with contrast-checked text shades, a white opaque
-background, constrained layout, sizes in centimetres, explicit dpi. Most
-panels here are diagrams whose subject is the text-on-curve geometry, so they
-hide their axes -- the curve is the data, and bare quantitative ticks would be
-chartjunk. The figures that plot data (direct labeling, its usetex version, the
-seaborn figure, and the applications on real data or physical laws) keep axes
-with units, and so does the log-axis panel of the gaps figure, whose subject is
-the scale, and the pan-and-zoom animation, whose moving ticks are what show the
-view changing. Two data helpers sit here as well: ``sample_data`` finds
-matplotlib's sample data, and ``smooth_path`` smooths the path a label rides on
-a line of real data.
+The house style uses the palette of the author's Diffusion Insight Computation
+Engine (DICE) project with contrast-checked text shades, a white opaque
+background, constrained layout, sizes in centimeters, and an explicit dots per
+inch (dpi). Most panels are diagrams whose subject is the geometry of text on a
+curve, so they hide their axes. The figures that plot data keep axes with
+units: direct labeling, its usetex version, the seaborn figure, the
+applications on real data or physical laws, the log-axis panel of the gaps
+figure (whose subject is the scale), and the pan-and-zoom animation (whose
+moving ticks show the view changing). Two data helpers are here as well:
+``sample_data`` finds matplotlib's sample data, and ``smooth_path`` smooths the
+path that a label follows on a line of real data.
 """
 from __future__ import annotations
 
@@ -86,7 +85,7 @@ def caption(ax, text, font_size=8):
 
     Dollar signs are escaped, so the caption shows the call as written, not a
     mathtext rendering of it, and the lines of a long call keep their
-    indentation, aligned left within the centred block.
+    indentation, aligned left within the centered block.
     """
     ax.text(0.5, -0.06, text.replace("$", r"\$"), transform=ax.transAxes,
             ha="center", va="top", multialignment="left", fontsize=font_size,
@@ -107,12 +106,12 @@ def panel_letters(axes, font_size=9):
 
 
 def anchor_mark(ax, x, y):
-    """A ring at data point ``(x, y)`` in the anchor-mark colour.
+    """A ring at data point ``(x, y)`` in the anchor-mark color.
 
     It is drawn above the label, so the text never covers it, with a thin
     white halo, so it stays apart from a glyph it crosses even where its hue
     and the label's look alike, as dark green and dark gold do to a reader
-    with red-green colour blindness (both have the same luminance).
+    with red-green color blindness (both have the same luminance).
     """
     ax.plot([x], [y], "o", markersize=7, markerfacecolor="none",
             markeredgecolor=MARK_COLOR, markeredgewidth=1.5, zorder=10,
@@ -147,9 +146,9 @@ def smooth_path(values, sigma, log=False):
     Each end is padded with its own value, so the result has as many samples
     as ``values`` and covers the same span.
 
-    A label on a line of real data rides this path rather than the line: even
-    smoothed, a line of monthly data wiggles at the scale of a letter, which
-    tilts neighbouring letters into each other. With ``sigma`` about a letter's
+    A label on a line of real data follows this path, not the line: even
+    smoothed, a line of monthly data bends at the scale of a glyph, which
+    tilts neighboring glyphs into each other. With ``sigma`` about a glyph's
     width, the path follows the line without those wiggles.
     """
     values = np.asarray(values, dtype=float)

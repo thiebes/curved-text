@@ -1,7 +1,7 @@
-"""Tier 1: the canonical "hello world" -- one curve, one label riding it.
+"""A single label along one sine curve.
 
-The README figure, rendered. A single centred label sits just above a sine
-wave with a small perpendicular offset.
+The label is centered and sits just above the curve with a small
+perpendicular offset.
 """
 from __future__ import annotations
 

@@ -1,16 +1,7 @@
-"""The ``valign`` control -- which line of the text rides the curve.
+"""The ``valign`` control: which line of the text lies on the curve.
 
-Every label shares one text baseline; ``valign`` chooses which line that baseline
-relationship puts on the curve, as a single constant shift applied to the whole
-label (so it never introduces a per-glyph step, and plain text and mathtext stay
-aligned). The default is ``"center"``, which straddles the text on the curve.
-
-Each panel draws the same word on the same arc with the guide line shown, so the
-relationship is visible: ``"baseline"`` sits the body above the line (descenders
-dip below), ``"center"`` straddles it, ``"ascender"`` hangs the text below the
-line, and ``"descender"`` lifts it above. The word has an ascender and a
-descender so all four differ. Combine any of these with ``offset`` to lift the
-chosen line off the curve.
+The same word on the same arc, once for each ``valign`` value. The word has an
+ascender and a descender, so all four panels differ.
 """
 from __future__ import annotations
 

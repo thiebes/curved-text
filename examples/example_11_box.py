@@ -1,10 +1,7 @@
-"""Tier 2: clear the lines behind a label with a casing.
+"""Clear the lines behind a label with a casing.
 
-Set ``box`` to draw a band that follows the curve at the label's height,
-under the glyphs, so the label stays legible where it crosses the lines it
-labels. The casing is a single fill, so it gives solid coverage behind plain
-and mathtext alike. For a lighter casing that hugs each glyph (a halo), pass
-a white ``withStroke`` through ``path_effects``.
+``box`` draws a band that follows the curve at the label's height, under the
+glyphs. The figure compares ``box=False`` and ``box=True`` over three lines.
 """
 from __future__ import annotations
 

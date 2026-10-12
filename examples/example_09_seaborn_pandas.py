@@ -1,13 +1,9 @@
-"""Tier 4: any matplotlib-backed axes works (seaborn / pandas).
+"""A seaborn figure with direct labels.
 
-``curved_text`` only needs a ``matplotlib.axes.Axes``, so it composes with any
-library that draws on matplotlib. Here pandas reads the ``Stocks.csv`` sample
-data that ships with matplotlib, and seaborn draws two stock market indexes
-in its own ``whitegrid`` theme, applied in a context so it does not leak into
-other figures. Each line is labelled along its path instead of with
-seaborn's legend. This example skips cleanly when seaborn or pandas is
-missing (neither is a dependency of curved-text), or when matplotlib is too
-old to ship ``Stocks.csv``.
+pandas reads the ``Stocks.csv`` sample data, and seaborn draws two stock market
+indexes in its ``whitegrid`` theme, applied in a context so it does not change
+other figures. The script skips its figure when seaborn or pandas is missing,
+or when matplotlib is too old to include ``Stocks.csv``.
 """
 from __future__ import annotations
 

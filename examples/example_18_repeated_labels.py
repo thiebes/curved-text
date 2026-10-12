@@ -1,11 +1,7 @@
 """Several labels on one long curve, as inline contour labels repeat.
 
-One call per label, each at its own ``pos``, so a long curve carries its name
-wherever the reader's eye meets it. Each label sits on a slope between a peak
-and a trough, so the decay of the oscillation stays visible, and clears the
-thin reference lines behind it with a casing, given here in its dict form:
-``pad`` sets the band's height relative to the tallest glyph, and ``color``
-its colour, white to match the page.
+One call per label, each at its own ``pos``. Each label has a casing in its dict
+form, with ``color`` and ``pad``, that cuts the thin reference lines behind it.
 """
 from __future__ import annotations
 

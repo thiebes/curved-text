@@ -1,12 +1,7 @@
-"""A halo or a box: two ways to keep a label legible over the lines it crosses.
+"""A halo or a box: two ways to keep a label legible over thin lines.
 
-The same label over a family of thin lines that cross it at a shallow angle,
-cleared two ways. (a) A halo, a thin white ``withStroke`` around each glyph
-(``path_effects``): it hides the lines only where they touch the letters, so
-they stay readable on either side of each letter, which suits thin lines and
-dense figures. (b) A casing (``box``, here in its colour-string form, white
-to match the page): one band under the whole label, which clears heavy lines
-completely, but also erases every line inside the band.
+The same label over a family of thin lines, with (a) a thin white halo
+(``withStroke`` through ``path_effects``) and (b) a casing (``box="white"``).
 """
 from __future__ import annotations
 

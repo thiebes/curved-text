@@ -1,10 +1,8 @@
-"""Tier 2: box versus a path-effects stroke for clearing the line behind text.
+"""A casing compared with a wide path-effects stroke.
 
-Two ways to keep a label readable where it crosses the lines it labels, on the
-same plain-text label over the same gridlines. A wide ``withStroke`` is applied
-per character, so neighbouring letters blur together. ``box`` is a single fill
-under the whole label, so it covers plain text cleanly. This is why ``box`` is
-the way to get solid coverage under plain text.
+The same plain-text label is drawn over the same lines with a wide
+``withStroke`` on each glyph and with ``box``. The stroke leaves small gaps,
+and the casing covers the lines under the whole label.
 """
 from __future__ import annotations
 

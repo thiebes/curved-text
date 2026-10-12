@@ -1,11 +1,8 @@
-"""Blackbody spectra, labelled along their paths.
+"""Blackbody spectra, labeled along their paths.
 
-Planck's law gives the spectral radiance of a blackbody at temperature T:
-B(λ, T) = 2hc² / λ⁵ / (exp(hc / λkT) - 1). Four temperatures from a cool
-star to the Sun's effective temperature, 5772 K, on a logarithmic radiance
-axis, where the curves stack in order of temperature. Each label rides its
-own curve just past its peak, which Wien's law puts at 2898 μm K / T, so no
-legend is needed.
+Planck's law gives the spectral radiance B(λ, T) = 2hc² / λ⁵ / (exp(hc / λkT) - 1)
+for four temperatures, up to the Sun's effective temperature, 5772 K. Each label
+sits just past its peak, which Wien's law puts at 2898 μm K / T.
 """
 from __future__ import annotations
 

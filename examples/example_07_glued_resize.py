@@ -1,10 +1,8 @@
-"""Tier 3: glued to the curve through a change of aspect.
+"""The same label call on two axes of different aspect ratio.
 
-The same curve and the same label call, drawn in two panels of different
-aspect ratio. Because layout is recomputed per draw in display (pixel) space,
-the character spacing and the perpendicular offset stay correct in both --
-the label does not stretch or shear with the axes. This is the static stand-in
-for the live case (interactive pan and zoom).
+Layout is recomputed on every draw in display space, so the character spacing
+and the perpendicular offset stay correct in both panels and the label is not
+stretched or sheared.
 """
 from __future__ import annotations
 
@@ -24,7 +22,7 @@ def _panel(ax, label):
     ax.plot(x, y, color=CURVE_COLOR, linewidth=2)
     ax.set_xlim(0, 2 * np.pi)
     ax.set_ylim(-1.5, 1.5)
-    curved_text(ax, x, y, "same call, glued",
+    curved_text(ax, x, y, "same call, any shape",
                 pos=0.5, anchor="center", offset=8.0,
                 color=LABEL_COLOR, fontsize=12)
     caption(ax, label)

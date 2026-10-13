@@ -432,7 +432,7 @@ class _CurveFrame:
         vty = np.empty_like(self._yf)
         vtx[0], vty[0] = tx[0], ty[0]
         vtx[-1], vty[-1] = tx[-1], ty[-1]
-        # Interior vertices ride the bisector of the adjacent unit tangents; a
+        # Interior vertices lie on the bisector of the adjacent unit tangents; a
         # near-zero sum means the curve doubles back on itself, so fall back to
         # the incoming segment tangent there rather than divide by zero.
         mx, my = tx[:-1] + tx[1:], ty[:-1] + ty[1:]
@@ -934,7 +934,7 @@ class _OutlineSegment(mtext.Text):
                                       y + v * np.cos(angle)])
         else:
             # Place the glyph rigidly: one rotation, by the chord across its own
-            # width, about its centre on the curve. A single isometry preserves
+            # width, about its center on the curve. A single isometry preserves
             # the glyph's shape (no distortion) while the baseline datum still
             # lands on the curve, so spacing and rotation match the bent runs.
             w = self._width_px
@@ -1093,16 +1093,8 @@ class CurvedText(mtext.Text):
     Parameters
     ----------
     x, y : array-like
-        The curve in data coordinates: 1-D, equal length, and ordered along
-        the curve. A NaN (not a number), infinite, or masked point (a point
-        hidden by a NumPy masked array) leaves a gap, as in ``plot``, and the
-        curve needs at least two consecutive finite points. A value outside the
-        domain of a log or logit axis leaves a gap too. A stretch is a connected
-        piece of the curve between gaps. Any type the axes' unit converters
-        accept works, as for ``plot``: dates (``datetime64``, ``datetime``,
-        pandas dates), category strings, and unit-aware values. An axis without
-        units takes them from the curve; category strings not yet on an axis are
-        added to it, as ticks.
+        The curve in data coordinates: 1-D, equal length, and ordered along the
+        curve. See Notes for gaps and units.
     text : str
         The string to draw, on one line. It may contain mathtext runs
         (``$...$``).
@@ -1113,21 +1105,22 @@ class CurvedText(mtext.Text):
         Where the label is anchored, as a fraction of the drawn arc length of
         the curve: ``0.0`` is the start of the drawn curve and ``1.0`` its end.
         A value outside 0 to 1 places the anchor on the straight extension
-        beyond the curve end (pass ``clip_on=False`` to see it outside the
-        axes). On a curve with gaps the fraction is measured on screen along the
-        drawn stretches, so zooming can move the anchor onto another stretch,
-        and the label follows the stretch that holds its anchor. The label reads
-        in the order of the points as they appear on screen: if the points run
-        from right to left, the text is upside down, and reversing both arrays
-        (``x[::-1], y[::-1]``) turns it upright. ``pos`` and ``offset`` also
-        count from the first point.
+        beyond either end of the curve. A value far outside can fall outside
+        the figure. Pass ``clip_on=False`` to see an anchor outside the axes.
+        On a curve with gaps, the fraction is measured on screen along the drawn
+        stretches (connected pieces of the curve between gaps). Zooming can move
+        the anchor onto another stretch, and the label follows the stretch that
+        holds its anchor. The label reads in the order of the points as they
+        appear on screen. If the points run from right to left, the text is
+        upside down. Reverse both arrays (``x[::-1], y[::-1]``) to turn it
+        upright. ``pos`` and ``offset`` also count from the first point.
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
         Distance from the curve, perpendicular to it, in points (1/72 inch).
         Positive is to the left of the direction of travel, which is above a
         curve that runs from left to right. The label is laid along the parallel
-        (offset) curve at that distance, so the clearance from the curve and the
+        (offset) curve at that distance. The clearance from the curve and the
         spacing of the characters stay even where the curve bends steeply or
         asymmetrically. ``pos`` and ``anchor`` are measured against the original
         curve and carried perpendicularly onto the offset curve.
@@ -1144,12 +1137,12 @@ class CurvedText(mtext.Text):
     crowding : {"none", "curvature"}, default "none"
         How to space glyphs around bends. ``"none"`` spaces them as ordinary
         text does, by width and kerning (the adjustment of the space between
-        particular pairs of characters), so on the concave side of a tight bend
-        the rotated glyphs can overlap. ``"curvature"`` opens an even
-        letterspacing gap that grows with the local curvature and the glyph
-        height, so the inside edges stop colliding. The gap is the same between
-        every pair of characters, and a deadband (a range below which no gap is
-        added) leaves gentle bends and straight runs unchanged.
+        particular pairs of characters). On the concave side of a tight bend
+        the rotated glyphs can overlap. ``"curvature"`` opens an even gap,
+        added space between every pair of characters, that grows with the local
+        curvature and the glyph height, so the inside edges stop colliding. A
+        deadband (a range below which no gap is added) leaves gentle bends and
+        straight runs unchanged.
     valign : {"center", "baseline", "ascender", "descender"}, default "center"
         Which line of the text lies on the curve. ``"center"`` straddles the
         text on the curve. ``"baseline"`` places the text baseline on the curve,
@@ -1166,10 +1159,12 @@ class CurvedText(mtext.Text):
         ``path_effects``. Properties that describe one text box have no effect,
         because the curve places every glyph: ``ha``, ``va``, ``rotation_mode``,
         ``wrap``, ``bbox``, ``linespacing``, ``multialignment``, and
-        ``backgroundcolor``. ``transform`` is replaced, because glyphs are drawn
-        in display pixels. Do not pass ``rotation``: it changes the spacing of
-        the characters. Use ``box`` for a background. An unknown property raises
-        ``AttributeError``.
+        ``backgroundcolor``. ``antialiased``, ``snap``, and ``sketch_params``
+        are accepted and have no effect. ``label=`` adds no legend entry, and
+        ``legend()`` warns once for each part of the label. ``transform`` is
+        replaced, because glyphs are drawn in display pixels. Do not pass
+        ``rotation``: it changes the spacing of the characters. Use ``box`` for
+        a background. An unknown property raises ``AttributeError``.
 
         ``parse_math=False`` treats dollar signs literally (the default comes
         from the ``text.parse_math`` rcParam, a matplotlib runtime setting).
@@ -1179,13 +1174,17 @@ class CurvedText(mtext.Text):
     Raises
     ------
     ValueError
-        If ``x`` and ``y`` are not 1-D arrays of equal length with at least two
-        points, or have no two consecutive finite points; if ``pos`` is not
-        finite; if ``anchor``, ``valign``, or ``crowding`` is not one of the
-        listed values; or if a ``box`` dict has a key other than ``color``,
-        ``pad``, and ``alpha``.
+        If any of these holds:
+
+        - ``x`` and ``y`` are not 1-D arrays of equal length with at least two
+          points.
+        - ``x`` and ``y`` have no two consecutive finite points.
+        - ``pos`` is not finite.
+        - ``anchor``, ``valign``, or ``crowding`` is not one of the listed
+          values.
+        - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
     TypeError
-        If ``text`` is not a string.
+        If ``text`` is not a string or ``pos`` is not a number.
     matplotlib.units.ConversionError
         If the axes cannot convert the data of ``x`` or ``y``.
     AttributeError
@@ -1202,42 +1201,57 @@ class CurvedText(mtext.Text):
     chord follows the local tangent but averages over the glyph's own width, so
     rotation stays smooth across the vertices of a coarsely sampled curve.
 
+    **Gaps and units.** A NaN (not a number), infinite, or masked point (a point
+    hidden by a NumPy masked array) leaves a gap, as in ``plot``. The curve
+    needs at least two consecutive finite points. A value outside the domain of
+    a log or logit axis leaves a gap too. On a log axis these are values of 0 or
+    below; on a logit axis, values of 0 or below and of 1 or above. A stretch
+    is a connected piece of the curve between gaps. Any type the axes' unit
+    converters accept works, as for ``plot``: dates (``datetime64``,
+    ``datetime``, pandas dates), category strings, and unit-aware values. An
+    axis without units takes them from the curve. Category strings
+    not yet on an axis are added to it, as ticks.
+
     A label that overruns either end of the curve, or of the stretch it follows
     on a curve with gaps, is not clipped. The glyphs beyond the end are placed on
     a straight extension of the end tangent, over a gap if there is one, and the
     label never continues onto another stretch. To run a label along scattered
     points or a curve with gaps, pass a smooth curve that follows their overall
-    shape, such as a fit: the label never draws the curve it follows.
+    shape, such as a fit. The label never draws the curve it follows.
 
-    Mathtext: each ``$...$`` run is laid out by matplotlib's mathtext engine,
-    and every glyph outline and rule box is mapped through the arc-length frame
-    of the curve. The run sits on the same baseline as the surrounding plain
-    glyphs. Fractions, radicals, and large brackets stay joined while the radius
-    of curvature is larger than the height of the expression. On a tighter bend
-    the expression is squeezed along the curve, and where the radius falls below
-    its height on the concave side it folds over itself: ink beyond the center of
-    curvature comes out mirrored. Choose the text size to suit the curvature.
+    **Mathtext.** Each ``$...$`` run is laid out by matplotlib's mathtext
+    engine. Every glyph outline and every bar, such as a fraction bar, is mapped
+    onto the curve by arc length. The run sits on the same baseline as the
+    surrounding plain glyphs. Fractions, radicals, and large brackets stay
+    joined while the radius of curvature is larger than the height of the
+    expression. On a tighter bend the expression is squeezed along the curve.
+    Where the radius falls below its height on the concave side, it folds over
+    itself: ink beyond the center of curvature comes out mirrored. Choose the
+    text size to suit the curvature.
 
-    LaTeX typesetting (usetex): when ``text.usetex`` is set or ``usetex=True`` is
-    passed, LaTeX (a typesetting system) typesets the label, so it matches the
-    other usetex text of the figure. It requires ``latex`` and ``dvipng``, as for
-    any matplotlib usetex figure. A plain run is the plain text between math
-    runs, or between a math run and an end of the string. Under usetex:
+    **LaTeX typesetting (usetex).** When ``text.usetex`` is set or
+    ``usetex=True`` is passed, LaTeX (a typesetting system) typesets the label,
+    so it matches the other usetex text of the figure. ``curved_text`` requires
+    ``latex``, as for any matplotlib usetex figure. matplotlib's own usetex
+    text, such as tick labels, also needs ``dvipng``. A plain run is the plain
+    text between math runs, or between a math run and an end of the string.
+    Under usetex:
 
     - Math runs and plain text are both typeset by LaTeX. Plain text is typeset
       literally: characters that are TeX markup (such as ``%``, ``#``, and the
       backslash) are escaped, so TeX commands work only inside ``$...$``.
-    - Each plain run is typeset in one LaTeX pass and kerned as TeX sets it. A
-      run with a character that TeX builds from several pieces, such as an
-      accented letter in the default encoding, or that can print nothing, such as
-      a soft hyphen, is typeset one character at a time, without kerning.
+    - Each plain run is typeset in one LaTeX pass and kerned as TeX sets it.
+    - A plain run is typeset one character at a time, without kerning, in two
+      cases. One is a character that TeX builds from several pieces, such as an
+      accented letter in the default encoding. The other is a character that
+      can print nothing, such as a soft hyphen.
     - Plain text is limited to characters the LaTeX preamble (the LaTeX setup
       commands that come before the text) can typeset. The `README section on
       LaTeX typesetting
       <https://github.com/thiebes/curved-text#latex-typesetting-usetex>`_ shows
       how to declare upright Greek letters.
     - The ``valign`` ascender and descender lines are the height and depth that
-      TeX gives ``()gy`` in the font it sets the text in.
+      TeX measures for the text ``()gy`` in the font it sets the label in.
     - The first draw runs LaTeX once for each distinct plain run and math run,
       and up to twice more to measure line heights. Later draws reuse the
       caches.
@@ -1245,11 +1259,10 @@ class CurvedText(mtext.Text):
       fixes it for each glyph. Pass ``usetex`` or set the rcParam before creating
       the label.
     - Set the LaTeX preamble, font family, and font lists before the figure is
-      drawn. matplotlib caches text measurements per figure without them, so
-      after a change a redraw of the same figure keeps the old measurements of
-      math runs and of text typeset one character at a time, while plain runs
-      follow the change. matplotlib's own usetex text keeps the old measurements
-      too.
+      drawn. matplotlib caches text measurements per figure without them.
+      After a change, a redraw of the same figure keeps the old measurements of
+      math runs and of text typeset one character at a time. Plain runs follow
+      the change. matplotlib's own usetex text keeps the old measurements too.
     - The font family comes from the ``font.family`` rcParam, as for
       matplotlib's own usetex text, and the ``fontfamily`` keyword has no effect.
     - Math runs are passed to LaTeX as written, so they can run TeX commands,
@@ -1262,25 +1275,45 @@ class CurvedText(mtext.Text):
     mathtext are rendered the same way. Under usetex, matplotlib loads the glyphs
     with light hinting, laid out at a resolution where it is negligible.
 
-    Limits:
+    **Limits.**
 
     - Vector output: in PDF, SVG, PostScript, and EPS output, each character is
       drawn as an outline path, not as text. The label cannot be selected,
       searched, or edited as text, and each character is a separate shape. In PNG
       output the label looks as it does on screen.
-    - Axes: Cartesian and polar axes work. A 3D axes accepts the call and draws
-      nothing.
+    - Axes: Cartesian and polar axes work. On polar axes the angle runs
+      counterclockwise, so a curve from angle 0 to π runs right to left over
+      the top and its label reads upside down: reverse the arrays. A 3D axes
+      accepts the call and draws nothing.
     - Animation: blitting is not supported, and ``ax.draw_artist(label)`` draws
       nothing. Redraw the whole figure (a ``FuncAnimation`` without blitting
       works), or leave the label out of the blit.
     - Child artists: each character and each math run is a separate artist on the
-      axes, so ``ax.texts`` lists them as well as the label. Keep the object that
-      :func:`curved_text` returns if you need to find or remove it.
+      axes, so ``ax.texts`` lists them as well as the label. Do not remove or
+      restyle them one at a time: removing one glyph breaks the next draw, and a
+      loop that removes every item of ``ax.texts`` raises ``ValueError``. Call
+      ``label.remove()`` on the object that :func:`curved_text` returns: it
+      removes every part. To tell a label from other text, test
+      ``isinstance(t, CurvedText)``.
+    - Lifecycle: ``label.remove()`` removes every part of the label.
+      ``ax.clear()`` removes it with the other artists. A figure that holds a
+      label can be pickled. ``legend(loc="best")`` avoids the label from
+      matplotlib 3.9.
+    - ``pos``: ``pos`` is a fraction of the curve you pass in, including any
+      part outside the axes limits: pass the visible piece of the curve. A value
+      outside 0 to 1 places the anchor on the straight extension beyond an end;
+      a value far outside can place it outside the figure. Use ``clip_on=False``
+      to see an anchor outside the axes.
     - Axis limits: the label does not change the data limits. Plot the curve
       first, or set the limits yourself.
+    - Cost: the time of a draw grows with the number of characters and the
+      number of curve points, and is paid on every redraw. If interactive pan and
+      zoom feels slow, pass fewer points: decimate or smooth the curve. Dozens
+      of labels draw in well under a second.
+    - Text: one line. A newline in the string is not a line break.
 
-    After creation: :func:`curved_text` and :class:`CurvedText` take the same
-    arguments and make the same artist. Keep the returned object to hide it
+    **After creation.** :func:`curved_text` and :class:`CurvedText` take the
+    same arguments and make the same artist. Keep the returned object to hide it
     (``set_visible``), restack it (``set_zorder``), change its clipping, or
     remove it (``remove()``). To change the text, color, size, or curve, remove
     the label and make a new one. ``get_text()`` does not return the label's
@@ -1561,26 +1594,20 @@ class CurvedText(mtext.Text):
 
         Figure layout (``bbox_inches="tight"``, constrained layout, and from
         matplotlib 3.9 ``legend(loc="best")``) measures the label through it.
-        Constrained layout measures before the first draw has placed anything,
-        so the label is placed on the curve to be measured. The container's own
-        Text, a single space at the curve's first finite point, takes no part.
-        Each glyph counts by the box of its outline's control points, which holds
-        the curves between them: it can exceed the ink by a fraction of a pixel,
-        never fall short of it, and costs far less than exact curve extrema. The
-        casing counts by its band, half its line width beyond its centerline on
-        every side, which also covers its round caps.
-        Without a renderer, the label is measured with one at the figure's dpi
-        (:func:`_measuring_renderer`). ``dpi`` scales the extent to that
-        resolution, which matches placing the label at that dpi to within what
-        whole-pixel glyph widths add up to. A hidden label, and one that cannot
-        be placed (an empty label, a label off any axes, a curve with no
-        stretch left to draw, or a degenerate curve), has an empty extent at
-        the curve's first shown point.
+        The label is placed on the curve to be measured, even before its first
+        draw. The container's own Text takes no part. Each glyph counts by the
+        box of its outline's control points. The box can exceed the ink by a
+        fraction of a pixel and never falls short of it. The casing counts by
+        its band, half its line width beyond its centerline on every side.
 
-        Figure layout can measure the label several times a draw, and a legend
-        measures it right after the label's own draw has placed it, so a
-        measurement reuses the last placement, and its extent, while what the
-        placement depends on is unchanged (:meth:`_placement_key`).
+        Without a renderer, the label is measured at the figure's dpi (dots per
+        inch). ``dpi`` scales the extent to that resolution. A hidden label has
+        an empty extent at the curve's first shown point. So has a label that
+        cannot be placed: an empty label, a label off any axes, a curve with no
+        stretch left to draw, or a degenerate curve.
+
+        Repeated measurements reuse the last placement while the renderer, the
+        curve position, and the glyphs are unchanged.
         """
         if not self.get_visible():
             return self._empty_extent()
@@ -1747,7 +1774,7 @@ class CurvedText(mtext.Text):
             return False
         axes = self.axes
         # The curve has gaps where a point has no pixel, as ``plot`` draws it.
-        # ``pos`` is a fraction of the drawn length, and the label rides the
+        # ``pos`` is a fraction of the drawn length, and the label follows the
         # stretch that holds its anchor, as though that stretch were the whole
         # curve: past its ends the label follows its end tangents, not the
         # next stretch.
@@ -1759,8 +1786,8 @@ class CurvedText(mtext.Text):
         base = _CurveFrame(points[:, 0], points[:, 1])
         # Work in display pixels: build the arc-length frame of the stretch,
         # then shift it perpendicularly to the parallel (offset) curve the
-        # label actually rides. Laying glyphs along the offset curve -- rather
-        # than projecting them off the base curve -- keeps the clearance from
+        # label actually follows. Laying glyphs along the offset curve, rather
+        # than projecting them off the base curve, keeps the clearance from
         # the curve and the on-screen letter spacing uniform at once, because
         # the cursor advances along the curve the glyphs sit on. ``pos`` and
         # ``anchor`` stay defined against the base curve and are carried onto
@@ -1775,7 +1802,7 @@ class CurvedText(mtext.Text):
         # The vertical-alignment datum is a font-metric constant, identical for
         # every segment, so derive it once here and hand it to each segment
         # rather than re-deriving it per glyph. Every alignment but the baseline
-        # is a font line, and so is the box casing's centre, which follows the
+        # is a font line, and so is the box casing's center, which follows the
         # "center" line while the frame follows the chosen one. Measuring the
         # lines runs LaTeX under usetex, so a baseline label without a casing
         # never measures them. The font and the usetex setting are read from a
@@ -1817,8 +1844,8 @@ class CurvedText(mtext.Text):
         # tallest glyph's height, so it clears the lines behind plain and math
         # segments alike (a single fill, immune to the per-character
         # cannibalization a wide ``path_effects`` stroke would cause). The label
-        # rides the frame on its ``valign`` datum, so the glyph band is centred a
-        # little off the frame; shift the casing centreline by that band offset so
+        # lies on the frame at its ``valign`` datum, so the glyph band is centered a
+        # little off the frame; shift the casing centerline by that band offset so
         # it sits over the ink rather than over the bare datum line.
         if self._box is not None:
             px_per_unit = _px_per_unit(renderer, prop.get_size_in_points())
@@ -1875,7 +1902,7 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
-        Distance from the curve, perpendicular to it, in points.
+        Distance from the curve, perpendicular to it, in points (1/72 inch).
     box : bool, str, or dict, default False
         A band behind the label that clears the lines it crosses: ``True`` for
         white, a color string, or a dict with ``color``, ``pad``, and ``alpha``.
@@ -1898,6 +1925,13 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
     ------
     ValueError, TypeError, matplotlib.units.ConversionError, AttributeError
         As for :class:`CurvedText`, which lists the conditions.
+
+    Notes
+    -----
+    The layout is computed again on every draw, so the label follows the curve
+    through resizing, panning, and zooming. See the Notes and Limits of
+    :class:`CurvedText` for vector output, 3D axes, blitting, removing a label,
+    and usetex.
 
     Examples
     --------

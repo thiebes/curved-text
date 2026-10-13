@@ -34,7 +34,7 @@ ask for. It remains good advice for users with simple symbols.
 **One rigid block per math run.** Render each `$...$` run as a single child
 `Text` artist, measured and rotated like a plain character. It needs little
 code and is fully vector, but the run sits on its chord: on a curving piece of
-the curve a long expression visibly detaches from the path. Not chosen.
+the curve a long expression visibly detaches from the curve. Not chosen.
 
 **Rigid per-glyph placement.** Decompose the mathtext layout into glyphs and
 place each rigidly at its own arc position, rotated to the local tangent (the
@@ -177,9 +177,10 @@ All code lives in `src/curved_text/_core.py`.
   `Line2D`. A stretch is a connected piece of the curve between gaps. A value
   outside a log or logit axis's domain (`_gaps_outside_domain`) breaks the curve
   too. `_curve_px` sets such a value to NaN against the axes' current scales.
-  Under `nonpositive="clip"`, the default on a log axis, the value projects to a
-  finite pixel far outside the axes. There the link of a line toward it leaves
-  the view, but a label measured along it would follow it out. Only the "log"
+  Without that check, under `nonpositive="clip"` (the default on a log axis),
+  the value would project to a finite pixel far outside the axes. The link of a
+  line toward it leaves the view, but a label measured along it would follow it
+  out. Only the "log"
   and "logit" scales are checked, by name: "symlog" places every value, custom
   scales keep their own projection, and "functionlog", whose domain is where
   its forward function is positive rather than an interval of the data, is
@@ -215,8 +216,8 @@ All code lives in `src/curved_text/_core.py`.
   and the casing's band.
   The curves lie inside their control points, so the box can exceed the ink by
   a fraction of a pixel but never falls short of it. Exact curve extrema
-  (`Path.get_extents`) would make a draw with a legend at `loc="best"`, which
-  measures every text in the axes, several times slower. Constrained layout
+  (`Path.get_extents`) would make each measurement, and so each legend placement at
+  `loc="best"` (which measures every text in the axes), several times slower. Constrained layout
   measures before the first draw has placed anything, so the label is placed
   to be measured. A measurement reuses the last placement while its key
   (`_placement_key`) is unchanged: the renderer, its resolution, the curve's
@@ -401,7 +402,7 @@ and the last puts the `valign` lines on the drawn font.
 
 The box of `()gy` tracks each font's designed lines. For Times and Helvetica it
 gives ascenders of 0.675 and 0.728 em and descenders of -0.216 and -0.212 em,
-against 0.683, 0.729, -0.217, and -0.218 em in their Adobe Font Metrics (AFM)
+against 0.683, 0.729, -0.217, and -0.218 em in the URW Adobe Font Metrics (AFM)
 files. Reading the
 Type 1 font file through FreeType was rejected. FreeType reports a Type 1 font's
 bounding box as its ascender and descender, which depends on the glyphs the
@@ -475,7 +476,7 @@ reads on top.
 - A string with an odd count of unescaped `$` renders literally, character by
   character, as matplotlib itself would.
 - Under `usetex`, plain text is typeset literally, one run at a time; TeX
-  commands work only inside `$...$`. Matplotlib's own usetex `Text` differs: it
+  commands work only inside `$...$`. matplotlib's own usetex `Text` differs: it
   passes the whole string to TeX. Each space is one interword
   space, without the extra sentence spacing TeX adds after a period in
   matplotlib's own usetex text.

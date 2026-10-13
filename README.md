@@ -121,7 +121,7 @@ continues onto another stretch. Lengths are measured on screen, so zooming can
 move the anchor onto another stretch.
 
 To label a curve with gaps, or scattered points, pass `curved_text` a smooth
-curve that follows their overall shape, such as a fit or a running mean. Leave
+curve that follows their overall shape, such as a fit or a smoothed copy. Leave
 that curve unplotted: the label never draws the curve it follows.
 
 In the next figure, the label follows one stretch of three curves with gaps: NaN
@@ -286,8 +286,8 @@ where they touch the glyphs. The Gallery sections
 ### Tight bends (`crowding`)
 
 Glyphs are placed one after another as ordinary text places them, by width and
-kerning. On a
-sharp bend they crowd together on the inside of the bend, where each rigid glyph
+kerning. On a sharp
+bend they crowd together on the inside of the bend, where each rigid glyph
 overlaps its neighbor. Set `crowding="curvature"` to add an even gap between
 glyphs that grows with the local curvature, so the inside edges stop colliding:
 
@@ -361,7 +361,7 @@ artist. Keep the returned object to hide it (`set_visible`), restack it
 text, color, size, or curve, remove the label and make a new one. `get_text()`
 does not return the label's string.
 
-- **Vector output:** In PDF, SVG, PostScript, and EPS output, each character is
+- **Vector output:** In Portable Document Format (PDF), Scalable Vector Graphics (SVG), PostScript, and Encapsulated PostScript (EPS) output, each character is
   drawn as an outline path, not as text. The label cannot be selected, searched,
   or edited as text, and each glyph is a separate shape. In PNG output the label
   looks as it does on screen.

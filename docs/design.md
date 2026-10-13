@@ -443,7 +443,7 @@ plain-text runs, and the last puts the `valign` lines on the drawn font.
   The run sits in an `\mbox`, so a long run stays on one line instead of
   breaking where matplotlib's LaTeX paragraph ends.
 - **Cost.** LaTeX runs once per distinct plain run, as matplotlib runs it once
-  per usetex string. A 37-character label's first draw takes about a second with an
+  per usetex string. A 37-character label's first draw takes about 2 s with an
   empty TeX cache. Typesetting per character was rejected: a new string could
   reuse characters already in TeX's cache, but each distinct character costs a
   run (9 to 10 s for the same label), and TeX never sets two characters
@@ -578,12 +578,8 @@ reads on top.
 - Under `usetex`, plain text is typeset literally, one run at a time, so TeX
   commands work only inside `$...$` (see the LaTeX section; the page
   [LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html) describes what users see).
-- Under `usetex`, the library does not load LaTeX packages itself. The preamble
-  is one global rcParam that also governs layout passes outside the library's
-  draw, so injecting a package only during its own draws would measure and draw
-  with different preambles, and setting it globally would change the user's
-  other usetex text. Plain Greek, which should be upright, therefore needs a
-  package that the user loads in the preamble.
+- Under `usetex`, the library does not load LaTeX packages itself, because the
+  preamble is one global setting (the usetex page gives the reason).
 - Fractions, radicals, and large brackets stay joined while the radius of
   curvature is larger than the height of the expression. On a tighter bend the
   expression is squeezed along the curve, and where the radius falls below its

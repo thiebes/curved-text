@@ -178,7 +178,7 @@ straight line.
 
 The same curve and the same call are drawn at two aspect ratios. The layout is
 recomputed on every draw, in display space, so the spacing and the offset stay
-correct. The label is not stretched or sheared. The next figure animates the
+correct. The label is not stretched or sheared. The next section animates the
 interactive case, pan and zoom.
 
 Both panels make this call:

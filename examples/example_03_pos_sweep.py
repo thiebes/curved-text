@@ -1,8 +1,7 @@
-"""Tier 2: the ``pos`` control, as a small-multiple sweep.
+"""The ``pos`` control: the same label at five positions along one curve.
 
-Same curve, same word, ``anchor="center"``; only ``pos`` varies. A ring marks
-the anchor point so the reader sees the label slide from the first point
-(0.0) to the last (1.0) along arc length.
+Only ``pos`` varies, from 0.0 to 1.0, with ``anchor="center"``. A ring marks
+the anchor point in each panel.
 """
 from __future__ import annotations
 

@@ -1,10 +1,8 @@
 """Plain text and mathtext share one baseline.
 
-A label that alternates plain words and ``$...$`` math runs rides a single
-shared baseline, so the math symbols sit level with the surrounding letters and
-a superscript lifts only the exponent, not the body. The curve here is drawn as
-that baseline (``valign="baseline"``), so every plain glyph and every math glyph
-visibly sits on the same line -- the alignment is structural, not tuned.
+A label that alternates plain words and ``$...$`` runs lies on a curve with
+``valign="baseline"``, so the plain glyphs and the math glyphs sit on the same
+line.
 """
 from __future__ import annotations
 

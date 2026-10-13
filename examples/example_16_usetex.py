@@ -1,13 +1,9 @@
-"""Tier 1: curved labels typeset by LaTeX.
+"""Curved labels typeset by LaTeX.
 
-With matplotlib's ``text.usetex`` rcParam on, LaTeX typesets every text in the
-figure -- tick labels, axis labels, and the curved labels alike -- so the labels
-along the curves match the rest of the figure. This is the direct-labeling
-figure (example 01) drawn under usetex.
-
-The figure needs ``latex``, and ``dvipng`` for the tick and axis labels, as any
-matplotlib usetex figure on the Agg backend does. Without them the script skips
-the figure.
+The direct-labeling figure drawn with matplotlib's ``text.usetex`` rcParam (a
+runtime setting) on, so that the tick labels, axis labels, and curved labels
+share one typeface. The script needs ``latex`` and ``dvipng`` (for its tick
+labels) and skips its figure without them.
 """
 from __future__ import annotations
 

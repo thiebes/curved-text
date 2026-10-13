@@ -1,14 +1,9 @@
 """Why a label reads upside down: the direction of travel.
 
-Text reads in the order of the curve's points as they appear on screen, and
-each curve ends in an arrowhead at its last point, so it shows that direction
-itself. The same sine, labelled three ways: (a) the points from left to
-right, upright; (b) the arrays reversed, so the curve runs from right to left
-and the label reads upside down; (c) the points from left to right on an
-inverted x axis, which also puts them right to left on screen. ``pos`` counts
-from the first point and ``offset`` turns with the direction too, so the label
-also moves along and across the curve. Reversing the arrays of a curve that
-runs from right to left on screen turns its label upright.
+One sine curve labeled three ways: (a) points from left to right, (b) the
+arrays reversed, (c) the same arrays on an inverted x axis, so the points run
+from right to left on screen. An arrowhead at the last point of each curve
+shows the direction.
 """
 from __future__ import annotations
 

@@ -1,10 +1,8 @@
-"""Tier 2: the ``offset`` control -- a perpendicular shift off the curve.
+"""The ``offset`` control: a perpendicular shift off the curve.
 
-Same curve, same ``pos``; only ``offset`` varies across negative, zero, and
-positive. The label rides the curve at ``offset=0`` and lifts off along the
-chord normal otherwise. Positive is to the left of the direction of travel,
-which is visually above a left-to-right curve. The ring marks the
-on-curve anchor as a reference.
+Only ``offset`` varies (negative, zero, positive). A positive offset is to the
+left of the direction of travel, which is above a curve that runs from left to
+right. A ring marks the anchor point on the curve.
 """
 from __future__ import annotations
 

@@ -1,26 +1,13 @@
-"""Stock prices on real dates, each line labelled along its path.
+"""Stock prices on real dates, with each line labeled along a smoothed copy.
 
-Monthly values from Yahoo Finance, January 1990 to June 2022, from the
-``Stocks.csv`` sample data that ships with matplotlib: adjusted closing
-prices for three stocks, which include reinvested dividends, and the S&P 500
-price index, which does not. Each series is divided by its January 1990
-value and smoothed with a rolling mean over ``WINDOW_MONTHS``. The dates go
-to ``plot`` and ``curved_text`` as ``datetime64`` values, which the axis's
-date converter handles for both. The S&P 500 is the reference line, in
-near-black. Each label sits above or below a smooth stretch of its line,
-wherever the space beside the line is open, and no label sits where lines
-cross, so none needs a casing.
-
-Even smoothed, a monthly line wiggles at the scale of a letter, which would
-tilt neighbouring letters into each other, so each label rides the line
-smoothed once more by a Gaussian about a letter wide, on the log scale the
-axis shows: a path that follows the line without those wiggles, and is not
-drawn.
-
-The file is read with the ``csv`` module rather than pandas, so this figure
-runs without the ``examples`` extra; the seaborn figure, 09, shows pandas.
-Older matplotlib versions do not ship ``Stocks.csv``; there the figure is
-skipped.
+Monthly values from the ``Stocks.csv`` sample data, January 1990 to June 2022:
+adjusted closing prices for three stocks and the S&P 500 price index, each
+divided by its January 1990 value and smoothed with a rolling mean over
+``WINDOW_MONTHS``. Each label follows a smoothed copy of its line, filtered
+further by a Gaussian about one character wide. The copy is never drawn. The
+file is read with the ``csv`` module, so the figure runs without the
+``examples`` extra, and it is skipped where matplotlib does not include
+``Stocks.csv``.
 """
 from __future__ import annotations
 

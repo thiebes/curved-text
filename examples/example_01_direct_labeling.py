@@ -1,9 +1,7 @@
-"""Tier 1: direct labeling replaces the legend.
+"""Direct labeling replaces the legend.
 
-The case for the tool, in one figure. (a): three cooling curves with a
-conventional legend -- the eye must leave the data, find the key, decode a
-colour, and come back. (b): the same curves labeled along their own paths.
-No legend, no colour key, no round trip.
+Three cooling curves drawn twice: (a) with a conventional legend, (b) with each
+curve carrying its own label.
 """
 from __future__ import annotations
 

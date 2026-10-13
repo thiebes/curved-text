@@ -1,8 +1,7 @@
-"""Tier 2: the ``anchor`` control -- which part of the label lands at ``pos``.
+"""The ``anchor`` control: which part of the label lands at ``pos``.
 
-Same curve, same ``pos=0.5``; only ``anchor`` varies across start / center /
-end. The ring is fixed at ``pos`` in every panel; watch which part of the
-word -- its start, middle, or end -- sits on the ring.
+Only ``anchor`` varies (start, center, end), with ``pos=0.5``. A ring marks the
+anchor point, which is the same in every panel.
 """
 from __future__ import annotations
 

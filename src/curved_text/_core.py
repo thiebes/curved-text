@@ -271,14 +271,14 @@ def _tex_min_line_height(size: float) -> float:
 
 
 def _valign_datum(valign: str, lines: _FontLines) -> float:
-    """Height above the baseline, in 1/100-em layout units, that rides the curve
-    for the given vertical alignment.
+    """Height above the baseline, in 1/100-em layout units, that lies on the
+    curve for the given vertical alignment.
 
     ``"baseline"`` returns 0, so the text baseline follows the curve unshifted.
-    The others shift every segment by the same font-metric constant -- the curve
-    passes through the vertical centre, the ascender line, or the descender line
-    -- so plain glyphs and mathtext stay aligned and no per-glyph step is
-    introduced (the shift is identical for every glyph).
+    The others shift every segment by the same font-metric constant: the curve
+    passes through the vertical center, the ascender line, or the descender
+    line. Plain glyphs and mathtext stay aligned, and no per-glyph step is
+    introduced, because the shift is identical for every glyph.
     """
     if valign == "baseline":
         return 0.0
@@ -351,9 +351,9 @@ class _CurveFrame:
     """Display-space curve geometry: cumulative arc length with an elementwise
     point-and-tangent lookup.
 
-    Arc lengths past either end of the curve clip into the terminal segments,
+    Arc lengths past either end of the curve clip into the two end links,
     so lookups there extrapolate along the end tangents and an overrunning
-    label rides a straight extension instead of being clipped.
+    label follows a straight extension instead of being clipped.
     """
 
     def __init__(self, xf: np.ndarray, yf: np.ndarray) -> None:
@@ -369,7 +369,7 @@ class _CurveFrame:
 
     def points_and_angles(self, s):
         """Map arc length ``s`` (scalar or array, pixels) to the position on
-        the curve and the local segment-tangent angle, elementwise."""
+        the curve and the tangent angle of the local link, elementwise."""
         i = np.clip(np.searchsorted(self._arc, s) - 1, 0, len(self._arc) - 2)
         d = self._arc[i + 1] - self._arc[i]
         f = np.where(d != 0.0, (s - self._arc[i]) / np.where(d != 0.0, d, 1.0),
@@ -381,11 +381,12 @@ class _CurveFrame:
     def chord_angles(self, s, span):
         """Angle of the chord across ``[s, s + span]``, elementwise.
 
-        This is the rotation a glyph of width ``span`` takes: it follows the
+        The chord gives the rotation of a glyph of width ``span``: it follows the
         local tangent but averages over the glyph's own width, so it stays
         smooth across the vertices of a coarsely sampled polyline instead of
-        snapping to each segment's angle. Degenerate chords (zero ``span`` or a
-        zero-length stretch of curve) fall back to the segment tangent.
+        snapping to the angle of each link between two points. Degenerate chords
+        (zero ``span`` or a zero-length piece of the curve) fall back to the
+        tangent of the link.
         """
         xl, yl, rad = self.points_and_angles(s)
         xr, yr, _ = self.points_and_angles(np.asarray(s) + span)
@@ -395,14 +396,14 @@ class _CurveFrame:
     def curvature(self, s, span):
         """Signed turning rate (radians per pixel) over ``[s, s + span]``.
 
-        The tangent is sampled as the chord across each half of the span --
-        ``[s, s + span/2]`` and ``[s + span/2, s + span]`` -- whose midpoints lie
+        The tangent is sampled as the chord across each half of the span,
+        ``[s, s + span/2]`` and ``[s + span/2, s + span]``, whose midpoints lie
         ``span/2`` apart. The wrapped angle between those two chords, divided by
         that ``span/2`` separation, estimates the curvature at the glyph's own
-        length scale, the same scale :meth:`chord_angles` smooths rotation over;
-        on a circle of radius ``R`` it recovers ``1/R``. Positive turns left. A
-        straight stretch (or a degenerate ``span``) yields zero, so a straight
-        guide is left untouched by any curvature-driven adjustment.
+        length scale, the same scale :meth:`chord_angles` smooths rotation over.
+        On a circle of radius ``R`` it recovers ``1/R``. Positive turns left. A
+        straight piece of the curve (or a degenerate ``span``) yields zero, so a
+        straight guide is left untouched by any curvature-driven adjustment.
         """
         half = np.asarray(span, dtype=float) / 2.0
         a0 = self.chord_angles(s, half)
@@ -413,13 +414,13 @@ class _CurveFrame:
     def offset(self, distance: float) -> _CurveFrame:
         """The parallel (offset) curve at perpendicular ``distance`` pixels.
 
-        Each vertex is displaced along the local normal -- the bisector of its
-        two adjacent segment tangents at interior vertices, the single segment
-        tangent at the ends -- so the returned frame is the curve the label
-        actually rides when offset. Walking glyphs along it (rather than
-        projecting them off the base curve) keeps both the perpendicular
-        clearance and the on-screen letter spacing uniform, because the cursor
-        advances along the very curve the glyphs sit on. Positive ``distance``
+        Each vertex is displaced along the local normal: the bisector of the
+        tangents of its two adjacent links at interior vertices, the tangent of
+        the single link at the ends. The returned frame is the curve the label
+        follows when offset. Walking glyphs along it, instead of projecting them
+        off the base curve, keeps both the perpendicular clearance and the
+        on-screen letter spacing uniform, because the cursor advances along the
+        very curve the glyphs sit on. Positive ``distance``
         is to the left of the direction of travel; ``distance`` of zero returns
         this frame unchanged, so an un-offset label and a straight guide stay
         numerically identical.
@@ -431,7 +432,7 @@ class _CurveFrame:
         vty = np.empty_like(self._yf)
         vtx[0], vty[0] = tx[0], ty[0]
         vtx[-1], vty[-1] = tx[-1], ty[-1]
-        # Interior vertices ride the bisector of the adjacent unit tangents; a
+        # Interior vertices lie on the bisector of the adjacent unit tangents; a
         # near-zero sum means the curve doubles back on itself, so fall back to
         # the incoming segment tangent there rather than divide by zero.
         mx, my = tx[:-1] + tx[1:], ty[:-1] + ty[1:]
@@ -446,12 +447,12 @@ class _CurveFrame:
         """Map arc length ``s`` on this curve to the corresponding arc length on
         ``other``, a curve sharing this one's vertices (its :meth:`offset`).
 
-        The point at fraction ``f`` of this curve's segment ``i`` maps to
-        fraction ``f`` of ``other``'s segment ``i``. ``pos`` and ``anchor`` are
+        The point at fraction ``f`` of this curve's link ``i`` maps to
+        fraction ``f`` of ``other``'s link ``i``. ``pos`` and ``anchor`` are
         given against the base curve, so this carries the anchor over to the
-        offset curve the label is laid along -- the label lands where the user
+        offset curve the label is laid along. The label lands where the user
         asked on the original curve while keeping even spacing on the offset
-        one. On a straight guide the two curves have equal-length segments, so
+        one. On a straight guide the two curves have equal-length links, so
         the map is the identity.
         """
         s = np.asarray(s, dtype=float)
@@ -499,17 +500,18 @@ def _shown(curve_px: np.ndarray) -> np.ndarray:
 
 def _stretch_at(curve_px: np.ndarray, pos: float,
                 anchor: str) -> tuple[np.ndarray, float] | None:
-    """The stretch of the curve, in display pixels, that holds the point
+    """The stretch (a connected piece of the curve between gaps), in display
+    pixels, that holds the point
     ``pos`` of the way along the drawn length, and that point's arc length
     along the stretch; None when nothing is drawn.
 
     A line breaks at a point that is not shown and draws nothing at an
-    isolated point, so the drawn length is that of the segments between two
+    isolated point, so the drawn length is that of the links between two
     shown points. A point where one stretch ends and the next starts belongs
     to the stretch the label extends onto: the earlier one for
     ``anchor="end"``, the later one otherwise. ``pos`` below 0 or above 1 lies
-    before the first stretch or past the last. Only segments with a length
-    hold the point, and the stretch is returned without the segments of no
+    before the first stretch or past the last. Only links with a length
+    hold the point, and the stretch is returned without the links of no
     length at its ends, such as a repeated last point, so a label that
     overruns it follows a real end tangent."""
     shown = _shown(curve_px)
@@ -599,7 +601,7 @@ def _typeset_tex_run(chars: str, size: float,
     character.
 
     One pass, rather than one per distinct character, keeps TeX's kerning
-    between neighbours. Each printing character sets one glyph, or one rule
+    between neighbors. Each printing character sets one glyph, or one rule
     (``\\_`` draws a rule in the default encoding); taken in order along the
     run, the items pair with the printing characters. The run returns None, to
     be typeset one character at a time, when a printing character may not set
@@ -744,7 +746,7 @@ def _layout_units(converter: TextToPath) -> float:
     """1/100-em layout units per unit of ``converter``'s outline.
 
     A converter lays out ``FONT_SCALE * DPI / 72`` pixels per em. That is 100
-    for the shared converter, so the factor is 1 there, and within 1.4% of 1
+    for the shared converter, so the factor is 1 there, and within 1% of 1
     for a :func:`_tex_to_path` converter at any size up to 72 pt.
     """
     em_px = converter.FONT_SCALE * converter.DPI / _text_to_path.DPI
@@ -789,23 +791,23 @@ class _OutlineSegment(mtext.Text):
 
     One segment is either a plain character (:class:`_PlainGlyph`) or a math run
     (:class:`_MathRun`). Both subclass :class:`~matplotlib.text.Text` so the
-    parent's cursor walk measures every segment the same way -- by window-extent
-    width -- and, crucially, both keep the text baseline as the shared datum
+    parent's cursor walk measures every segment the same way, through
+    :meth:`_size_px`. Both keep the text baseline as the shared datum
     (``v = 0``), so plain glyphs and math runs sit on one baseline by construction.
 
-    Placement maps an outline point ``(u, v)`` -- arc length from the segment's
-    left edge and height above the baseline, both in 1/100-em layout units -- into
+    Placement maps an outline point ``(u, v)`` (arc length from the segment's
+    left edge and height above the baseline, both in 1/100-em layout units) into
     display pixels. ``v`` is shifted by the vertical-alignment datum
-    (:func:`_valign_datum`), so the chosen line (baseline, centre, ascender, or
-    descender) is what rides the curve. Because each glyph is placed by an
-    isometry, the perpendicular distance from the curve equals ``v`` exactly --
-    there is no per-glyph step, and plain and math are identical by construction.
+    (:func:`_valign_datum`), so the chosen line (baseline, center, ascender, or
+    descender) is what lies on the curve. Because each glyph is placed by an
+    isometry, the perpendicular distance from the curve equals ``v`` exactly.
+    There is no per-glyph step, and plain and math are identical by construction.
 
     Subclasses differ only in where the outline comes from
     (:meth:`_build_outline`) and whether it is placed rigidly or bent along the
     curve (:attr:`_bend`). Any perpendicular offset is already baked into the
-    frame (it is the parallel curve), so a segment rides it with no offset
-    handling of its own.
+    frame (it is the parallel curve), so a segment follows the frame with no
+    offset handling of its own.
     """
 
     #: Whether the outline bends along the curve (math runs) or is placed rigidly
@@ -867,7 +869,7 @@ class _OutlineSegment(mtext.Text):
         it (already the parallel curve when offset), the segment's own width in
         pixels (the chord a rigid glyph is rotated by; its kern toward the next
         glyph moves only the cursor, not the glyph), and the
-        vertical-alignment datum (height in 1/100-em layout units that rides the
+        vertical-alignment datum (height in 1/100-em layout units that lies on the
         curve), computed once by the container so every segment shares it."""
         self._frame = frame
         self._s_left = float(s_left)
@@ -932,7 +934,7 @@ class _OutlineSegment(mtext.Text):
                                       y + v * np.cos(angle)])
         else:
             # Place the glyph rigidly: one rotation, by the chord across its own
-            # width, about its centre on the curve. A single isometry preserves
+            # width, about its center on the curve. A single isometry preserves
             # the glyph's shape (no distortion) while the baseline datum still
             # lands on the curve, so spacing and rotation match the bent runs.
             w = self._width_px
@@ -969,7 +971,7 @@ class _OutlineSegment(mtext.Text):
 
 class _PlainGlyph(_OutlineSegment):
     """One plain character, drawn as a rigid (undistorted) glyph outline whose
-    baseline rides the curve. Inherits ``_bend = False`` from the base.
+    baseline lies on the curve. Inherits ``_bend = False`` from the base.
 
     Under usetex the glyph comes from its plain run, ``run_text``, typeset by
     one LaTeX pass (:func:`_tex_run_layout`), which also gives its width and
@@ -1042,9 +1044,11 @@ class _PlainGlyph(_OutlineSegment):
 class _MathRun(_OutlineSegment):
     """One ``$...$`` math run, laid out by mathtext or, under usetex, by LaTeX,
     and drawn by bending the expression's glyph outlines and rule boxes through
-    the curve so radicals, fractions, and sized delimiters stay connected at any
-    curvature. Its baseline is the same shared datum as the plain glyphs, so the
-    run's main symbols sit level with neighbouring characters."""
+    the curve. Radicals, fractions, and sized delimiters stay joined while the
+    radius of curvature is larger than the height of the expression, and fold
+    over themselves on the concave side of a tighter bend. Its baseline is the
+    same shared datum as the plain glyphs, so the run's main symbols sit level
+    with neighboring characters."""
 
     _bend = True
 
@@ -1077,159 +1081,243 @@ class _MathRun(_OutlineSegment):
 
 
 class CurvedText(mtext.Text):
-    """A string drawn along an (x, y) curve, one segment at a time (each plain
-    character and each ``$...$`` run).
+    """A string drawn along an (x, y) curve, one glyph at a time.
 
-    Every glyph -- plain character or mathtext run -- is laid out on one shared
-    text baseline and mapped onto the curve from its glyph outline: a plain
-    character rigidly (one rotation by the chord across its own width, so its
-    shape is undistorted), a mathtext run by bending its outlines so radicals and
-    fractions stay connected. ``valign`` chooses which line of the text rides the
-    curve -- the vertical centre by default. Because both kinds share the baseline,
-    plain and math sit level by construction, and because each glyph is placed by
-    an isometry there is no per-glyph drift. The rotation chord follows the local
-    tangent but averages over the glyph's own width, so rotation stays smooth
-    across the vertices of a coarsely sampled polyline instead of snapping to each
-    segment's angle. The layout is recomputed on every draw, so the label keeps
-    following the curve through figure layout, resizing, and interactive panning
-    or zooming.
-
-    Placement controls:
-
-    ``pos``
-        Where the label is anchored along the curve, as a fraction of the curve's
-        drawn arc length: ``0.0`` is the start of the drawn curve, ``1.0`` its
-        end. A curve with gaps (NaN, infinite, or masked points) is measured
-        along its drawn stretches, on screen, so zooming can move the anchor onto
-        another stretch, and the label rides the stretch that holds its anchor.
-    ``anchor``
-        Which part of the label lands at ``pos``: ``"start"``, ``"center"``, or
-        ``"end"``.
-    ``offset``
-        A perpendicular shift off the curve, in typographic points. The label is
-        laid along the parallel (offset) curve at that distance, so the clearance
-        from the curve is uniform along the whole label and the letter spacing
-        stays even, even where the curvature is steep or asymmetric. Positive is
-        to the left of the direction of travel, which is visually above a
-        left-to-right curve. ``pos`` and ``anchor`` stay measured against the
-        original curve and are carried perpendicularly onto the offset curve, so
-        an offset label sits directly off the spot the same ``pos`` marks on the
-        bare curve.
-    ``valign``
-        Which line of the text rides the curve: ``"center"`` (the default -- the
-        text straddles the curve), ``"baseline"`` (the baseline follows the curve,
-        so the body sits above it with descenders below), ``"ascender"``, or
-        ``"descender"``. The choice is a single font-metric shift applied
-        identically to every glyph and to the mathtext runs, so it never
-        introduces a per-glyph step and keeps plain and math aligned. Combine with
-        ``offset`` to lift the chosen line off the curve.
-
-    A label that overruns either end of the curve, or of the stretch it rides
-    on a curve with gaps -- because of ``pos`` and ``anchor`` -- is not clipped.
-    The curve is extended along its end tangent and the overrunning glyphs are
-    placed on that straight extension, over a gap if there is one: a label
-    never continues onto another stretch. To run a label along a curve with
-    gaps, or along scattered points, pass it a smooth curve that follows their
-    overall shape, such as a fit: the label never draws the curve it follows.
-
-    Set ``box`` to draw a casing behind the label -- a band that follows the
-    curve at the label's height, drawn under the glyphs -- so the label stays
-    legible where it crosses the lines it labels. For a lighter casing that
-    hugs each glyph (a halo), pass a white ``withStroke`` through
-    ``path_effects``; a wide stroke there merges adjacent per-character
-    glyphs, so ``box`` is the way to get solid coverage under plain text.
-
-    Mathtext is supported: each ``$...$`` run in ``text`` is laid out by
-    matplotlib's mathtext engine and bent continuously along the curve -- every
-    glyph outline and rule box is mapped through the curve's arc-length frame, so
-    radicals, fractions, and sized delimiters stay connected at any curvature.
-    The run rides the same baseline as the surrounding plain glyphs, so its main
-    symbols sit level with them. Pass ``parse_math=False`` to treat dollar signs
-    literally. Tall expressions compress vertically on the inside of tight bends,
-    so choose label size relative to curvature accordingly.
-
-    LaTeX is used instead when ``text.usetex`` is set or ``usetex=True`` is
-    passed, so the label matches the figure's other usetex text. Math runs are
-    then typeset by LaTeX, and so is plain text, literally: characters that are
-    TeX markup (such as ``%``, ``#``, and the backslash) are escaped, so TeX
-    commands work only inside ``$...$``. Each plain run is typeset in one LaTeX
-    pass and kerned as TeX sets it; a run with a character TeX builds from
-    several pieces, such as an accented letter in the default encoding, or one
-    that can print nothing, such as a soft hyphen, is typeset one character at
-    a time, without kerning. Plain text is limited to
-    characters the LaTeX preamble can typeset; the README shows how to declare
-    upright Greek letters there. The ``valign`` ascender and descender lines are
-    the height and depth TeX gives ``()gy`` in the font it sets the text in. The
-    first draw runs LaTeX once for each distinct plain run and math run, and
-    up to twice more to measure line heights, and later draws reuse the
-    caches. The usetex setting is fixed when the label is constructed, as
-    matplotlib fixes it for each glyph; pass ``usetex`` or set the rcParam
-    before creating the label. Set the LaTeX preamble, font family, and font
-    lists before the figure is drawn, too: matplotlib caches text measurements
-    per figure without them, so after a change a redraw of the same figure
-    keeps the old measurements of math runs and of text typeset one character
-    at a time, while plain runs follow the change. matplotlib's own usetex
-    text also keeps the old measurements. Under usetex the font family comes
-    from the ``font.family`` rcParam, as for matplotlib's own usetex text, and
-    the ``fontfamily`` keyword has no effect. Math runs are passed to LaTeX as
-    written, so they can run TeX commands, including ones that read local
-    files; do not pass untrusted text with usetex on.
-
-    Both plain glyphs and mathtext runs are rendered from their glyph outlines
-    rather than as hinted ``Text`` artists. On a rotated label this is what lets a
-    single baseline be pinned exactly; the only cost is the loss of pixel-grid
-    hinting, which is marginal on rotated text and matches how mathtext has always
-    rendered. Under usetex matplotlib loads the glyphs with light hinting, laid
-    out at a resolution where it is negligible.
+    Each character of ``text`` is drawn as a per-character glyph, and each
+    ``$...$`` run as one math run. The label follows the curve through figure
+    layout, resizing, and interactive panning and zooming, because its layout is
+    computed again on every draw. Use :func:`curved_text` to add a label in one
+    call. This class takes the axes after ``x, y, text``, as
+    :class:`matplotlib.text.Text` does, where :func:`curved_text` takes it first.
 
     Parameters
     ----------
     x, y : array-like
-        The curve in data coordinates: 1-D, equal length, and ordered along
-        the curve. A NaN, infinite, or masked point leaves a gap, as in
-        ``plot``, and the curve needs at least two consecutive finite points.
-        A value outside the domain of a log or logit axis leaves a gap too.
-        Any type the axes' unit converters accept works, as for ``plot``:
-        dates (``datetime64``, ``datetime``, pandas dates), category strings,
-        and unit-aware values. An axis without units takes them from the
-        curve; category strings not yet on an axis are added to it, as ticks.
-        Data an axis cannot convert raises matplotlib's ``ConversionError``.
+        The curve in data coordinates: 1-D, equal length, and ordered along the
+        curve. See Notes for gaps and units.
     text : str
-        The string to draw. May contain mathtext runs (``$...$``).
+        The string to draw, on one line. It may contain mathtext runs
+        (``$...$``).
     axes : matplotlib.axes.Axes
-        The axes to draw into.
+        The axes to draw into. It follows ``x, y, text`` here and comes first
+        in :func:`curved_text`.
     pos : float, default 0.5
-        Arc-length fraction in ``[0, 1]`` for the anchor point. On a curve with
-        gaps it is a fraction of the drawn length, measured on screen, so
-        zooming can move the anchor onto another stretch, and the label rides
-        the stretch that holds its anchor.
+        Where the label is anchored, as a fraction of the drawn arc length of
+        the curve: ``0.0`` is the start of the drawn curve and ``1.0`` its end.
+        A value outside 0 to 1 places the anchor on the straight extension
+        beyond either end of the curve. A value far outside can fall outside
+        the figure. Pass ``clip_on=False`` to see an anchor outside the axes.
+        On a curve with gaps, the fraction is measured on screen along the drawn
+        stretches (connected pieces of the curve between gaps). Zooming can move
+        the anchor onto another stretch, and the label follows the stretch that
+        holds its anchor. The label reads in the order of the points as they
+        appear on screen. If the points run from right to left, the text is
+        upside down. Reverse both arrays (``x[::-1], y[::-1]``) to turn it
+        upright. ``pos`` and ``offset`` also count from the first point.
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
-        Perpendicular offset off the curve, in points. The label is laid along
-        the parallel (offset) curve at that distance.
+        Distance from the curve, perpendicular to it, in points (1/72 inch).
+        Positive is to the left of the direction of travel, which is above a
+        curve that runs from left to right. The label is laid along the parallel
+        (offset) curve at that distance. The clearance from the curve and the
+        spacing of the characters stay even where the curve bends steeply or
+        asymmetrically. ``pos`` and ``anchor`` are measured against the original
+        curve and carried perpendicularly onto the offset curve.
     box : bool, str, or dict, default False
-        A casing drawn behind the label to clear the lines it crosses. ``True``
+        A casing drawn behind the label to clear the lines it crosses: a band
+        that follows the curve at the label's height, under the glyphs. ``True``
         draws a white band; a color string sets its color; a dict accepts
         ``color``, ``pad`` (band height relative to the tallest glyph, default
         ``1.1``), and ``alpha``. The band has rounded ends, so it extends about
-        half its height past the first and last glyph.
+        half its height past the first and last glyph. For a lighter casing
+        around each glyph (a halo), pass a white ``withStroke`` through
+        ``path_effects``. A wide stroke merges adjacent glyphs, so ``box`` gives
+        solid coverage under plain text.
     crowding : {"none", "curvature"}, default "none"
         How to space glyphs around bends. ``"none"`` spaces them as ordinary
-        text does, by width and kerning, so on the concave side of a tight bend
-        the rotated glyph boxes can overlap. ``"curvature"`` opens an even
-        letterspacing gap that grows with the local curvature and the glyph
-        height, so the inside edges stop colliding; the gap is the same between
-        every pair of letters, and a deadband leaves gentle bends and straight
-        runs unchanged.
+        text does, by width and kerning (the adjustment of the space between
+        particular pairs of characters). On the concave side of a tight bend
+        the rotated glyphs can overlap. ``"curvature"`` opens an even gap,
+        added space between every pair of characters, that grows with the local
+        curvature and the glyph height, so the inside edges stop colliding. A
+        deadband (a range below which no gap is added) leaves gentle bends and
+        straight runs unchanged.
     valign : {"center", "baseline", "ascender", "descender"}, default "center"
-        Which line of the text rides the curve. ``"center"`` straddles the text on
-        the curve (the default); ``"baseline"`` follows the text baseline so the
-        body sits above the curve; the others ride the ascender or descender line.
-        Each is a constant font-metric shift applied to the whole label.
+        Which line of the text lies on the curve. ``"center"`` straddles the
+        text on the curve. ``"baseline"`` places the text baseline on the curve,
+        so the body sits above it and descenders below. ``"ascender"`` and
+        ``"descender"`` place the ascender or descender line on it. Each choice
+        is one font-metric shift applied identically to every glyph and math run,
+        so plain text and math stay aligned. Combine it with ``offset`` to lift
+        the chosen line off the curve.
     **kwargs
-        Passed to each per-character glyph and each math run (for example
-        ``color``, ``fontsize``, ``alpha``, ``fontfamily``, ``usetex``).
+        Extra keyword arguments are :class:`~matplotlib.text.Text` properties
+        applied to every glyph and every math run: ``color``, ``alpha``,
+        ``fontsize``, ``fontfamily``, ``fontproperties``, ``fontstyle``,
+        ``fontweight``, ``math_fontfamily``, ``parse_math``, ``usetex``, and
+        ``path_effects``. Properties that describe one text box have no effect,
+        because the curve places every glyph: ``ha``, ``va``, ``rotation_mode``,
+        ``wrap``, ``bbox``, ``linespacing``, ``multialignment``, and
+        ``backgroundcolor``. ``antialiased``, ``snap``, and ``sketch_params``
+        are accepted and have no effect. ``label=`` adds no legend entry, and
+        ``legend()`` warns once for each part of the label. ``transform`` is
+        replaced, because glyphs are drawn in display pixels. Do not pass
+        ``rotation``: it changes the spacing of the characters. Use ``box`` for
+        a background. An unknown property raises ``AttributeError``.
+
+        ``parse_math=False`` treats dollar signs literally (the default comes
+        from the ``text.parse_math`` rcParam, a matplotlib runtime setting).
+        ``clip_on`` (default ``True``) clips the label at the edge of the axes;
+        ``clip_on=False`` lets it extend beyond them.
+
+    Raises
+    ------
+    ValueError
+        If any of these holds:
+
+        - ``x`` and ``y`` are not 1-D arrays of equal length with at least two
+          points.
+        - ``x`` and ``y`` have no two consecutive finite points.
+        - ``pos`` is not finite.
+        - ``anchor``, ``valign``, or ``crowding`` is not one of the listed
+          values.
+        - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
+    TypeError
+        If ``text`` is not a string or ``pos`` is not a number.
+    matplotlib.units.ConversionError
+        If the axes cannot convert the data of ``x`` or ``y``.
+    AttributeError
+        If a keyword argument is not a property of ``Text``.
+
+    Notes
+    -----
+    Each glyph is laid out on one shared text baseline and mapped onto the curve
+    from its outline. A plain character is placed rigidly, with one rotation by
+    the chord across its own width, so its shape is undistorted. A math run is
+    bent along the curve, so radicals (square-root signs) and fractions stay
+    connected. Because both kinds share the baseline, plain text and math sit
+    level, and no glyph steps up or down against its neighbors. The rotation
+    chord follows the local tangent but averages over the glyph's own width, so
+    rotation stays smooth across the vertices of a coarsely sampled curve.
+
+    **Gaps and units.** A NaN (not a number), infinite, or masked point (a point
+    hidden by a NumPy masked array) leaves a gap, as in ``plot``. The curve
+    needs at least two consecutive finite points. A value outside the domain of
+    a log or logit axis leaves a gap too. On a log axis these are values of 0 or
+    below; on a logit axis, values of 0 or below and of 1 or above. A stretch
+    is a connected piece of the curve between gaps. Any type the axes' unit
+    converters accept works, as for ``plot``: dates (``datetime64``,
+    ``datetime``, pandas dates), category strings, and unit-aware values. An
+    axis without units takes them from the curve. Category strings
+    not yet on an axis are added to it, as ticks.
+
+    A label that overruns either end of the curve, or of the stretch it follows
+    on a curve with gaps, is not clipped. The glyphs beyond the end are placed on
+    a straight extension of the end tangent, over a gap if there is one, and the
+    label never continues onto another stretch. To run a label along scattered
+    points or a curve with gaps, pass a smooth curve that follows their overall
+    shape, such as a fit. The label never draws the curve it follows.
+
+    **Mathtext.** Each ``$...$`` run is laid out by matplotlib's mathtext
+    engine. Every glyph outline and every bar, such as a fraction bar, is mapped
+    onto the curve by arc length. The run sits on the same baseline as the
+    surrounding plain glyphs. Fractions, radicals, and large brackets stay
+    joined while the radius of curvature is larger than the height of the
+    expression. On a tighter bend the expression is squeezed along the curve.
+    Where the radius falls below its height on the concave side, it folds over
+    itself: ink beyond the center of curvature comes out mirrored. Choose the
+    text size to suit the curvature.
+
+    **LaTeX typesetting (usetex).** When ``text.usetex`` is set or
+    ``usetex=True`` is passed, LaTeX (a typesetting system) typesets the label,
+    so it matches the other usetex text of the figure. ``curved_text`` requires
+    ``latex``, as for any matplotlib usetex figure. matplotlib's own usetex
+    text, such as tick labels, also needs ``dvipng``. A plain run is the plain
+    text between math runs, or between a math run and an end of the string.
+    Under usetex:
+
+    - Math runs and plain text are both typeset by LaTeX. Plain text is typeset
+      literally: characters that are TeX markup (such as ``%``, ``#``, and the
+      backslash) are escaped, so TeX commands work only inside ``$...$``.
+    - Each plain run is typeset in one LaTeX pass and kerned as TeX sets it.
+    - A plain run is typeset one character at a time, without kerning, in two
+      cases. One is a character that TeX builds from several pieces, such as an
+      accented letter in the default encoding. The other is a character that
+      can print nothing, such as a soft hyphen.
+    - Plain text is limited to characters the LaTeX preamble (the LaTeX setup
+      commands that come before the text) can typeset. The `README section on
+      LaTeX typesetting
+      <https://github.com/thiebes/curved-text#latex-typesetting-usetex>`_ shows
+      how to declare upright Greek letters.
+    - The ``valign`` ascender and descender lines are the height and depth that
+      TeX measures for the text ``()gy`` in the font it sets the label in.
+    - The first draw runs LaTeX once for each distinct plain run and math run,
+      and up to twice more to measure line heights. Later draws reuse the
+      caches.
+    - The usetex setting is fixed when the label is constructed, as matplotlib
+      fixes it for each glyph. Pass ``usetex`` or set the rcParam before creating
+      the label.
+    - Set the LaTeX preamble, font family, and font lists before the figure is
+      drawn. matplotlib caches text measurements per figure without them.
+      After a change, a redraw of the same figure keeps the old measurements of
+      math runs and of text typeset one character at a time. Plain runs follow
+      the change. matplotlib's own usetex text keeps the old measurements too.
+    - The font family comes from the ``font.family`` rcParam, as for
+      matplotlib's own usetex text, and the ``fontfamily`` keyword has no effect.
+    - Math runs are passed to LaTeX as written, so they can run TeX commands,
+      including ones that read local files. Do not pass untrusted text with
+      usetex on.
+
+    Glyphs are rendered from their outlines, not as hinted ``Text`` artists. On
+    a rotated label this lets one baseline be pinned exactly, at the cost of
+    pixel-grid hinting, which matters little on rotated text. Plain text and
+    mathtext are rendered the same way. Under usetex, matplotlib loads the glyphs
+    with light hinting, laid out at a resolution where it is negligible.
+
+    **Limits.**
+
+    - Vector output: in PDF, SVG, PostScript, and EPS output, each character is
+      drawn as an outline path, not as text. The label cannot be selected,
+      searched, or edited as text, and each character is a separate shape. In PNG
+      output the label looks as it does on screen.
+    - Axes: Cartesian and polar axes work. On polar axes the angle runs
+      counterclockwise, so a curve from angle 0 to π runs right to left over
+      the top and its label reads upside down: reverse the arrays. A 3D axes
+      accepts the call and draws nothing.
+    - Animation: blitting is not supported, and ``ax.draw_artist(label)`` draws
+      nothing. Redraw the whole figure (a ``FuncAnimation`` without blitting
+      works), or leave the label out of the blit.
+    - Child artists: each character and each math run is a separate artist on the
+      axes, so ``ax.texts`` lists them as well as the label. Do not remove or
+      restyle them one at a time: removing one glyph breaks the next draw, and a
+      loop that removes every item of ``ax.texts`` raises ``ValueError``. Call
+      ``label.remove()`` on the object that :func:`curved_text` returns: it
+      removes every part. To tell a label from other text, test
+      ``isinstance(t, CurvedText)``.
+    - Lifecycle: ``label.remove()`` removes every part of the label.
+      ``ax.clear()`` removes it with the other artists. A figure that holds a
+      label can be pickled. ``legend(loc="best")`` avoids the label from
+      matplotlib 3.9.
+    - ``pos``: ``pos`` is a fraction of the curve you pass in, including any
+      part outside the axes limits: pass the visible piece of the curve. A value
+      outside 0 to 1 places the anchor on the straight extension beyond an end;
+      a value far outside can place it outside the figure. Use ``clip_on=False``
+      to see an anchor outside the axes.
+    - Axis limits: the label does not change the data limits. Plot the curve
+      first, or set the limits yourself.
+    - Cost: the time of a draw grows with the number of characters and the
+      number of curve points, and is paid on every redraw. If interactive pan and
+      zoom feels slow, pass fewer points: decimate or smooth the curve. Dozens
+      of labels draw in well under a second.
+    - Text: one line. A newline in the string is not a line break.
+
+    **After creation.** :func:`curved_text` and :class:`CurvedText` take the
+    same arguments and make the same artist. Keep the returned object to hide it
+    (``set_visible``), restack it (``set_zorder``), change its clipping, or
+    remove it (``remove()``). To change the text, color, size, or curve, remove
+    the label and make a new one. ``get_text()`` does not return the label's
+    string.
     """
 
     def __init__(self, x: ArrayLike | Sequence[Any], y: ArrayLike | Sequence[Any],
@@ -1462,7 +1550,7 @@ class CurvedText(mtext.Text):
         ``"curvature"`` mode each advance is widened where the curve bends, to
         keep the concave edges of adjacent rigid glyph boxes from overlapping on
         the inside of the bend. A box of height ``h``
-        whose center rides a curve of local curvature ``kappa`` has its concave
+        whose center lies on a curve of local curvature ``kappa`` has its concave
         edge, a distance ``h/2`` toward the center of curvature, lose roughly
         ``(h/2)*|kappa|`` of arc length per unit advance to its neighbor; the
         ``crowd`` factor below is that fraction, clamped at ``_MAX_CROWD``.
@@ -1505,27 +1593,21 @@ class CurvedText(mtext.Text):
         its box casing.
 
         Figure layout (``bbox_inches="tight"``, constrained layout, and from
-        matplotlib 3.10 ``legend(loc="best")``) measures the label through it.
-        Constrained layout measures before the first draw has placed anything,
-        so the label is placed on the curve to be measured. The container's own
-        Text, a single space at the curve's first finite point, takes no part.
-        Each glyph counts by the box of its outline's control points, which holds
-        the curves between them: it can exceed the ink by a fraction of a pixel,
-        never fall short of it, and costs far less than exact curve extrema. The
-        casing counts by its band, half its line width beyond its centreline on
-        every side, which also covers its round caps.
-        Without a renderer, the label is measured with one at the figure's dpi
-        (:func:`_measuring_renderer`). ``dpi`` scales the extent to that
-        resolution, which matches placing the label at that dpi to within what
-        whole-pixel glyph widths add up to. A hidden label, and one that cannot
-        be placed (an empty label, a label off any axes, a curve with no
-        stretch left to draw, or a degenerate curve), has an empty extent at
-        the curve's first shown point.
+        matplotlib 3.9 ``legend(loc="best")``) measures the label through it.
+        The label is placed on the curve to be measured, even before its first
+        draw. The container's own Text takes no part. Each glyph counts by the
+        box of its outline's control points. The box can exceed the ink by a
+        fraction of a pixel and never falls short of it. The casing counts by
+        its band, half its line width beyond its centerline on every side.
 
-        Figure layout can measure the label several times a draw, and a legend
-        measures it right after the label's own draw has placed it, so a
-        measurement reuses the last placement, and its extent, while what the
-        placement depends on is unchanged (:meth:`_placement_key`).
+        Without a renderer, the label is measured at the figure's dpi (dots per
+        inch). ``dpi`` scales the extent to that resolution. A hidden label has
+        an empty extent at the curve's first shown point. So has a label that
+        cannot be placed: an empty label, a label off any axes, a curve with no
+        stretch left to draw, or a degenerate curve.
+
+        Repeated measurements reuse the last placement while the renderer, the
+        curve position, and the glyphs are unchanged.
         """
         if not self.get_visible():
             return self._empty_extent()
@@ -1692,7 +1774,7 @@ class CurvedText(mtext.Text):
             return False
         axes = self.axes
         # The curve has gaps where a point has no pixel, as ``plot`` draws it.
-        # ``pos`` is a fraction of the drawn length, and the label rides the
+        # ``pos`` is a fraction of the drawn length, and the label follows the
         # stretch that holds its anchor, as though that stretch were the whole
         # curve: past its ends the label follows its end tangents, not the
         # next stretch.
@@ -1704,8 +1786,8 @@ class CurvedText(mtext.Text):
         base = _CurveFrame(points[:, 0], points[:, 1])
         # Work in display pixels: build the arc-length frame of the stretch,
         # then shift it perpendicularly to the parallel (offset) curve the
-        # label actually rides. Laying glyphs along the offset curve -- rather
-        # than projecting them off the base curve -- keeps the clearance from
+        # label actually follows. Laying glyphs along the offset curve, rather
+        # than projecting them off the base curve, keeps the clearance from
         # the curve and the on-screen letter spacing uniform at once, because
         # the cursor advances along the curve the glyphs sit on. ``pos`` and
         # ``anchor`` stay defined against the base curve and are carried onto
@@ -1720,7 +1802,7 @@ class CurvedText(mtext.Text):
         # The vertical-alignment datum is a font-metric constant, identical for
         # every segment, so derive it once here and hand it to each segment
         # rather than re-deriving it per glyph. Every alignment but the baseline
-        # is a font line, and so is the box casing's centre, which follows the
+        # is a font line, and so is the box casing's center, which follows the
         # "center" line while the frame follows the chosen one. Measuring the
         # lines runs LaTeX under usetex, so a baseline label without a casing
         # never measures them. The font and the usetex setting are read from a
@@ -1762,8 +1844,8 @@ class CurvedText(mtext.Text):
         # tallest glyph's height, so it clears the lines behind plain and math
         # segments alike (a single fill, immune to the per-character
         # cannibalization a wide ``path_effects`` stroke would cause). The label
-        # rides the frame on its ``valign`` datum, so the glyph band is centred a
-        # little off the frame; shift the casing centreline by that band offset so
+        # lies on the frame at its ``valign`` datum, so the glyph band is centered a
+        # little off the frame; shift the casing centerline by that band offset so
         # it sits over the ink rather than over the bare datum line.
         if self._box is not None:
             px_per_unit = _px_per_unit(renderer, prop.get_size_in_points())
@@ -1800,11 +1882,67 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
                 valign: str = "center", **kwargs: Any) -> CurvedText:
     """Draw ``text`` along the curve ``(x, y)`` on ``ax`` and return the artist.
 
-    Thin convenience wrapper around :class:`CurvedText`; see it for the meaning of
-    ``pos``, ``anchor``, ``offset``, ``box``, ``crowding``, and ``valign``. The
-    axes is the first argument here, matching matplotlib's axes-first helper
-    functions, whereas :class:`CurvedText` takes it after ``x, y, text`` to match
-    :class:`matplotlib.text.Text`.
+    A short form of :class:`CurvedText`, with the same arguments and the same
+    result. The axes is the first argument here, as in matplotlib's other
+    axes-first helper functions. :class:`CurvedText` takes it after
+    ``x, y, text``, as :class:`matplotlib.text.Text` does. Passing the axes last
+    to this function raises ``AttributeError``.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to draw into.
+    x, y : array-like
+        The curve in data coordinates: 1-D, equal length, ordered along the
+        curve.
+    text : str
+        The string to draw. It may contain mathtext runs (``$...$``).
+    pos : float, default 0.5
+        Anchor position as a fraction of the drawn arc length of the curve.
+    anchor : {"start", "center", "end"}, default "center"
+        Which part of the label sits at ``pos``.
+    offset : float, default 0.0
+        Distance from the curve, perpendicular to it, in points (1/72 inch).
+    box : bool, str, or dict, default False
+        A band behind the label that clears the lines it crosses: ``True`` for
+        white, a color string, or a dict with ``color``, ``pad``, and ``alpha``.
+    crowding : {"none", "curvature"}, default "none"
+        ``"curvature"`` adds spacing between characters on tight bends.
+    valign : {"center", "baseline", "ascender", "descender"}, default "center"
+        Which line of the text lies on the curve.
+    **kwargs
+        :class:`~matplotlib.text.Text` properties applied to every glyph and
+        math run, such as ``color``, ``fontsize``, ``alpha``, and
+        ``path_effects``. :class:`CurvedText` lists the properties that have no
+        effect.
+
+    Returns
+    -------
+    CurvedText
+        The label artist, already added to ``ax``.
+
+    Raises
+    ------
+    ValueError, TypeError, matplotlib.units.ConversionError, AttributeError
+        As for :class:`CurvedText`, which lists the conditions.
+
+    Notes
+    -----
+    The layout is computed again on every draw, so the label follows the curve
+    through resizing, panning, and zooming. See the Notes and Limits of
+    :class:`CurvedText` for vector output, 3D axes, blitting, removing a label,
+    and usetex.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import matplotlib.pyplot as plt
+    >>> from curved_text import curved_text
+    >>> x = np.linspace(0, 2 * np.pi, 200)
+    >>> y = np.sin(x)
+    >>> fig, ax = plt.subplots()
+    >>> line, = ax.plot(x, y)
+    >>> label = curved_text(ax, x, y, "a sine wave", pos=0.5, offset=8)
     """
     return CurvedText(x, y, text, ax, pos=pos, anchor=anchor, offset=offset,
                       box=box, crowding=crowding, valign=valign, **kwargs)

@@ -1,15 +1,9 @@
-"""Gaps in the curve: the label rides the stretch that holds its anchor.
+"""Gaps in the curve: the label follows the stretch that holds its anchor.
 
-A curve breaks where it has no value to draw, and the label sits on the
-stretch of curve that holds its anchor, with ``pos`` measured along the drawn
-length. (a) NaN points: the square root of a cosine is undefined where the
-cosine is negative. (b) Masked points: a tangent masked where it runs off
-toward its poles. (c) Zeros on a log axis, which has no place for them:
-``10 ** cos(x)``, set to zero where the cosine falls below -0.5. The axis
-masks them (``nonpositive="mask"``), so the plotted line breaks where the
-label's stretch does, and its axis shows the logarithmic scale. Every panel
-makes the same call, ``pos=0.5``; in (c) the stretches are symmetric about
-the middle of the curve, so the label lands on the middle peak.
+A stretch is a connected piece of the curve between gaps. The figure shows
+(a) NaN points, (b) masked points, and (c) zeros on a log axis, which the axis
+masks (``nonpositive="mask"``). Every panel makes the same call with
+``pos=0.5``.
 """
 from __future__ import annotations
 

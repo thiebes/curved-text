@@ -1,10 +1,7 @@
-"""Tier 1: mathtext bent along the curve.
+"""A mathtext expression along a gentle curve.
 
-A ``$...$`` run in the label is laid out by matplotlib's mathtext engine and
-bent through the same arc-length frame as plain text, so the radical, nested
-parentheses, and superscripts stay connected and follow the curve. The label
-rides over a broad, gentle hump -- enough curvature to show the bend, gentle
-enough that the expression stays clearly readable.
+A ``$...$`` run in the label is bent along the curve like plain text, so the
+radical (square-root sign), the parentheses, and the superscripts stay joined.
 """
 from __future__ import annotations
 

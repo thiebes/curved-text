@@ -1,13 +1,9 @@
 """The label stays on its curve while the view zooms and pans.
 
-The animated counterpart of figure 07: one call, one label, and axis limits
-that change every frame, as interactive zooming and panning change them. The
-view zooms in toward the label, pans along the curve, and zooms back out to
-where it began, so the loop has no jump. Layout is recomputed on every draw,
-in display space, so the label follows the curve through each change of scale
-and position without stretching or shearing. Only the limits change: the tick
-labels have a fixed width and the axes box is fixed after the first draw, so
-nothing else on the figure moves.
+One call draws one label, and the axis limits change on every frame, as
+interactive zooming and panning change them. The view zooms in, pans along the
+curve, and zooms back out, and the tick label width and the axes box are fixed
+so that nothing else moves.
 """
 from __future__ import annotations
 

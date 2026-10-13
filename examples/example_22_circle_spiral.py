@@ -1,12 +1,8 @@
 """Text around a circle and along a spiral.
 
-(a) A circle labelled on both halves, each traced from nine o'clock to three
-o'clock: the top half clockwise and the bottom half counterclockwise, so both
-labels run left to right on screen and read upright, outside the circle. (b) An
-Archimedean spiral, r = aθ, traced clockwise from near its centre outward,
-with a sentence on the inside of its turns, which keep an even spacing of
-2πa. Along the bottom of each turn the text runs right to left on screen and
-reads upside down, as figure 17 explains.
+(a) A circle labeled on both halves, each traced from the left side to the
+right side. (b) A sentence along the inside of an Archimedean spiral, r = aθ,
+where r is the distance from the center and θ is the angle.
 """
 from __future__ import annotations
 
@@ -22,7 +18,7 @@ CIRCLE_TOP = r"its circumference is $2\pi r$"
 CIRCLE_BOTTOM = r"and its area is $\pi r^2$"
 SPIRAL_TEXT = (r"an Archimedean spiral, $r = a\theta$, keeps the same distance "
                r"between its turns, so a long sentence can wind out from its "
-               r"centre at an even spacing")
+               r"center at an even spacing")
 # The spiral's growth per radian, a, so its turns are 2πa apart; and the
 # angles it spans: from just over half a turn, so the first words have room
 # on the inside, to where the sentence ends.

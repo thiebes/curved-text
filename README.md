@@ -175,17 +175,12 @@ The `CurvedText` class takes the axes after `x, y, text`, matching
 matplotlib's axes-first helper functions. Passing the axes last to `curved_text`
 raises `AttributeError`.
 
-Extra keyword arguments are `Text` properties applied to every glyph and every
-math run: `color`, `alpha`, `fontsize`, `fontfamily`, `fontproperties`,
-`fontstyle`, `fontweight`, `math_fontfamily`, `parse_math`, `usetex`, and
-`path_effects`. Properties that describe one text box have no effect, because
-the curve places every glyph: `ha`, `va`, `rotation_mode`, `wrap`, `bbox`,
-`linespacing`, `multialignment`, and `backgroundcolor`. `transform` is replaced,
-because glyphs are drawn in display pixels. Do not pass `rotation`: it changes
-the spacing of the characters. Use `box` for a background. `antialiased`,
-`snap`, and `sketch_params` are accepted and have no effect. `label=` adds no
-legend entry, and `legend()` warns once for each part of the label. An unknown
-property raises `AttributeError`.
+Extra keyword arguments are `Text` properties applied to every glyph, such as
+`color`, `alpha`, `fontsize`, `fontfamily`, and `path_effects`. Properties that
+describe one text box, such as `ha`, `va`, `bbox`, and `wrap`, have no effect,
+and `transform` is replaced. Do not pass `rotation`: it changes the spacing of
+the characters. The [API reference](https://thiebes.github.io/curved-text/api.html)
+lists every property.
 
 ## Features
 
@@ -224,10 +219,8 @@ curved_text(ax, x, y, r"mass $m$ and speed $c$ give $E = mc^2$",
             valign="baseline")
 ```
 
-In the next figure, the symbols are level with the words, and only the exponent
-is raised:
-
-![The label 'mass m and speed c give E = mc squared' along an arch with valign 'baseline'. The math symbols sit level with the plain words, and only the exponent 2 is raised.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/15_mixed_alignment.png)
+The Gallery section [Plain words and math share one baseline](https://thiebes.github.io/curved-text/gallery.html#plain-words-and-math-share-one-baseline)
+shows the symbols level with the words, with only the exponent raised.
 
 ### LaTeX typesetting (usetex)
 
@@ -241,74 +234,11 @@ matplotlib's own usetex text, such as tick labels, also needs `dvipng`.
 curved_text(ax, x, y, r"yield 50% at $\sqrt{\bar{\sigma}_G}$", usetex=True)
 ```
 
-In the next figure, the rcParam and the serif font family make the tick labels,
-the axis labels, and the curve labels share one LaTeX typeface. With the default
-sans-serif family, words in text mode are set in Computer Modern Sans while math
-stays in the serif Computer Modern.
+Math runs go to LaTeX as written, so they can run TeX commands, including ones
+that read local files. Do not pass untrusted text with usetex on.
 
-![Three cooling curves, temperature T in degrees Celsius against time t in seconds from 0 to 10, with tau = 1.5 s, 3 s, and 6 s, each labeled along its own curve. The tick labels, axis labels, and curve labels are all set in the same serif LaTeX typeface.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
-
-Plain text is typeset literally. The characters `%`, `#`, `&`, and the other
-TeX markup characters print as themselves. TeX commands work only inside
-`$...$`.
-matplotlib's own usetex text differs: it needs `r"50\%"` for a percent sign.
-
-Plain text is limited to characters the LaTeX preamble (the setup commands that
-come before the text) can typeset. A Greek letter in a math run (`$\lambda$`) is
-italic, as a variable should be. For an upright Greek letter in plain text, such
-as a name or a unit, declare it in your own preamble, one declaration per
-letter:
-
-```python
-mpl.rcParams["text.latex.preamble"] = (
-    r"\usepackage{upgreek}"
-    r"\DeclareUnicodeCharacter{03BB}{\ensuremath{\uplambda}}"
-)
-curved_text(ax, x, y, r"plain λ, math $\lambda$", usetex=True)
-```
-
-The library leaves the preamble to you. It is one global setting for every
-usetex text in the figure, including the layout passes that measure the label.
-
-#### usetex details
-
-A plain run is a piece of plain text between math runs. LaTeX typesets each
-plain run in one pass, with kerning (adjustment of the space between particular
-pairs of characters) as TeX sets it. Each space is one interword space, without
-the extra space TeX adds after a period.
-
-Some plain runs are typeset one character at a time, without kerning. This
-happens when a run holds a character that TeX builds from several pieces, such
-as an accented letter in the default encoding. It also happens for a character
-that can print nothing, such as a soft hyphen.
-
-The first draw runs LaTeX once for each distinct plain run and math run, as
-matplotlib does for each usetex string. It runs up to twice more for the font's
-line heights. Later draws are cached. A figure with many short new labels
-therefore runs LaTeX many times on its first draw.
-
-A few details differ from the default renderer:
-
-- The usetex setting is fixed when the label is created, as matplotlib fixes it
-  for each text. Set the rcParam or pass `usetex=True` before creating the
-  label.
-- Set the LaTeX preamble and the font family and font lists before the figure
-  is drawn. If they change after a draw, redrawing the same figure keeps the
-  old measurements of math runs and of text typeset one character at a time.
-  matplotlib caches those per figure without the preamble.
-  Plain runs follow the change, so one label can mix two fonts. matplotlib's
-  own usetex text also keeps the old measurements. Create the figure again
-  after changing them.
-- LaTeX takes the font family from the `font.family` rcParam, as for
-  matplotlib's own usetex text, so the `fontfamily` keyword has no effect.
-- The `valign` lines come from the TeX font as LaTeX draws it. Under usetex,
-  the ascender line, which `valign="ascender"` puts on the curve, lies about
-  0.06 em above the tops of capital letters (1 em is the font size). Without
-  usetex it lies about 0.2 em above them in the default font, DejaVu Sans, on
-  the line the font reserves for line spacing. Other fonts differ, from about
-  0.02 to 0.4 em.
-- Math runs go to LaTeX as written, so they can run TeX commands, including ones
-  that read local files. Do not pass untrusted text with usetex on.
+The page [LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html)
+covers plain text, Greek letters, the preamble, caching, and `valign`.
 
 ### Background box and halo (`box`, `path_effects`)
 
@@ -347,14 +277,11 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$",
             path_effects=[pe.withStroke(linewidth=4, foreground="white")])
 ```
 
-A wide stroke per character leaves gaps, and one `box` fill does not. In (a)
-below, a wide stroke is drawn on each character. In (b), one `box` fill covers
-the whole label. A thin halo has its own use. Over thin lines and dense figures
-it hides the lines only where they touch the glyphs, as the Gallery's
-[halo-or-box figure](https://thiebes.github.io/curved-text/gallery.html#a-halo-or-a-box)
-shows.
-
-![Two panels with the label 'crossing the gridlines' over gray lines. In (a), a white stroke of linewidth 6 on each character leaves small gaps where the lines show through between characters. In (b), one white band under the whole label hides the lines completely.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
+A wide stroke per character leaves gaps, and one `box` fill does not. A thin
+halo has its own use. Over thin lines and dense figures it hides the lines only
+where they touch the glyphs. The Gallery sections
+[Box versus a path-effects stroke](https://thiebes.github.io/curved-text/gallery.html#box-versus-a-path-effects-stroke) and
+[A halo or a box](https://thiebes.github.io/curved-text/gallery.html#a-halo-or-a-box) show both cases.
 
 ### Tight bends (`crowding`)
 
@@ -375,11 +302,10 @@ bend or a straight run stays below it and is unchanged, so only crowded text is
 spaced out. The default `crowding="none"` leaves the spacing as ordinary text
 sets it.
 
-Panels (a) and (b) below show a sharp bend, where the correction visibly
-separates the glyphs. Panels (c) and (d) show a gentle bend of the same word,
-unchanged because it falls below the deadband.
-
-![Four panels with the word 'winds'. In (a) and (b), a tight semicircle: with crowding 'none' the characters crowd on the inside of the bend, and with 'curvature' they are spaced apart. In (c) and (d), a gentle arc, with 'none' and 'curvature': the two look the same.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
+The Gallery section [Even spacing on a tight bend](https://thiebes.github.io/curved-text/gallery.html#even-spacing-on-a-tight-bend)
+shows a sharp bend, where the correction visibly separates the glyphs. It also
+shows a gentle bend of the same word, unchanged because it falls below the
+deadband.
 
 ### Vertical alignment (`valign`)
 
@@ -398,9 +324,8 @@ disturbs the spacing or the alignment of plain text with mathtext. Combine it
 with `offset` to lift the chosen line clear of the curve.
 
 With `valign`, the same word moves from straddling the arc to hanging below it
-or sitting above it. The next figure shows the word on an arc for each value:
-
-![Four panels with the word 'Amplitude' on an arc, one for each valign value. With 'center' the word straddles the arc. With 'baseline' it sits above the arc. With 'ascender' it hangs below the arc. With 'descender' it sits above the arc, clear of it.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/14_valign.png)
+or sitting above it. The Gallery section [`valign`: which line of the text lies on the curve](https://thiebes.github.io/curved-text/gallery.html#valign-which-line-of-the-text-lies-on-the-curve)
+shows the word on an arc for each value.
 
 ### Works with seaborn, pandas, and other matplotlib-backed libraries
 
@@ -422,12 +347,11 @@ for name, line in df.groupby("series"):
                 pos=0.6, anchor="center", offset=8.0)
 ```
 
-The next Gallery figure labels two stock market indexes with similar calls,
-in seaborn's `whitegrid` theme, with each label in place of a legend entry. It
-also passes `curved_text` a smoothed copy of each line, which keeps the glyphs
-of a label on monthly data from tilting into each other.
-
-![Line chart of two stock market indexes from 1990 to 2022, drawn by seaborn. The label 'NASDAQ Composite' runs along the upper line, which rises steeply after 2016. The label 'S&P 500' runs along the lower line. There is no legend.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/09_seaborn_pandas.png)
+The Gallery section [Any matplotlib-backed axes (seaborn, pandas)](https://thiebes.github.io/curved-text/gallery.html#any-matplotlib-backed-axes-seaborn-pandas)
+labels two stock market indexes with similar calls, in seaborn's `whitegrid`
+theme, with each label in place of a legend entry. It also passes
+`curved_text` a smoothed copy of each line, which keeps the glyphs of a label
+on monthly data from tilting into each other.
 
 ## Limits
 
@@ -478,7 +402,7 @@ glyph is turned rigidly: the package draws a straight line across the width of
 that one glyph and turns the glyph to match. Averaging over the width keeps
 neighboring glyphs smooth even when the curve has only a few points.
 Sharing one baseline keeps plain text and mathtext level. The
-[design notes](https://thiebes.github.io/curved-text/design-mathtext.html) describe how mathtext is bent along the
+[design notes](https://thiebes.github.io/curved-text/design.html) describe how mathtext is bent along the
 curve.
 
 All of this is measured in display space: pixels on the final figure after every

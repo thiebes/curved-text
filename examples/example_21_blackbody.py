@@ -1,4 +1,4 @@
-"""Blackbody spectra, labeled along their paths.
+"""Blackbody spectra, labeled along their curves.
 
 Planck's law gives the spectral radiance B(λ, T) = 2hc² / λ⁵ / (exp(hc / λkT) - 1)
 for four temperatures, up to the Sun's effective temperature, 5772 K. Each label

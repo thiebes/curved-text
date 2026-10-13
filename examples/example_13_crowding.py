@@ -25,7 +25,7 @@ OFFSET = -13.0
 
 def _arc(sweep_deg):
     """Unit-circle arc of angular width ``sweep_deg``, centered at the top and
-    travelling left to right, shifted so its lowest point sits at ``y = 0``."""
+    traveling left to right, shifted so its lowest point sits at ``y = 0``."""
     half = np.radians(sweep_deg) / 2.0
     th = np.linspace(np.pi / 2 + half, np.pi / 2 - half, 400)
     x, y = np.cos(th), np.sin(th)

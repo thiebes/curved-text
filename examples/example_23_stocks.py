@@ -1,12 +1,13 @@
-"""Stock prices on real dates, each line labeled along its path.
+"""Stock prices on real dates, with each line labeled along a smoothed copy.
 
 Monthly values from the ``Stocks.csv`` sample data, January 1990 to June 2022:
 adjusted closing prices for three stocks and the S&P 500 price index, each
 divided by its January 1990 value and smoothed with a rolling mean over
-``WINDOW_MONTHS``. Each label follows a path smoothed further by a Gaussian
-about one character wide, which is never drawn. The file is read with the
-``csv`` module, so the figure runs without the ``examples`` extra, and it is
-skipped where matplotlib does not include ``Stocks.csv``.
+``WINDOW_MONTHS``. Each label follows a smoothed copy of its line, filtered
+further by a Gaussian about one character wide. The copy is never drawn. The
+file is read with the ``csv`` module, so the figure runs without the
+``examples`` extra, and it is skipped where matplotlib does not include
+``Stocks.csv``.
 """
 from __future__ import annotations
 

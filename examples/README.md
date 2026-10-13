@@ -13,9 +13,9 @@ scripts, see [Running the scripts](#running-the-scripts).
 
 Each curve carries its own label, so the reader needs no legend. In (a), a
 legend maps colors to curves, and the eye must move between the key and the
-data. In (b), each curve is labeled along its own path.
+data. In (b), each curve is labeled along its own curve.
 
-![Two panels with the same three cooling curves. In (a), a legend decodes each line by color. In (b), each curve carries its own label, tau = 1.5 s, 3 s, or 6 s, along its path, so no legend is needed.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/01_direct_labeling.png)
+![Two panels with the same three cooling curves. In (a), a legend decodes each line by color. In (b), each curve carries its own label, tau = 1.5 s, 3 s, or 6 s, along the curve, so no legend is needed.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/01_direct_labeling.png)
 
 [example_01_direct_labeling.py](https://github.com/thiebes/curved-text/blob/main/examples/example_01_direct_labeling.py)
 
@@ -34,15 +34,15 @@ curve in the same way as plain text. Plain and math runs mix in one string. On
 this gentle curve, the radical (square-root sign), the parentheses, and the
 superscripts stay joined.
 
-Fractions, radicals, and large brackets stay joined while the radius of
-curvature is larger than the height of the expression. On a tighter bend the
-expression is squeezed along the curve, and where the radius falls below its
-height on the concave side it folds over itself: ink beyond the center of
-curvature comes out mirrored. Choose the text size to suit the curvature.
-
 ![A mathtext expression, E = square root of ((pc) squared + (mc squared) squared), as a label above an arch-shaped curve. The square-root bar and the superscripts bend with the curve and stay connected.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/10_mathtext.png)
 
 [example_10_mathtext.py](https://github.com/thiebes/curved-text/blob/main/examples/example_10_mathtext.py)
+
+Fractions, radicals, and large brackets stay joined while the radius of
+curvature is larger than the height of the expression. On a tighter bend the
+expression is squeezed along the curve. Where the radius falls below its height
+on the concave side, it folds over itself: ink beyond the center of curvature
+comes out mirrored. Choose the text size to suit the curvature.
 
 ### Plain words and math share one baseline
 
@@ -60,17 +60,18 @@ Under LaTeX typesetting (usetex), LaTeX sets the curved labels in the same
 typeface as the tick labels and axis labels. To get this, set the
 `text.usetex` rcParam (a matplotlib runtime setting) to true and use the serif
 font family. The figure is the direct-labeling figure drawn this way. The
-script needs `latex` (a typesetting system) and `dvipng`, as any matplotlib
-usetex figure does, and it skips the figure without them.
+script needs `latex` (a typesetting system) and `dvipng`, which matplotlib uses
+for the tick labels, as any matplotlib usetex figure does. It skips the figure
+without them.
 
-![Three cooling curves, tau = 1.5 s, 3 s, and 6 s, each labeled along its own path. The tick labels, axis labels, and curve labels are all set in the same serif LaTeX typeface.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
+![Three cooling curves, temperature T in degrees Celsius against time t in seconds from 0 to 10, with tau = 1.5 s, 3 s, and 6 s, each labeled along its own curve. The tick labels, axis labels, and curve labels are all set in the same serif LaTeX typeface.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
 
 [example_16_usetex.py](https://github.com/thiebes/curved-text/blob/main/examples/example_16_usetex.py)
 
 ## The placement controls
 
 `pos`, `anchor`, `offset`, and `valign` are independent. Each multi-panel
-figure below varies one of them and holds the others fixed.
+figure in this section varies one of them and holds the others fixed.
 
 ### `pos`: where the label is anchored, as a fraction of arc length
 
@@ -159,7 +160,7 @@ the curve and to its other side. To make a label upright on a curve that runs
 from right to left on screen, reverse the arrays. In each caption, `...` stands
 for the same arguments: `pos=0.4, anchor="center", offset=7.0`.
 
-![Three panels of one sine curve, each with an arrowhead at the end of the curve and the label 'reads this way'. In (a) the points run left to right and the label is upright. In (b) the arrays are reversed and the label is upside down. In (c) the x axis is inverted and the label is upside down.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/17_direction_of_travel.png)
+![Three panels of one sine curve, each with an arrowhead at the end of the curve and the label 'reads this way'. In (a), the call is the plain one, the points run left to right, and the label is upright. In (b), the call uses x[::-1], y[::-1], and the label is upside down. In (c), the call follows ax.invert_xaxis(), and the label is upside down.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/17_direction_of_travel.png)
 
 [example_17_direction_of_travel.py](https://github.com/thiebes/curved-text/blob/main/examples/example_17_direction_of_travel.py)
 
@@ -186,7 +187,7 @@ Both panels make this call:
 curved_text(ax, x, y, "same call, any shape", pos=0.5, anchor="center", offset=8.0)
 ```
 
-![The same sine curve and the label 'same call, any shape' in a wide panel (a) and a narrow panel (b). In both, the characters keep their shape and follow the curve; the label is not stretched or sheared.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/07_glued_resize.png)
+![The same sine curve and the label 'same call, any shape' in a wide panel (a), captioned wide aspect, and a narrow panel (b), captioned narrow aspect. In both, the characters keep their shape and follow the curve; the label is not stretched or sheared.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/07_glued_resize.png)
 
 [example_07_glued_resize.py](https://github.com/thiebes/curved-text/blob/main/examples/example_07_glued_resize.py)
 
@@ -213,12 +214,11 @@ curved_text(ax, x[stretch], y[stretch], "stays on the curve", pos=0.5,
 
 Characters are placed one after another by their own widths. On a sharp bend,
 the glyphs come close together on the inside of the curve and can collide.
-`crowding="curvature"` adds an even letterspacing gap that grows with the local
-curvature, so the inside edges stop colliding. The gap is the same between
-every pair of characters, so the spacing stays even. A deadband (a range below
-which no gap is added) applies: a gentle bend stays below it. Panels (c) and
-(d), a gentle bend, are therefore identical. Only the tight bend, panels (a)
-and (b), changes.
+`crowding="curvature"` adds an even gap, a space added between every pair of
+characters, that grows with the local curvature. The inside edges then stop
+colliding. A deadband (a range below which no gap is added) applies: a gentle
+bend stays below it. Panels (c) and (d), a gentle bend, are therefore
+identical. Only the tight bend, panels (a) and (b), changes.
 
 Every panel makes this call, with the argument its caption names:
 
@@ -227,7 +227,7 @@ curved_text(ax, x, y, "winds", pos=0.5, anchor="center", offset=-13.0,
             crowding=crowding)
 ```
 
-![Four panels with the word 'winds'. Panels (a) and (b) use a tight semicircle: with crowding 'none' the characters crowd on the inside of the bend, and with 'curvature' they are spaced apart. Panels (c) and (d) use a gentle arc and look the same.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
+![Four panels with the word 'winds'. In (a) and (b), a tight semicircle: with crowding 'none' the characters crowd on the inside of the bend, and with 'curvature' they are spaced apart. In (c) and (d), a gentle arc, with 'none' and 'curvature': the two look the same.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
 
 [example_13_crowding.py](https://github.com/thiebes/curved-text/blob/main/examples/example_13_crowding.py)
 
@@ -235,7 +235,7 @@ curved_text(ax, x, y, "winds", pos=0.5, anchor="center", offset=-13.0,
 
 A curve has gaps where it has no value to draw. Panel (a) has NaN (not a
 number) points. Panel (b) has masked points, which a NumPy masked array hides.
-Panel (c) has zeros on a log axis, which has no place for zeros. A stretch is a
+Panel (c) has zeros on a log axis, which cannot show them. A stretch is a
 connected piece of the curve between gaps. The label follows only the stretch
 that holds its anchor, and `pos` is measured along the drawn length. In (c),
 the log axis masks the zeros (`nonpositive="mask"`), so the plotted line
@@ -249,7 +249,7 @@ Every panel makes this call, on the curve its caption builds:
 curved_text(ax, x, y, "a stretch", pos=0.5, anchor="center", offset=6.0)
 ```
 
-![Three curves with gaps: NaN points in (a), masked points in (b), and zeros on a log axis in (c). Each curve breaks into separate stretches, and the label 'a stretch' follows only the middle stretch, the one that holds its anchor.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/26_gaps.png)
+![Three curves with gaps: NaN points in (a), masked points in (b), and zeros on a log axis in (c), where the plotted curve runs between about 0.3 and 10. Each curve breaks into separate stretches, and the label 'a stretch' follows only the middle stretch, the one that holds its anchor.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/26_gaps.png)
 
 [example_26_gaps.py](https://github.com/thiebes/curved-text/blob/main/examples/example_26_gaps.py)
 
@@ -264,7 +264,12 @@ the curve places every glyph: `ha`, `va`, `rotation_mode`, `wrap`, `bbox`,
 `linespacing`, `multialignment`, and `backgroundcolor`. `transform` is
 replaced, because glyphs are drawn in display pixels. Do not pass `rotation`:
 it changes the spacing of the characters. Use `box` for a background. An
-unknown property raises `AttributeError`.
+unknown property raises `AttributeError`. `antialiased`, `snap`, and
+`sketch_params` are accepted and have no effect. `label=` adds no legend entry,
+and `legend()` warns once for each part of the label.
+
+In the next figure, one call sets color, size, weight, and font family, and
+every character takes them.
 
 ![The label 'styled per character' in bold, blue, serif type along a falling curve. It shows that color, size, weight, and font family apply to every character.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/08_styling_passthrough.png)
 
@@ -304,7 +309,7 @@ curved_text(ax, x, y, "crossing the gridlines", pos=0.5, anchor="center",
             offset=0.0, ...)
 ```
 
-![Two panels with the label 'crossing the gridlines' over gray lines. In (a), a wide white stroke on each character leaves small gaps where the lines show through between characters. In (b), one white band under the whole label hides the lines completely.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
+![Two panels with the label 'crossing the gridlines' over gray lines. In (a), a white stroke of linewidth 6 on each character leaves small gaps where the lines show through between characters. In (b), one white band under the whole label hides the lines completely.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
 
 [example_12_box_vs_stroke.py](https://github.com/thiebes/curved-text/blob/main/examples/example_12_box_vs_stroke.py)
 
@@ -317,8 +322,8 @@ around the glyphs. In (b), the casing, here in its color-string form (white, to
 match the page), is one band under the whole label. It clears heavy lines
 completely but erases every line inside the band. Use the halo for thin lines
 and dense figures, and the casing where the lines behind the label are heavy. A
-wide halo blurs the glyphs together, as
-[the previous section](#box-versus-a-path-effects-stroke) shows.
+wide stroke blurs the glyphs together, as the section
+[Box versus a path-effects stroke](#box-versus-a-path-effects-stroke) shows.
 
 Every panel makes this call, with the keyword arguments its caption names:
 
@@ -349,7 +354,7 @@ glyph. The reference lines show where the band cuts them.
 `pandas.DataFrame.plot`, and any other library that draws on matplotlib. In
 this figure, pandas reads the `Stocks.csv` sample data that is included with
 matplotlib, and `sns.lineplot` draws two stock market indexes in seaborn's
-`whitegrid` theme. Each line is labeled along its path, in place of seaborn's
+`whitegrid` theme. Each line carries a label along the line, in place of seaborn's
 legend. The script renders its figure only if seaborn and pandas are
 installed. Both come with the `examples` extra, and neither is a runtime
 dependency of curved-text.
@@ -364,14 +369,14 @@ dependency of curved-text.
 
 Planck's law gives the spectral radiance of a blackbody. The figure shows four
 temperatures, from a cool star to the Sun's effective temperature, 5772 K, on a
-logarithmic radiance axis. Each label sits on its own curve just past the peak.
+logarithmic radiance axis. Each label follows its own curve, just past the peak.
 Wien's law puts the peak at the wavelength 2898 μm K / T. The script passes
 `curved_text` only that piece of each curve. On this axis, most of a curve's
 length is its steep rising part at short wavelengths, which lies far below the
 axes. A `pos` along the whole curve would count length that the reader never
 sees.
 
-![Four blackbody spectra on a logarithmic radiance axis, labeled 5772 K (the Sun), 5000 K, 4000 K, and 3000 K. Hotter bodies give higher curves with peaks at shorter wavelengths. Each label sits just past the peak of its curve.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/21_blackbody.png)
+![Four blackbody spectra on a logarithmic radiance axis, wavelength 0.1 to 3 micrometers, labeled 5772 K (the Sun), 5000 K, 4000 K, and 3000 K. Hotter bodies give higher curves with peaks at shorter wavelengths, near 0.5, 0.6, 0.7, and 1.0 micrometers. Each label sits just past the peak of its curve.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/21_blackbody.png)
 
 [example_21_blackbody.py](https://github.com/thiebes/curved-text/blob/main/examples/example_21_blackbody.py)
 
@@ -387,7 +392,7 @@ right to left on screen and reads upside down, as
 [the direction-of-travel section](#why-a-label-reads-upside-down-direction-of-travel)
 explains.
 
-![Left, a circle with 'its circumference is 2πr' upright above it and 'and its area is πr²' below it. Right, a sentence winding outward along a spiral, upside down where the spiral runs from right to left.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/22_circle_spiral.png)
+![In (a), a circle with 'its circumference is 2πr' upright above it and 'and its area is πr²' upright below it. In (b), the sentence 'an Archimedean spiral, r = aθ, keeps the same distance between its turns, so a long sentence can wind out from its center at an even spacing' winds outward along a spiral, upside down where the spiral runs from right to left.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/22_circle_spiral.png)
 
 [example_22_circle_spiral.py](https://github.com/thiebes/curved-text/blob/main/examples/example_22_circle_spiral.py)
 
@@ -400,12 +405,12 @@ which does not include dividends. Each series is relative to January 1990 and
 smoothed with a 12-month rolling mean. The dates go to `plot` and
 `curved_text` as `datetime64` values. Even after smoothing, a monthly line has
 small bends at the scale of one character, which would tilt neighboring glyphs
-toward each other. Each label therefore follows a path smoothed once more by a
-Gaussian filter about one character wide. The path follows the line without
-the small bends and is never drawn. The seaborn figure labels its lines the
-same way.
+toward each other. Each label therefore follows a smoothed copy of its line,
+filtered once more by a Gaussian filter about one character wide. The copy
+follows the line without the small bends and is never drawn. The seaborn
+figure labels its lines the same way.
 
-![Line chart on a logarithmic axis, 1990 to 2022, relative to January 1990, for Microsoft, IBM, Xerox, and the S&P 500. Microsoft ends near 700 times its 1990 value, the S&P 500 near 13, IBM near 12, and Xerox near 2. Each line carries its own label.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/23_stocks.png)
+![Line chart on a logarithmic axis, 1990 to 2022, relative to January 1990, for Microsoft, IBM, Xerox, and the S&P 500. Microsoft ends near 740 times its 1990 value, the S&P 500 near 13, IBM near 12, and Xerox near 2. Each line carries its own label.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/23_stocks.png)
 
 [example_23_stocks.py](https://github.com/thiebes/curved-text/blob/main/examples/example_23_stocks.py)
 
@@ -445,7 +450,7 @@ The scripts share these conventions:
   ([DICE](https://github.com/thiebes/DICE)) project. Its shades meet the Web
   Content Accessibility Guidelines (WCAG) 4.5:1 contrast minimum for text.
 - Each data series draws its line and its label in the same shade. Every label
-  sits on its own line, so the figures do not depend on color.
+  is placed along its own line, so the figures do not depend on color.
 - The background is white, sizes are in centimeters, and the resolution is an
   explicit number of dots per inch (dpi).
 - Most panels hide their axes on purpose. The subject is the geometry of text

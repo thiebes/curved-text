@@ -1,7 +1,7 @@
 """Direct labeling replaces the legend.
 
 Three cooling curves drawn twice: (a) with a conventional legend, (b) with each
-curve labeled along its own path.
+curve carrying its own label.
 """
 from __future__ import annotations
 

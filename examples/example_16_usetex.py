@@ -1,8 +1,9 @@
 """Curved labels typeset by LaTeX.
 
-The direct-labeling figure drawn with matplotlib's ``text.usetex`` rcParam on,
-so that the tick labels, axis labels, and curved labels share one typeface. The
-script needs ``latex`` and ``dvipng`` and skips its figure without them.
+The direct-labeling figure drawn with matplotlib's ``text.usetex`` rcParam (a
+runtime setting) on, so that the tick labels, axis labels, and curved labels
+share one typeface. The script needs ``latex`` and ``dvipng`` (for its tick
+labels) and skips its figure without them.
 """
 from __future__ import annotations
 

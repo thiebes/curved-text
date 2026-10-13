@@ -1,8 +1,9 @@
 """Why a label reads upside down: the direction of travel.
 
 One sine curve labeled three ways: (a) points from left to right, (b) the
-arrays reversed, (c) points from left to right on an inverted x axis. An
-arrowhead at the last point of each curve shows the direction.
+arrays reversed, (c) the same arrays on an inverted x axis, so the points run
+from right to left on screen. An arrowhead at the last point of each curve
+shows the direction.
 """
 from __future__ import annotations
 

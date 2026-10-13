@@ -9,8 +9,8 @@ units: direct labeling, its usetex version, the seaborn figure, the
 applications on real data or physical laws, the log-axis panel of the gaps
 figure (whose subject is the scale), and the pan-and-zoom animation (whose
 moving ticks show the view changing). Two data helpers are here as well:
-``sample_data`` finds matplotlib's sample data, and ``smooth_path`` smooths the
-path that a label follows on a line of real data.
+``sample_data`` finds matplotlib's sample data, and ``smooth_path`` smooths a
+line of real data into the curve that a label follows.
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ DPI = 150
 
 
 def figure(width_cm, height_cm, font_size=9):
-    """A white, constrained-layout figure sized in centimetres."""
+    """A white, constrained-layout figure sized in centimeters."""
     plt.rcParams.update({"font.size": font_size})
     fig = plt.figure(figsize=(width_cm * INCH, height_cm * INCH),
                      layout="constrained")
@@ -146,10 +146,10 @@ def smooth_path(values, sigma, log=False):
     Each end is padded with its own value, so the result has as many samples
     as ``values`` and covers the same span.
 
-    A label on a line of real data follows this path, not the line: even
-    smoothed, a line of monthly data bends at the scale of a glyph, which
+    A label on a line of real data follows this smoothed copy, not the line:
+    even smoothed, a line of monthly data bends at the scale of a glyph, which
     tilts neighboring glyphs into each other. With ``sigma`` about a glyph's
-    width, the path follows the line without those wiggles.
+    width, the copy follows the line without those small bends.
     """
     values = np.asarray(values, dtype=float)
     reach = int(4 * sigma)
@@ -163,7 +163,7 @@ def smooth_path(values, sigma, log=False):
 
 def sample_data(name):
     """The path to one of matplotlib's sample data files, or ``None`` where the
-    installed matplotlib does not ship it (3.5 has no ``Stocks.csv``)."""
+    installed matplotlib does not include it (3.5 has no ``Stocks.csv``)."""
     path = cbook.get_sample_data(name, asfileobj=False)
     return str(path) if os.path.exists(path) else None
 

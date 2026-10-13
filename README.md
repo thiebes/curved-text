@@ -8,9 +8,9 @@ Draw text that follows an arbitrary curve in [matplotlib](https://matplotlib.org
 
 A label along its own curve replaces a legend, so the reader does not look away
 from the data to decode a color key. In (a) below, a legend identifies the
-lines. In (b), the same lines carry labels along their paths.
+lines. In (b), the same lines carry labels along the curves.
 
-![Two panels with the same three cooling curves. In (a), a legend decodes each line by color. In (b), each curve carries its own label, tau = 1.5 s, 3 s, or 6 s, along its path, so no legend is needed.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/01_direct_labeling.png)
+![Two panels with the same three cooling curves. In (a), a legend decodes each line by color. In (b), each curve carries its own label, tau = 1.5 s, 3 s, or 6 s, along the curve, so no legend is needed.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/01_direct_labeling.png)
 
 The label is recomputed every time the figure is drawn, so it keeps following
 the curve through layout changes, resizing, and interactive panning or zooming.
@@ -58,15 +58,23 @@ it:
 
 More figures: [Gallery](https://thiebes.github.io/curved-text/gallery.html).
 Every parameter: [application programming interface (API) reference](https://thiebes.github.io/curved-text/api.html).
+Known limits (3D axes, blitting, text in vector files, and removing a label)
+are listed under [Limits](#limits).
 
 ### Choosing a curve
 
 - The curve `(x, y)` must be ordered along its length: each point comes after
   the one before it. It needs at least two points.
-- The curve should be smooth relative to the text size. Label a smoothed or
-  fitted trend line, not raw noisy samples. Each glyph follows the direction of
-  the curve under it. Where the curve reverses within the width of one glyph, as
-  noisy data does, the glyphs overlap.
+- The curve should be smooth relative to the text size: it should have no bend
+  smaller than one character, or the glyphs overlap. Label a fitted or smoothed
+  copy of the data and leave that copy unplotted. A polynomial fit
+  (`numpy.polyfit`) works, and so does a Gaussian filter about one character
+  wide. A short running mean usually does not.
+- The label reads in the order of the points on screen. A curve that runs from
+  right to left reads upside down: see Placement.
+- The curve is in data coordinates, and the `transform` keyword is ignored. To
+  place a label with axes fractions, convert the points to data coordinates
+  first: `ax.transData.inverted().transform(ax.transAxes.transform(points))`.
 
 ### Placement
 
@@ -81,7 +89,7 @@ Four independent parameters control where the label sits:
   A positive value sits above a left-to-right curve. The default is `0.0`.
 - `valign` sets which line of the text lies on the curve: `"center"`,
   `"baseline"`, `"ascender"`, or `"descender"`. The default is `"center"`. See
-  "Vertical alignment (`valign`)" below.
+  [Vertical alignment (`valign`)](#vertical-alignment-valign) below.
 
 The next figure sweeps `pos` from the first point to the last. The ring marks
 the anchor point in each panel.
@@ -103,8 +111,8 @@ on that straight line.
 
 A curve with NaN (not a number), infinite, or masked points (points hidden by a
 NumPy masked array) has gaps, as `plot` draws it. So does a curve with points
-the axes cannot show: zero or below on a log axis, and zero, one, or beyond on a
-logit axis, whatever the `nonpositive` setting.
+the axes cannot show. These are values of 0 or less on a log axis, and values
+of 0 or less or 1 or more on a logit axis, whatever the `nonpositive` setting.
 
 A stretch is a connected piece of the curve between gaps. `pos` counts only the
 drawn length. The label follows the stretch that holds its anchor. It continues
@@ -119,12 +127,12 @@ that curve unplotted: the label never draws the curve it follows.
 In the next figure, the label follows one stretch of three curves with gaps: NaN
 points in (a), masked points in (b), and zeros on a log axis in (c).
 
-![Three curves with gaps: NaN points in (a), masked points in (b), and zeros on a log axis in (c). Each curve breaks into separate stretches, and the label 'a stretch' follows only the middle stretch, the one that holds its anchor.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/26_gaps.png)
+![Three curves with gaps: NaN points in (a), masked points in (b), and zeros on a log axis in (c), where the plotted curve runs between about 0.3 and 10. Each curve breaks into separate stretches, and the label 'a stretch' follows only the middle stretch, the one that holds its anchor.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/26_gaps.png)
 
 ### Text cut off at the axes edge
 
-A label is clipped to the axes, as lines are, so glyphs that run past the edge
-of the axes are cut there. matplotlib's own `ax.text` is not clipped by default.
+A label is clipped to the axes, as lines are. Glyphs that run past the edge of
+the axes are cut there. matplotlib's own `ax.text` is not clipped by default.
 Pass `clip_on=False` to draw the whole label wherever its curve goes. A tight
 bounding box (`bbox_inches="tight"`) and constrained layout then make room for
 it.
@@ -174,8 +182,10 @@ math run: `color`, `alpha`, `fontsize`, `fontfamily`, `fontproperties`,
 the curve places every glyph: `ha`, `va`, `rotation_mode`, `wrap`, `bbox`,
 `linespacing`, `multialignment`, and `backgroundcolor`. `transform` is replaced,
 because glyphs are drawn in display pixels. Do not pass `rotation`: it changes
-the spacing of the characters. Use `box` for a background. An unknown property
-raises `AttributeError`.
+the spacing of the characters. Use `box` for a background. `antialiased`,
+`snap`, and `sketch_params` are accepted and have no effect. `label=` adds no
+legend entry, and `legend()` warns once for each part of the label. An unknown
+property raises `AttributeError`.
 
 ## Features
 
@@ -195,13 +205,13 @@ curved_text(ax, x, y, r"$E = \sqrt{(pc)^2 + (mc^2)^2}$",
 
 The whole expression bends with the curve:
 
-![A mathtext expression with a square root, fractions, and superscripts as a label along a curve. The square-root bar and the superscripts follow the curve.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/10_mathtext.png)
+![A mathtext expression, E = square root of ((pc) squared + (mc squared) squared), as a label above an arch-shaped curve. The square-root bar and the superscripts bend with the curve and stay connected.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/10_mathtext.png)
 
 Fractions, radicals, and large brackets stay joined while the radius of
 curvature is larger than the height of the expression. On a tighter bend the
-expression is squeezed along the curve, and where the radius falls below its
-height on the concave side it folds over itself: ink beyond the center of
-curvature comes out mirrored. Choose the text size to suit the curvature.
+expression is squeezed along the curve. Where the radius falls below its height
+on the concave side, it folds over itself: ink beyond the center of curvature
+comes out mirrored. Choose the text size to suit the curvature.
 
 Pass `parse_math=False` to treat dollar signs literally.
 
@@ -221,10 +231,11 @@ is raised:
 
 ### LaTeX typesetting (usetex)
 
-LaTeX (a typesetting system) can typeset the label, so it matches the other
-usetex text in the figure. Set matplotlib's `text.usetex` rcParam (a matplotlib
-runtime setting), or pass `usetex=True` to `curved_text`. `curved_text` requires
-`latex` and `dvipng`, as for any matplotlib usetex figure.
+LaTeX (a typesetting system built on TeX) can typeset the label, so it matches
+the other usetex text in the figure. Set matplotlib's `text.usetex` rcParam (a
+matplotlib runtime setting), or pass `usetex=True` to `curved_text`.
+`curved_text` requires `latex`, as for any matplotlib usetex figure.
+matplotlib's own usetex text, such as tick labels, also needs `dvipng`.
 
 ```python
 curved_text(ax, x, y, r"yield 50% at $\sqrt{\bar{\sigma}_G}$", usetex=True)
@@ -235,10 +246,11 @@ the axis labels, and the curve labels share one LaTeX typeface. With the default
 sans-serif family, words in text mode are set in Computer Modern Sans while math
 stays in the serif Computer Modern.
 
-![Three cooling curves, tau = 1.5 s, 3 s, and 6 s, each labeled along its own path. The tick labels, axis labels, and curve labels are all set in the same serif LaTeX typeface.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
+![Three cooling curves, temperature T in degrees Celsius against time t in seconds from 0 to 10, with tau = 1.5 s, 3 s, and 6 s, each labeled along its own curve. The tick labels, axis labels, and curve labels are all set in the same serif LaTeX typeface.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
 
-Plain text is typeset literally: `%`, `#`, `&`, and the other TeX markup
-characters print as themselves, and TeX commands work only inside `$...$`.
+Plain text is typeset literally. The characters `%`, `#`, `&`, and the other
+TeX markup characters print as themselves. TeX commands work only inside
+`$...$`.
 matplotlib's own usetex text differs: it needs `r"50\%"` for a percent sign.
 
 Plain text is limited to characters the LaTeX preamble (the setup commands that
@@ -261,13 +273,14 @@ usetex text in the figure, including the layout passes that measure the label.
 #### usetex details
 
 A plain run is a piece of plain text between math runs. LaTeX typesets each
-plain run in one pass, and the run is kerned as TeX sets it. Each space is one
-interword space, without the extra space TeX adds after a period.
+plain run in one pass, with kerning (adjustment of the space between particular
+pairs of characters) as TeX sets it. Each space is one interword space, without
+the extra space TeX adds after a period.
 
-Some plain runs are typeset one character at a time, without kerning, if
-a run holds a character that TeX builds from several pieces, such as an
-accented letter in the default encoding. The same holds for a character that
-can print nothing, such as a soft hyphen.
+Some plain runs are typeset one character at a time, without kerning. This
+happens when a run holds a character that TeX builds from several pieces, such
+as an accented letter in the default encoding. It also happens for a character
+that can print nothing, such as a soft hyphen.
 
 The first draw runs LaTeX once for each distinct plain run and math run, as
 matplotlib does for each usetex string. It runs up to twice more for the font's
@@ -282,16 +295,18 @@ A few details differ from the default renderer:
 - Set the LaTeX preamble and the font family and font lists before the figure
   is drawn. If they change after a draw, redrawing the same figure keeps the
   old measurements of math runs and of text typeset one character at a time.
-  matplotlib caches those per figure without the preamble. Plain runs
-  follow the change, so one label can mix two fonts. matplotlib's own usetex
-  text also keeps the old measurements. Create the figure again after changing
-  them.
+  matplotlib caches those per figure without the preamble.
+  Plain runs follow the change, so one label can mix two fonts. matplotlib's
+  own usetex text also keeps the old measurements. Create the figure again
+  after changing them.
 - LaTeX takes the font family from the `font.family` rcParam, as for
   matplotlib's own usetex text, so the `fontfamily` keyword has no effect.
 - The `valign` lines come from the TeX font as LaTeX draws it. Under usetex,
   the ascender line, which `valign="ascender"` puts on the curve, lies about
-  0.06 em above the tops of capital letters. Without usetex it lies about 0.2 em
-  above them, on the line the font reserves for line spacing.
+  0.06 em above the tops of capital letters (1 em is the font size). Without
+  usetex it lies about 0.2 em above them in the default font, DejaVu Sans, on
+  the line the font reserves for line spacing. Other fonts differ, from about
+  0.02 to 0.4 em.
 - Math runs go to LaTeX as written, so they can run TeX commands, including ones
   that read local files. Do not pass untrusted text with usetex on.
 
@@ -311,7 +326,7 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$", box=True)
 | ------- | ------------- | ------------- |
 | `color` | Fill color of the band | white |
 | `pad` | Band height, as a multiple of the tallest glyph's height | `1.1` |
-| `alpha` | Opacity of the band | `1.0` |
+| `alpha` | Opacity of the band | opaque |
 
 In (b) below, the white casing hides the lines under the label. In (a), without
 `box`, the lines pass through the text.
@@ -333,17 +348,18 @@ curved_text(ax, x, y, r"signal $s(t) = A\,e^{-t/\tau}$",
 ```
 
 A wide stroke per character leaves gaps, and one `box` fill does not. In (a)
-below, a wide stroke on each character; in (b), the single `box` fill. A thin
-halo has its own use: over thin lines and dense figures it hides the lines only
-where they touch the glyphs, as the Gallery's
-[halo-or-box figure](https://thiebes.github.io/curved-text/gallery.html#a-halo-or-a-box) shows.
+below, a wide stroke is drawn on each character. In (b), one `box` fill covers
+the whole label. A thin halo has its own use. Over thin lines and dense figures
+it hides the lines only where they touch the glyphs, as the Gallery's
+[halo-or-box figure](https://thiebes.github.io/curved-text/gallery.html#a-halo-or-a-box)
+shows.
 
-![Two panels with the label 'crossing the gridlines' over gray lines. In (a), a wide white stroke on each character leaves small gaps where the lines show through between characters. In (b), one white band under the whole label hides the lines completely.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
+![Two panels with the label 'crossing the gridlines' over gray lines. In (a), a white stroke of linewidth 6 on each character leaves small gaps where the lines show through between characters. In (b), one white band under the whole label hides the lines completely.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/12_box_vs_stroke.png)
 
 ### Tight bends (`crowding`)
 
 Glyphs are placed one after another as ordinary text places them, by width and
-kerning (adjustment of the space between particular pairs of characters). On a
+kerning. On a
 sharp bend they crowd together on the inside of the bend, where each rigid glyph
 overlaps its neighbor. Set `crowding="curvature"` to add an even gap between
 glyphs that grows with the local curvature, so the inside edges stop colliding:
@@ -363,7 +379,7 @@ Panels (a) and (b) below show a sharp bend, where the correction visibly
 separates the glyphs. Panels (c) and (d) show a gentle bend of the same word,
 unchanged because it falls below the deadband.
 
-![Four panels with the word 'winds'. Panels (a) and (b) use a tight semicircle: with crowding 'none' the characters crowd on the inside of the bend, and with 'curvature' they are spaced apart. Panels (c) and (d) use a gentle arc and look the same.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
+![Four panels with the word 'winds'. In (a) and (b), a tight semicircle: with crowding 'none' the characters crowd on the inside of the bend, and with 'curvature' they are spaced apart. In (c) and (d), a gentle arc, with 'none' and 'curvature': the two look the same.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
 
 ### Vertical alignment (`valign`)
 
@@ -381,7 +397,8 @@ The shift is a single font metric applied to the whole label, so it never
 disturbs the spacing or the alignment of plain text with mathtext. Combine it
 with `offset` to lift the chosen line clear of the curve.
 
-The next figure shows the same word on an arc for each `valign` value:
+With `valign`, the same word moves from straddling the arc to hanging below it
+or sitting above it. The next figure shows the word on an arc for each value:
 
 ![Four panels with the word 'Amplitude' on an arc, one for each valign value. With 'center' the word straddles the arc. With 'baseline' it sits above the arc. With 'ascender' it hangs below the arc. With 'descender' it sits above the arc, clear of it.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/14_valign.png)
 
@@ -390,7 +407,9 @@ The next figure shows the same word on an arc for each `valign` value:
 `curved_text` needs only a `matplotlib.axes.Axes`, so it works with any library
 that draws on matplotlib. seaborn's axes-level functions return an `Axes`, and
 its figure-level functions expose one through `.axes`. The pandas
-`DataFrame.plot` method returns an `Axes` as well. Pass that axes in directly:
+`DataFrame.plot` method returns an `Axes` as well. Pass that axes in directly.
+Here `df` is a long-form data frame with the columns `date`, `level`, and
+`series`:
 
 ```python
 import seaborn as sns
@@ -403,14 +422,14 @@ for name, line in df.groupby("series"):
                 pos=0.6, anchor="center", offset=8.0)
 ```
 
-The Gallery figure below labels two stock market indexes with the same calls,
+The next Gallery figure labels two stock market indexes with similar calls,
 in seaborn's `whitegrid` theme, with each label in place of a legend entry. It
 also passes `curved_text` a smoothed copy of each line, which keeps the glyphs
 of a label on monthly data from tilting into each other.
 
 ![Line chart of two stock market indexes from 1990 to 2022, drawn by seaborn. The label 'NASDAQ Composite' runs along the upper line, which rises steeply after 2016. The label 'S&P 500' runs along the lower line. There is no legend.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/09_seaborn_pandas.png)
 
-### Limits
+## Limits
 
 `curved_text` and `CurvedText` take the same arguments and make the same
 artist. Keep the returned object to hide it (`set_visible`), restack it
@@ -422,23 +441,34 @@ does not return the label's string.
   drawn as an outline path, not as text. The label cannot be selected, searched,
   or edited as text, and each glyph is a separate shape. In PNG output the label
   looks as it does on screen.
-- **Axes:** Cartesian and polar axes work. A 3D axes accepts the call and draws
-  nothing.
+- **Axes:** Cartesian and polar axes work. On polar axes the angle runs
+  counterclockwise, so a curve from angle 0 to π runs right to left over the top
+  and its label reads upside down: reverse the arrays. A 3D axes accepts the
+  call and draws nothing.
 - **Animation:** Blitting is not supported: `ax.draw_artist(label)` draws
   nothing. Redraw the whole figure (a `FuncAnimation` without blitting works),
   or leave the label out of the blit.
 - **Child artists:** Each character and each math run is a separate artist on
-  the axes, so `ax.texts` lists them as well as the label. Keep the object that
-  `curved_text` returns if you need to find or remove it.
+  the axes, so `ax.texts` lists them as well as the label. Do not remove or
+  restyle them one at a time: removing one glyph breaks the next draw, and a
+  loop that removes every item of `ax.texts` raises `ValueError`. Call
+  `label.remove()` on the object that `curved_text` returns: it removes every
+  part. To tell a label from other text, test `isinstance(t, CurvedText)`.
+- **Lifecycle:** `label.remove()` removes every part of the label. `ax.clear()`
+  removes it with the other artists. A figure that holds a label can be pickled.
+  `legend(loc="best")` avoids the label from matplotlib 3.9.
 - **Axis limits:** The label does not change the data limits. Plot the curve
   first, or set the limits yourself.
 - **Text:** One line. A newline in the string is not a line break.
-- **Cost:** The cost of a draw grows with the number of characters and the
-  number of curve points, and is paid on every redraw. Pass a decimated or
-  smoothed curve of a few hundred points when the data has many more. Dozens of
+- **`pos`:** `pos` is a fraction of the curve you pass in, including any part
+  outside the axes limits: pass the visible piece of the curve. A value outside
+  0 to 1 places the anchor on the straight extension beyond an end; a value far
+  outside can place it outside the figure. Use `clip_on=False` to see an anchor
+  outside the axes.
+- **Cost:** The time of a draw grows with the number of characters and the
+  number of curve points, and is paid on every redraw. If interactive pan and
+  zoom feels slow, pass fewer points: decimate or smooth the curve. Dozens of
   labels draw in well under a second.
-- **`pos` outside 0 to 1:** The anchor lies on the straight extension beyond the
-  curve. Use `clip_on=False` to see it.
 
 ## How it works
 
@@ -460,20 +490,20 @@ label follows resizing and interactive panning and zooming.
 
 [matplotlib-label-lines](https://github.com/cphyc/matplotlib-label-lines) labels
 one or many lines inline at a chosen or automatically picked point, each label
-rotated to the local slope. `curved-text` addresses a different problem: it makes a single
-string (plain or mathtext) follow a curve character by character, with
-arc-length placement and a perpendicular offset, redone on every draw. Use
+rotated to the local slope. `curved-text` addresses a different problem: it
+makes a single string (plain or mathtext) follow a curve character by character,
+with arc-length placement and a perpendicular offset, redone on every draw. Use
 label-lines to replace legend entries on several lines, and curved-text to make
-text follow a path. For R users,
-[geomtextpath](https://github.com/AllanCameron/geomtextpath) covers similar
-text-on-path ground in ggplot2 (an R plotting package).
+text follow a curve. For R users,
+[geomtextpath](https://github.com/AllanCameron/geomtextpath) provides similar
+functions for text along a curve in ggplot2 (an R plotting package).
 
 For matplotlib users coming from LaTeX: curved-text is matplotlib's counterpart
 of the `text along path` decoration of TikZ (a LaTeX drawing package), from
 `decorations.text`. The mapping is close. `pos` and `anchor` play the role of
 `text align` and the indents, and `offset` plays the role of `raise`. Text that
-overruns the path follows the straight tangent extension instead of being cut
-off at the path's end.
+overruns the path follows the straight tangent extension. It is not cut off at
+the end of the path.
 
 ## Documentation
 

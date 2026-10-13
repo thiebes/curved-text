@@ -38,11 +38,10 @@ superscripts stay joined.
 
 [example_10_mathtext.py](https://github.com/thiebes/curved-text/blob/main/examples/example_10_mathtext.py)
 
-Fractions, radicals, and large brackets stay joined while the radius of
-curvature is larger than the height of the expression. On a tighter bend the
-expression is squeezed along the curve. Where the radius falls below its height
-on the concave side, it folds over itself: ink beyond the center of curvature
-comes out mirrored. Choose the text size to suit the curvature.
+On a bend tighter than the height of the expression, the expression is
+squeezed along the curve and can fold over itself. The
+[README](https://thiebes.github.io/curved-text/index.html#mathtext) explains
+the limit.
 
 ### Plain words and math share one baseline
 
@@ -57,12 +56,13 @@ exponent, not the body.
 ### LaTeX typesets the labels under usetex
 
 Under LaTeX typesetting (usetex), LaTeX sets the curved labels in the same
-typeface as the tick labels and axis labels. To get this, set the
-`text.usetex` rcParam (a matplotlib runtime setting) to true and use the serif
-font family. The figure is the direct-labeling figure drawn this way. The
-script needs `latex` (a typesetting system) and `dvipng`, which matplotlib uses
-for the tick labels, as any matplotlib usetex figure does. It skips the figure
-without them.
+typeface as the tick labels and axis labels. The figure is the direct-labeling
+figure drawn this way, with the `text.usetex` rcParam (a matplotlib runtime
+setting) set to true and the serif font family. The script needs `latex` (a
+typesetting system) and `dvipng`, as any matplotlib usetex figure does, and it
+skips the figure without them. The page
+[LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html)
+explains plain text, Greek letters, the preamble, and caching.
 
 ![Three cooling curves, temperature T in degrees Celsius against time t in seconds from 0 to 10, with tau = 1.5 s, 3 s, and 6 s, each labeled along its own curve. The tick labels, axis labels, and curve labels are all set in the same serif LaTeX typeface.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/16_usetex.png)
 
@@ -140,7 +140,7 @@ curved_text(ax, x, y, "Amplitude", pos=0.5, anchor="center", valign=valign)
 
 [example_14_valign.py](https://github.com/thiebes/curved-text/blob/main/examples/example_14_valign.py)
 
-## Common problems
+## Common problems and edge cases
 
 ### Why a label reads upside down: direction of travel
 
@@ -187,9 +187,9 @@ Both panels make this call:
 curved_text(ax, x, y, "same call, any shape", pos=0.5, anchor="center", offset=8.0)
 ```
 
-![The same sine curve and the label 'same call, any shape' in a wide panel (a), captioned wide aspect, and a narrow panel (b), captioned narrow aspect. In both, the characters keep their shape and follow the curve; the label is not stretched or sheared.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/07_glued_resize.png)
+![The same sine curve and the label 'same call, any shape' in a wide panel (a), captioned wide aspect, and a narrow panel (b), captioned narrow aspect. In both, the characters keep their shape and follow the curve; the label is not stretched or sheared.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/07_aspect_ratio.png)
 
-[example_07_glued_resize.py](https://github.com/thiebes/curved-text/blob/main/examples/example_07_glued_resize.py)
+[example_07_aspect_ratio.py](https://github.com/thiebes/curved-text/blob/main/examples/example_07_aspect_ratio.py)
 
 ### The label follows the curve through pan and zoom
 
@@ -212,9 +212,10 @@ curved_text(ax, x[stretch], y[stretch], "stays on the curve", pos=0.5,
 
 ### Even spacing on a tight bend
 
-Characters are placed one after another by their own widths. On a sharp bend,
-the glyphs come close together on the inside of the curve and can collide.
-`crowding="curvature"` adds an even gap, a space added between every pair of
+`crowding="curvature"` keeps glyphs from colliding on the inside of a tight
+bend. Characters are placed one after another by their own widths, so on a
+sharp bend the glyphs come close together on the inside of the curve. The
+option adds an even gap, a space added between every pair of
 characters, that grows with the local curvature. The inside edges then stop
 colliding. A deadband (a range below which no gap is added) applies: a gentle
 bend stays below it. Panels (c) and (d), a gentle bend, are therefore
@@ -257,16 +258,10 @@ curved_text(ax, x, y, "a stretch", pos=0.5, anchor="center", offset=6.0)
 
 ### Keyword arguments reach every character
 
-Extra keyword arguments are `Text` properties applied to every glyph and every
-math run, such as `color`, `alpha`, `fontsize`, `fontfamily`, `fontweight`, and
-`path_effects`. Properties that describe one text box have no effect, because
-the curve places every glyph: `ha`, `va`, `rotation_mode`, `wrap`, `bbox`,
-`linespacing`, `multialignment`, and `backgroundcolor`. `transform` is
-replaced, because glyphs are drawn in display pixels. Do not pass `rotation`:
-it changes the spacing of the characters. Use `box` for a background. An
-unknown property raises `AttributeError`. `antialiased`, `snap`, and
-`sketch_params` are accepted and have no effect. `label=` adds no legend entry,
-and `legend()` warns once for each part of the label.
+Extra keyword arguments are `Text` properties applied to every glyph.
+Properties that describe one text box have no effect, and `transform` is
+replaced. The [API reference](https://thiebes.github.io/curved-text/api.html)
+lists them all.
 
 In the next figure, one call sets color, size, weight, and font family, and
 every character takes them.

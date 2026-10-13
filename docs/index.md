@@ -9,6 +9,7 @@
 :maxdepth: 2
 
 Gallery <gallery>
+LaTeX typesetting (usetex) <usetex>
 API reference <api>
-Design: mathtext and LaTeX <design-mathtext>
+Design notes <design>
 ```

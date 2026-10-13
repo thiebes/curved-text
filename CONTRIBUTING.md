@@ -25,7 +25,7 @@ pip install -e ".[test,examples]"
 
 ## Design notes
 
-Read the [design notes](docs/design-mathtext.md) before you change placement,
+Read the [design notes](docs/design.md) before you change placement,
 layout, the conversion of the curve, or the typesetting of math. They state
 the decisions the code depends on, and the reasons for them. Update them when
 a change alters the design.

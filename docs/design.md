@@ -1,4 +1,4 @@
-# Design: mathtext and LaTeX support
+# Design notes
 
 ## Decision
 
@@ -16,6 +16,53 @@ segments; the LaTeX section below covers what changes.
 Two design invariants hold: all geometry is computed per draw in display space,
 and children are independent artists that the parent positions before they
 render (the zorder + 1 ordering).
+
+## Rules for changes
+
+Each rule states a constraint and the reason for it.
+
+- **Recompute layout on every draw.** Positioning logic belongs in
+  `_place_on_curve`, not in `__init__`. Only a per-draw layout keeps the label
+  on the curve through figure layout, resizing, and interactive panning and
+  zooming, and both `draw` and `get_window_extent` place the label through it.
+- **Do the geometry in display (pixel) space.** The curve is projected through
+  `transData` once per placement, and spacing and offset are computed on the
+  projected points. Spacing and offset are then correct at any resolution and
+  figure size, which data-space arithmetic cannot give.
+- **Place glyphs from their outlines on one shared baseline.** Never place plain
+  text as rotated `Text` artists. matplotlib aligns a rotated `Text` from its own
+  bounding box, which scatters the baselines of neighboring characters by a few
+  pixels.
+- **Keep the conversion of the curve behind `_curve_px`.** Drawing, measuring,
+  and picking all place through it, so a later change of axis units reaches all
+  three. Code that changes `_cx` or `_cy` after construction calls
+  `_forget_curve_floats()`, or the label keeps drawing the old curve.
+  `_unit_callbacks` stores each callback's registry, not its axis, because
+  clearing the axes replaces the registries and their callback ids repeat.
+- **Let `_CurveFrame` extend past the curve ends.** It clips arc length into the
+  end links and follows the end tangents, so a label that overruns an end is not
+  cut off. Tests depend on this behavior.
+- **Keep segments out of figure layout.** Measuring them would run LaTeX once per
+  character under usetex, and an unclipped label would stretch a tight bounding
+  box to the segments' unused position at the display origin. The container's
+  `get_window_extent` reports the label instead.
+- **Keep the zorder layering: container at `z`, casing at `z + 0.5`, glyphs at
+  `z + 1`.** The casing must sit above the container, because the container's
+  `draw` is what positions the casing, and a lower zorder would draw it before
+  its geometry is set.
+- **Forward display properties to `_parts()`.** The container draws nothing
+  itself, so `set_visible` and the clipping setters (`set_clip_on`,
+  `set_clip_box`, `set_clip_path`) pass to the segments and the casing. A new
+  display property that should reach the drawn label is forwarded the same way,
+  or the property changes the container and leaves the label as it was.
+- **Pass extra keyword arguments to every glyph and math run.** The one exception
+  is `transform`, which each segment replaces with `IdentityTransform()`, because
+  segments draw in display pixels and a data transform would move them.
+- **Test with the Agg backend and measure the drawn outline.** Tests force a
+  draw and read placement from `seg._placed_path(renderer)`, or from the helpers
+  `_anchor_xy` and `_rotation_deg` in `tests/test_core.py`, not from
+  `get_position` or `get_rotation`. Segments render outlines, so those getters
+  do not describe where a glyph is drawn.
 
 ## Why bending, and what was rejected
 
@@ -298,14 +345,70 @@ Three cases take no kern: a pair the layout does not set as two glyphs (an
 characters, which curved labels draw in logical order, so even a real kern
 would land on the wrong pair.
 
+## Crowding
+
+`crowding="curvature"` solves one problem. Glyphs are rigid and rotate to the
+chord across their own width, so on the concave side of a tight bend the glyph
+boxes lose arc length and their ink collides. `"none"` (the default) spaces
+glyphs by width and kerning only, and its layout is exactly the flat one.
+
+The gap is computed per segment in `_advances`, along the offset curve that the
+label follows:
+
+1. `_CurveFrame.curvature(s, span)` estimates the signed turning rate
+   (radians per pixel) over the segment's span. It takes the chord angle across
+   each half of the span and divides the wrapped angle between the two chords by
+   the distance between their midpoints, half the span. That is the glyph's own
+   length scale, the scale over which rotation is smoothed, and it returns `1/R`
+   on a circle of radius `R`. A straight piece of the curve returns zero.
+2. A box of height `h` whose center lies on the curve has a concave edge `h / 2`
+   nearer the center of curvature. That edge loses about `|kappa| * h / 2` of arc
+   length per unit of advance. `crowd` is that fraction, capped at `_MAX_CROWD`
+   (0.6).
+3. Only the part of `crowd` past `_CROWD_SLACK` (0.2) is corrected: the gap is
+   `max(0, crowd - 0.2) * h`. The deadband (a range below which no gap is added)
+   exists because the sidebearing whitespace built into adjacent glyphs absorbs
+   that much curvature before the ink collides. A bend with a radius of at least
+   `2.5 h` and every straight run therefore keep their flat layout. The cap takes
+   full effect at a radius of about `0.83 h` and bounds the gap at `0.4 h`.
+
+The gap is a constant multiple of the line height, not of the glyph's width. A
+multiple of the width would give wide glyphs a larger trailing gap, which reads
+as uneven letterspacing on an arc. A constant gap gives every pair the same
+space where the curvature is uniform. The height `h` is the segment's own
+height, which is at least the height of `lp`, so a short glyph does not get a
+smaller gap than its neighbors.
+
+The span of each segment sits in the middle of its widened slot, so the gap
+splits evenly around it and the kern stays between the pair it belongs to. The
+curvature is sampled on the unwidened layout, anchored the same way, which is
+accurate enough because the widening moves positions only slightly. The label
+then spans the sum of the advances, starting from `s0 - lead * total`, so `pos`
+and `anchor` still hold with the widened total. The anchor is converted from the
+original curve to the offset curve (`remap_arc`) before this, so `offset` shifts
+the label perpendicular to the curve without changing which part of the curve it
+sits on. Because the frame is the offset curve, the curvature that sets the gap
+is the offset curve's: it is larger on the concave side and smaller on the
+convex side. The casing covers the widened span.
+
+Pinned by tests: `test_crowding_none_leaves_glyph_positions_unchanged` (the
+default is the flat layout),
+`test_crowding_curvature_leaves_straight_line_unchanged`,
+`test_crowding_curvature_spreads_glyphs_on_a_tight_bend`, and
+`test_crowding_curvature_is_negligible_on_a_gentle_bend` (the deadband).
+
 ## LaTeX (`usetex`)
 
 When a segment's usetex setting is on (the `text.usetex` rcParam, or
 `usetex=True` passed through the keyword arguments), LaTeX lays out both segment
-kinds, so a curved label matches the figure's other usetex text. The run architecture
-carries over unchanged. The first bullet below makes the outline agree with
-the advance matplotlib measures, the bullets after it cover plain-text runs,
-and the last puts the `valign` lines on the drawn font.
+kinds, so a curved label matches the figure's other usetex text. The run
+architecture carries over unchanged. A plain run is the plain text between math
+runs, or between a math run and an end of the string. This section covers the
+mechanism. The page [LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html) tells users how to
+enable it, what it requires, how plain text and Greek letters behave, how to set
+the preamble, and how the caches behave. The first bullet below makes the
+outline agree with the advance matplotlib measures, the bullets after it cover
+plain-text runs, and the last puts the `valign` lines on the drawn font.
 
 - **Layout at the label size.** matplotlib measures a usetex advance by running
   LaTeX at the label's own size, and TeX fonts change design with size (cmss8 at
@@ -340,13 +443,12 @@ and the last puts the `valign` lines on the drawn font.
   The run sits in an `\mbox`, so a long run stays on one line instead of
   breaking where matplotlib's LaTeX paragraph ends.
 - **Cost.** LaTeX runs once per distinct plain run, as matplotlib runs it once
-  per usetex string. A 37-character label's first draw takes about 2 s with an
-  empty TeX cache. Each new label string costs one LaTeX run, so a figure with
-  many short new labels runs LaTeX once per label. Typesetting per character
-  was rejected: a new string could reuse characters already in TeX's cache, but
-  each distinct character costs a run (9 to 10 s for the same label), and TeX
-  never sets two characters together, so nothing is kerned. One LaTeX job per
-  draw for every new run would cut the many-labels cost.
+  per usetex string. A 37-character label's first draw takes about a second with an
+  empty TeX cache. Typesetting per character was rejected: a new string could
+  reuse characters already in TeX's cache, but each distinct character costs a
+  run (9 to 10 s for the same label), and TeX never sets two characters
+  together, so nothing is kerned. One LaTeX job per draw for every new run would
+  cut the cost of a figure with many short new labels (see Deferred).
 - **Cache.** Runs are cached per run, size, and the rcParams matplotlib's
   `TexManager` writes the LaTeX preamble (the LaTeX setup commands that come
   before the text) from: the user's preamble, `font.family`, and each family's
@@ -412,12 +514,10 @@ against 0.758 em.
 
 Without usetex the lines are the ascender and descender FreeType reads from the
 matplotlib font. For a TrueType font such as DejaVu Sans that is the ascender
-the font's designer set for line spacing (0.928 em), about 0.2 em above the
-tops of its capital letters. Under usetex the ascender line lies about 0.06 em
-above the tops of the capital letters. The two modes therefore place
-`"ascender"` differently against the letters: without usetex the curve runs
-about 0.2 em above the capitals of DejaVu Sans, and under usetex about 0.06 em
-above them.
+the font's designer set for line spacing (0.928 em), which lies above the tops
+of the capital letters. The box of `()gy` ends nearer the capitals, so the two
+modes place `"ascender"` at different heights against the letters. The page
+[LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html) gives the distances.
 
 ## Path effects
 
@@ -475,22 +575,15 @@ reads on top.
 - `parse_math=False` (kwarg or rcParam) disables splitting entirely.
 - A string with an odd count of unescaped `$` renders literally, character by
   character, as matplotlib itself would.
-- Under `usetex`, plain text is typeset literally, one run at a time; TeX
-  commands work only inside `$...$`. matplotlib's own usetex `Text` differs: it
-  passes the whole string to TeX. Each space is one interword
-  space, without the extra sentence spacing TeX adds after a period in
-  matplotlib's own usetex text.
-- Under `usetex`, plain text is limited to characters the LaTeX preamble can
-  typeset. By default a Greek letter in plain text is a LaTeX error, as it is in
-  matplotlib's own usetex text. Math-run Greek (`$\lambda$`) is italic, the
-  convention for variables; plain Greek, like the rest of plain text, should be
-  upright, and lowercase upright Greek needs a LaTeX package. The README gives
-  a preamble recipe (`upgreek` plus `\DeclareUnicodeCharacter`). The library
-  does not load packages itself: the preamble is one global rcParam that also
-  governs layout passes outside the library's draw, so injecting a package only
-  during its own draws would measure and draw with different preambles, and
-  setting it globally would change the user's other usetex text. A straight `"`
-  typesets as a closing curly quote, as it does in matplotlib's own usetex text.
+- Under `usetex`, plain text is typeset literally, one run at a time, so TeX
+  commands work only inside `$...$` (see the LaTeX section; the page
+  [LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html) describes what users see).
+- Under `usetex`, the library does not load LaTeX packages itself. The preamble
+  is one global rcParam that also governs layout passes outside the library's
+  draw, so injecting a package only during its own draws would measure and draw
+  with different preambles, and setting it globally would change the user's
+  other usetex text. Plain Greek, which should be upright, therefore needs a
+  package that the user loads in the preamble.
 - Fractions, radicals, and large brackets stay joined while the radius of
   curvature is larger than the height of the expression. On a tighter bend the
   expression is squeezed along the curve, and where the radius falls below its
@@ -500,113 +593,59 @@ reads on top.
 
 ## Test pins
 
-The behavioral suite covers ordering, offset, dpi invariance, overrun,
-idempotent redraw, degenerate curve, zorder, remove, and fontsize pass-through.
-These tests carry the design:
+Each bullet states an invariant that tests pin and names one or two of them in
+`tests/test_core.py`.
 
-- Straight-line equivalence: the placed path of a math run on a straight
-  horizontal curve reduces to a plain affine reconstructed from its own layout.
-  Pins datum, width, scale, and dpi handling at once.
-- Anti-rigidity: a math label spanning a wide circular arc keeps every path
-  vertex within `radius +/- label reach`, a bound chord placement would violate.
-  Pins that bending actually happens.
-- No per-glyph step: on a slanted straight guide the cap tops of mixed plain
-  glyphs are collinear to sub-pixel. Pins the shared-baseline placement.
-- Plain/math alignment: a math `x` and a plain `x` land on the same baseline,
-  under mathtext and under usetex.
-- Usetex design match: the ink-to-advance ratio of a plain glyph is the same at
-  8 pt and 30 pt, which fails if the outline is laid out at a size other than
-  the one measured.
-- Usetex `valign`: a `()gy` label straddles a flat curve under `"center"` and
-  touches it at the top or bottom under `"ascender"` or `"descender"`, for
-  Computer Modern, its typewriter font, Latin Modern, Times, and Helvetica
-  loaded at `scaled=0.92`. The cases fail when the lines come from the
-  matplotlib font, from a Type 1 font file's bounding box, from the unscaled
-  font, or from parentheses alone.
-- Usetex `box`: the casing centerline sits midway between the top and bottom of
-  `()gy` under every `valign`, which fails when the casing takes its center line
-  from the matplotlib font instead of the drawn one.
-- `valign` without usetex: the `"ascender"` shift equals the ascender of the
-  font the label names, for DejaVu Sans and for STIXGeneral.
-- Kerning: the second glyph of "AV" and "To" starts where matplotlib's own
-  layout puts it, for DejaVu Sans and for STIXGeneral, which keeps its kerning
-  only in the GPOS table. It fails if the kern is dropped, split around the
-  glyph, or read from the `kern` table under matplotlib 3.11. The kern is zero
-  next to a math run, after a combining mark, within a ligature, after a soft
-  hyphen, within a Hebrew pair, and for an unkerned cmr10 pair (exactly,
-  despite HarfBuzz's rounding).
-- Usetex runs: a label and a tight-bounding-box save ask LaTeX for the run and a
-  fixed set of probes, never for a single character. "AV" and "To" are kerned
-  exactly as TeX sets the pair. Ligature pairs, the markup characters (with
-  `\_` as a rule), and spaces at either end and in a row each take one item. A
-  run with `é`, alone or with a soft hyphen, is typeset one character at a time,
-  in order. A long run at 72 pt stays on one line. A glyph's height matches
-  matplotlib's measurement of the character on its own. After a change to
-  `font.family` or to `font.serif`, a new label and a redrawn one both match
-  the character typeset alone under the new rcParams.
-- Figure layout: an unclipped label near its axes leaves a tight bounding box
-  as it is without the label, instead of stretching it to the display origin. An
-  unclipped label rising above the axes reaches the top of a tight bounding
-  box, and constrained layout shrinks the axes for it on the first draw. A
-  clipped one leaves the box as it is. The extent asked for at another `dpi`
-  matches the label placed at that dpi to within 2% of its width. Without a
-  renderer on a PDF canvas, before and after a save, it matches the Agg
-  measurement. A measurement after an axis-limit change, or after a change to
-  the glyphs' font size, matches the next draw. A legend at `loc="best"`
-  measures each label without placing it again, and with a line across the top
-  of axes that fill the figure goes to the lower left, which the glyphs' unused
-  positions at the display origin would block. The extent is empty for a
-  degenerate curve. A label on valid points draws inside the axes, each glyph
-  as wide as on a linear axis, in three cases: on a logit axis, on a log axis
-  with `nonpositive="mask"` (x or y), and on polar axes whose radial limits
-  start above zero.
-- Gaps: on a flat curve with a gap between two stretches of equal length, `pos`
-  0.25 and 0.75 place the label as a label on each stretch alone at `pos` 0.5,
-  which fails if `pos` counts the gap or the label follows the first stretch. At
-  `pos` 0.5, where the stretches meet, `anchor="end"` ends the label on the
-  first stretch and `"start"` and `"center"` start it on the second; `pos` -0.1
-  and 1.1 lie before the first stretch and past the last. On stretches of
-  unequal length, `pos` computed as one length over the total still ends an
-  `"end"` label on the first stretch, which fails without the tolerance at the
-  boundary, and on two curved stretches of the same shape it follows the first
-  to its last point. A label overrunning its stretch follows the stretch's
-  tangent over the gap, past the stretch's end and level with it, not onto the
-  higher next stretch, which fails if it is shifted back. Two coincident points
-  before, after, or between stretches hold no point, and a curve ending on a
-  repeated point is overrun along its last real segment. Infinite points and
-  masked x or y leave the same gap as NaN, on a sine. A log axis that masks x
-  of 0 or less places the label as on the curve without those points. So do log
-  x and y axes with the default clip, set before or after the label, on a curve
-  that starts at 0. Negative values inside a curve on a log y axis leave the gap
-  a NaN does. A logit axis with clip skips values of 0 or less, and of 1 or
-  more. A symlog axis keeps every value. A hidden label with no point in a log
-  axis's domain has a NaN extent. A curve without two consecutive finite points
-  raises, for NaN, infinite, isolated, and masked points, and so does a `pos`
-  that is not finite. A curve with no stretch left at draw time draws none of
-  its glyphs or casing, which fails if the previous draw's frames are kept. The
-  label's position is the first finite point. A hidden label's extent sits at
-  the first shown point when the axes give its position no pixel.
-- Units: a label on `datetime64` in seconds, microseconds, or nanoseconds, a
-  list of `datetime`, a `DatetimeIndex` (naive or timezone-aware), a pandas
-  Series of dates, categories on either axis, or dates on y places every glyph
-  and its casing at the same pixels as a label on the plotted line's own
-  converted data. So does a label made before anything is plotted, dates or
-  categories, which sets up the axis to format its units, and one on a float
-  Series whose index has no 0. After a switch from kilometers to meters the
-  label stays on the line, whether the units change before the label's first
-  draw or after it, which fails if the converted curve is kept across a
-  change of units. So does an unpickled label that has been drawn once,
-  which fails if its callbacks are not connected again. Drawing twice and
-  measuring convert the curve no more after construction, and a change of
-  units converts it once. Removing a label disconnects its own unit
-  callbacks and no others, also after the registries were replaced. Before
-  the first draw, a measurement and a click see the converted curve, which
-  fails if it is converted only in `draw`. `datetime64[D]` follows a changed
-  date epoch. Plotted categories add no ticks and new ones
-  do. Strings on a date axis raise `ConversionError`, keep the date converter,
-  and leave the y axis without units. A change to the caller's array after
-  construction does not move the label, and a `box` color matplotlib cannot
-  draw raises without changing the axes.
+- A math run on a straight horizontal curve reduces to a plain affine map. This
+  pins datum, width, scale, and resolution handling at once:
+  `test_math_run_straight_line_reduces_to_affine`.
+- Bending happens: a math label spanning a wide circular arc keeps every vertex
+  near the arc, which a chord placement would violate:
+  `test_math_run_follows_tight_arc`.
+- Plain and math share one baseline, with no per-glyph step, under mathtext and
+  usetex: `test_plain_glyphs_share_one_baseline_on_a_slope`,
+  `test_math_run_aligns_to_plain_baseline`.
+- A superscript extends a math run upward without moving its body:
+  `test_superscript_does_not_drop_math_body`.
+- `valign` shifts the whole label by one font-metric constant, from the font the
+  label names without usetex and from the drawn TeX font with it, and the
+  casing centers on the ink:
+  `test_valign_shifts_label_perpendicular_uniformly`,
+  `test_usetex_valign_follows_the_drawn_font`,
+  `test_usetex_box_centres_on_the_ink_under_every_valign`.
+- The usetex outline is laid out at the size it is measured at:
+  `test_usetex_outline_matches_measured_design_at_any_size`.
+- Kerning is the kern that matplotlib's layout (or TeX) applies to the pair, and
+  zero where no kern applies:
+  `test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text`,
+  `test_kern_is_zero_where_no_plain_pair_is_kerned`,
+  `test_usetex_plain_glyphs_are_kerned_as_tex_sets_them`.
+- A plain run is typeset in one LaTeX pass with one item per character, and a
+  run that cannot be paired falls back to one character at a time:
+  `test_usetex_plain_run_is_typeset_in_one_latex_pass`,
+  `test_usetex_run_that_cannot_be_paired_is_typeset_per_character`.
+- Cached runs follow a change of the preamble inputs:
+  `test_usetex_run_follows_the_font_when_rcparams_change`.
+- Figure layout sees the label without a stretched bounding box, and a legend
+  measures it without placing it again:
+  `test_unclipped_label_keeps_the_tight_bounding_box`,
+  `test_constrained_layout_makes_room_for_an_unclipped_label`,
+  `test_legend_measures_the_label_without_placing_it_again`.
+- A label draws on axes with no data origin (logit, masked log, polar with a
+  radial limit above zero): `test_label_draws_on_scales_without_a_data_origin`,
+  `test_label_draws_on_polar_axes_whose_radius_starts_above_zero`.
+- A label follows only the stretch that holds its anchor, overruns along the
+  end tangent, and ends on the earlier stretch at a boundary:
+  `test_label_on_a_gapped_curve_rides_the_stretch_holding_its_anchor`,
+  `test_label_overrunning_its_stretch_follows_its_tangent_across_the_gap`,
+  `test_label_ending_at_a_boundary_ends_on_the_earlier_stretch`.
+- Values outside a log or logit axis's domain leave the gap a NaN does:
+  `test_values_outside_a_log_axis_domain_leave_a_gap`,
+  `test_values_outside_a_logit_axis_domain_leave_a_gap`.
+- A unit-typed curve places the label as the same curve in floats does, and a
+  change of units moves it once: `test_unit_typed_curve_matches_float_curve`,
+  `test_label_follows_a_change_of_axis_units`,
+  `test_label_converts_its_curve_once_until_the_units_change`.
 
 ## Deferred
 

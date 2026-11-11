@@ -2,8 +2,9 @@
 
 Elevation from matplotlib's ``jacksboro_fault_dem.npz`` sample data, a digital
 elevation model near the Jacksboro fault in Tennessee, smoothed by a Gaussian
-about ten cells wide so the contours are smooth enough to label, and shaded by
-a light from the northwest and darkened. Contours run every 50 m.
+about six cells wide so the contours are smooth enough to label, cropped to the
+escarpment, and shaded by a light from the northwest and darkened. Contours run
+every 100 m.
 ``ax.contour`` sets the direction of each contour path, and many run from right
 to left on screen, so every label is passed ``upright=True``.
 
@@ -26,11 +27,15 @@ from curved_text import curved_text
 from _style import data_axes, figure, sample_data, save
 
 # The standard deviation, in cells, of the Gaussian that smooths the terrain.
-SMOOTHING_CELLS = 10
-CONTOUR_INTERVAL_M = 50
+SMOOTHING_CELLS = 6
+CONTOUR_INTERVAL_M = 100
+# The part of the model that is mapped, as (first row, last row, first column,
+# last column) counted from the south and west: the escarpment, whose contours
+# run long and simple.
+WINDOW = (40, 300, 130, 403)
 # The shortest contour, in points, that is labeled: shorter ones are closed
 # loops around a summit or a pit, or fragments at the edge.
-MIN_POINTS = 250
+MIN_POINTS = 100
 # Where along a contour a label may sit, as fractions of its length.
 CANDIDATE_POS = np.linspace(0.15, 0.85, 71)
 # The least distance, in degrees, from a label to the nearest other contour, so
@@ -135,6 +140,11 @@ def make(images_dir):
     smoothed = _gaussian_blur(elevation, SMOOTHING_CELLS)
     longitude = np.linspace(west, east, elevation.shape[1])
     latitude = np.linspace(south, north, elevation.shape[0])
+    row0, row1, col0, col1 = WINDOW
+    smoothed = smoothed[row0:row1, col0:col1]
+    longitude, latitude = longitude[col0:col1], latitude[row0:row1]
+    west, east = longitude[0], longitude[-1]
+    south, north = latitude[0], latitude[-1]
 
     # Hillshading: a light from the northwest, with the relief exaggerated
     # by the ratio of a degree of latitude to a degree of longitude, so the
@@ -165,8 +175,8 @@ def make(images_dir):
     ax = data_axes(fig.subplots())
     ax.imshow(shade, origin="lower", extent=(west, east, south, north),
               aspect=1 / np.cos(np.radians(south)), interpolation="bilinear")
-    levels = np.arange(CONTOUR_INTERVAL_M * np.ceil(smoothed.min() / 50),
-                       smoothed.max(), CONTOUR_INTERVAL_M)
+    first_level = CONTOUR_INTERVAL_M * np.ceil(smoothed.min() / CONTOUR_INTERVAL_M)
+    levels = np.arange(first_level, smoothed.max(), CONTOUR_INTERVAL_M)
     contours = ax.contour(longitude, latitude, smoothed, levels=levels,
                           colors="white", linewidths=0.7, alpha=0.6)
 

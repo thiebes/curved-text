@@ -2700,3 +2700,192 @@ def test_usetex_box_centres_on_the_ink_under_every_valign(valign):
     assert casing_y == pytest.approx(ink_mid, abs=0.025 * em_px)
     plt.close(fig)
 
+
+
+def _outline(ct, fig):
+    """Every placed glyph outline of a drawn label, stacked, in display pixels."""
+    renderer = fig.canvas.get_renderer()
+    paths = [s._placed_path(renderer) for s in ct._segments]
+    return np.vstack([path.vertices for path in paths if path is not None])
+
+
+def _sine():
+    x = np.linspace(0, 2 * np.pi, 300)
+    return x, np.sin(x)
+
+
+def test_upright_label_on_reversed_arrays_matches_the_forward_label():
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    forward = curved_text(ax, x, y, "reads right", offset=6)
+    reversed_up = curved_text(ax, x[::-1], y[::-1], "reads right", offset=6,
+                              upright=True)
+    _draw(fig)
+    assert np.allclose(_outline(forward, fig), _outline(reversed_up, fig),
+                       atol=1e-6)
+    plt.close(fig)
+
+
+def test_default_leaves_a_leftward_label_upside_down():
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    plain = curved_text(ax, x[::-1], y[::-1], "reads left", offset=6)
+    off = curved_text(ax, x[::-1], y[::-1], "reads left", offset=6,
+                      upright=False)
+    _draw(fig)
+    assert np.array_equal(_outline(plain, fig), _outline(off, fig))
+    angle = _rotation_deg(plain._segments[0])
+    assert abs(angle) > 90 or angle < -90 or angle > 90
+    plt.close(fig)
+
+
+def test_upright_follows_an_inverted_axis_and_back():
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    ct = curved_text(ax, x, y, "reads right", upright=True)
+
+    def angles():
+        _draw(fig)
+        return [_rotation_deg(s) for s in ct._segments]
+
+    assert all(abs(a) < 90 for a in angles())
+    ax.invert_xaxis()
+    assert all(abs(a) < 90 for a in angles())
+    ax.invert_xaxis()
+    assert all(abs(a) < 90 for a in angles())
+    plt.close(fig)
+
+
+def test_upright_false_still_flips_with_an_inverted_axis():
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    ct = curved_text(ax, x, y, "reads left")
+    ax.invert_xaxis()
+    _draw(fig)
+    assert all(abs(_rotation_deg(s)) > 90 for s in ct._segments)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("anchor, mirror", [("start", "end"), ("end", "start"),
+                                            ("center", "center")])
+def test_upright_keeps_the_interval_of_the_curve(anchor, mirror):
+    # The flipped label covers the same stretch of curve: reversed arrays with
+    # pos p and an anchor are the forward curve with pos 1 - p and the mirror
+    # anchor, so a label never moves along the curve or overruns an end that it
+    # did not overrun before.
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    flipped = curved_text(ax, x[::-1], y[::-1], "interval", pos=0.2,
+                          anchor=anchor, upright=True)
+    forward = curved_text(ax, x, y, "interval", pos=0.8, anchor=mirror)
+    _draw(fig)
+    assert np.allclose(_outline(flipped, fig), _outline(forward, fig),
+                       atol=1e-6)
+    plt.close(fig)
+
+
+def test_upright_offset_is_toward_the_tops_of_the_letters():
+    x = np.linspace(0, 10, 50)
+    y = np.full_like(x, 0.5)
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 1)
+    bare = curved_text(ax, x[::-1], y[::-1], "above", upright=True)
+    lifted = curved_text(ax, x[::-1], y[::-1], "above", upright=True, offset=10)
+    _draw(fig)
+    assert _outline(lifted, fig)[:, 1].mean() > _outline(bare, fig)[:, 1].mean()
+    plt.close(fig)
+
+
+def test_upright_decides_by_the_chord_across_the_label_not_the_anchor_tangent():
+    # The curve steps back for half a unit at the anchor, so the tangent there
+    # points left, but the label spans several units of rightward curve, so its
+    # chord reads right and it is left as it is.
+    x = np.array([0.0, 4.0, 3.5, 10.0])
+    y = np.array([0.0, 0.2, 0.4, 0.6])
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 1)
+    pos = 4.25 / 11.0
+    up = curved_text(ax, x, y, "a long label across a step back", pos=pos,
+                     upright=True)
+    plain = curved_text(ax, x, y, "a long label across a step back", pos=pos)
+    _draw(fig)
+    assert np.array_equal(_outline(up, fig), _outline(plain, fig))
+    # A label short enough to lie within the step back does read leftward.
+    short_up = curved_text(ax, x, y, "i", pos=pos, upright=True)
+    short = curved_text(ax, x, y, "i", pos=pos)
+    _draw(fig)
+    assert not np.allclose(_outline(short_up, fig), _outline(short, fig))
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("direction, flips", [(1.0, False), (-1.0, True)])
+def test_upright_reads_a_vertical_curve_from_bottom_to_top(direction, flips):
+    y = np.linspace(0, 1, 50)
+    y = y if direction > 0 else y[::-1]
+    x = np.full_like(y, 0.5)
+    fig, ax = plt.subplots()
+    plain = curved_text(ax, x, y, "vertical")
+    up = curved_text(ax, x, y, "vertical", upright=True)
+    _draw(fig)
+    assert np.allclose(_outline(plain, fig), _outline(up, fig)) is (not flips)
+    assert all(_rotation_deg(s) == pytest.approx(90) for s in up._segments)
+    plt.close(fig)
+
+
+def test_upright_works_with_box_valign_math_and_crowding():
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    kwargs = dict(box=True, valign="baseline", crowding="curvature", offset=4)
+    forward = curved_text(ax, x, y, r"sum $\sqrt{x}$ here", **kwargs)
+    flipped = curved_text(ax, x[::-1], y[::-1], r"sum $\sqrt{x}$ here",
+                          upright=True, **kwargs)
+    _draw(fig)
+    assert np.allclose(_outline(forward, fig), _outline(flipped, fig),
+                       atol=1e-6)
+    assert np.allclose(forward._box.get_xydata(), flipped._box.get_xydata(),
+                       atol=1e-6)
+    plt.close(fig)
+
+
+def test_upright_flips_the_stretch_that_holds_the_anchor():
+    x, y = _sine()
+    x, y = x[::-1].copy(), y[::-1].copy()
+    y[150] = np.nan
+    fig, ax = plt.subplots()
+    ct = curved_text(ax, x, y, "gap", pos=0.25, upright=True)
+    _draw(fig)
+    assert all(abs(_rotation_deg(s)) < 90 for s in ct._segments)
+    plt.close(fig)
+
+
+def test_upright_on_a_closed_curve_uses_the_anchor_tangent():
+    t = np.linspace(0, 2 * np.pi, 200)
+    x, y = np.cos(t), np.sin(t)
+    fig, ax = plt.subplots()
+    ax.set_aspect("equal")
+    ct = curved_text(ax, x, y, "o", pos=0.0, upright=True)
+    _draw(fig)
+    assert all(np.isfinite(s._placed_path(fig.canvas.get_renderer()).vertices)
+               .all() for s in ct._segments)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("bad", [1, "yes", None, 0.5])
+def test_upright_must_be_a_bool(bad):
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    with pytest.raises(TypeError, match="upright"):
+        curved_text(ax, x, y, "text", upright=bad)
+    assert not ax.artists and not ax.texts
+    plt.close(fig)
+
+
+def test_upright_accepts_a_numpy_bool():
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    ct = curved_text(ax, x[::-1], y[::-1], "np", upright=np.bool_(True))
+    _draw(fig)
+    assert all(abs(_rotation_deg(s)) < 90 for s in ct._segments)
+    plt.close(fig)

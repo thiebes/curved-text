@@ -469,6 +469,11 @@ class _CurveFrame:
 # stretch.
 _BOUNDARY_TOLERANCE = 1e-9
 
+# How short, relative to the span it crosses, a chord must be to count as having
+# no length, and how far from vertical (relative to its length) to count as
+# vertical: rounding must not decide the reading direction of a label.
+_CHORD_TOLERANCE = 1e-9
+
 
 # The open interval of values each axis scale with a bounded domain can place.
 # With ``nonpositive="clip"``, the default on a log axis, a log axis sends 0
@@ -541,6 +546,28 @@ def _stretch_at(curve_px: np.ndarray, pos: float,
     first, last = int(inside[0]), int(inside[-1]) + 1
     before = float(ends[first - 1]) if first else 0.0
     return curve_px[first:last + 1], target - before
+
+
+def _reads_leftward(frame: _CurveFrame, s_anchor: float, lead: float,
+                    span: float) -> bool:
+    """Whether text laid along ``frame`` across ``span`` pixels, with the
+    fraction ``lead`` of it before the arc length ``s_anchor``, reads leftward
+    on screen: its chord points left, or straight down.
+
+    A vertical chord counts as upward, so a label on a vertical curve reads
+    from bottom to top, as :class:`~matplotlib.text.Text` does at a rotation of
+    90 degrees. A chord of no length, as on a closed curve whose label covers
+    all of it, is judged by the tangent at the anchor.
+    """
+    start = s_anchor - lead * span
+    xs, ys, rad = frame.points_and_angles(np.array([start, start + span,
+                                                     s_anchor]))
+    dx, dy = xs[1] - xs[0], ys[1] - ys[0]
+    if np.hypot(dx, dy) <= _CHORD_TOLERANCE * span:
+        dx, dy = np.cos(rad[2]), np.sin(rad[2])
+    if abs(dx) <= _CHORD_TOLERANCE * np.hypot(dx, dy):
+        return bool(dy < 0.0)
+    return bool(dx < 0.0)
 
 
 def _densify(verts: np.ndarray, codes: np.ndarray,
@@ -1112,18 +1139,20 @@ class CurvedText(mtext.Text):
         the anchor onto another stretch, and the label follows the stretch that
         holds its anchor. The label reads in the order of the points as they
         appear on screen. If the points run from right to left, the text is
-        upside down. Reverse both arrays (``x[::-1], y[::-1]``) to turn it
-        upright. ``pos`` and ``offset`` also count from the first point.
+        upside down unless ``upright`` is set. ``pos`` counts from the first
+        point.
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
         Distance from the curve, perpendicular to it, in points (1/72 inch).
         Positive is to the left of the direction of travel, which is above a
-        curve that runs from left to right. The label is laid along the parallel
-        (offset) curve at that distance. The clearance from the curve and the
-        spacing of the characters stay even where the curve bends steeply or
-        asymmetrically. ``pos`` and ``anchor`` are measured against the original
-        curve and carried perpendicularly onto the offset curve.
+        curve that runs from left to right. On a label turned over by
+        ``upright``, positive is toward the tops of the letters. The label is
+        laid along the parallel (offset) curve at that distance. The clearance
+        from the curve and the spacing of the characters stay even where the
+        curve bends steeply or asymmetrically. ``pos`` and ``anchor`` are
+        measured against the original curve and carried perpendicularly onto
+        the offset curve.
     box : bool, str, or dict, default False
         A casing drawn behind the label to clear the lines it crosses: a band
         that follows the curve at the label's height, under the glyphs. ``True``
@@ -1151,6 +1180,17 @@ class CurvedText(mtext.Text):
         is one font-metric shift applied identically to every glyph and math run,
         so plain text and math stay aligned. Combine it with ``offset`` to lift
         the chosen line off the curve.
+    upright : bool, default False
+        Keep the text from reading upside down. Each draw, the label is turned
+        over when the straight line across the stretch of curve it covers points
+        left on screen, or straight down, so it reads left to right or from
+        bottom to top. The label keeps its place on the curve: ``pos`` and
+        ``anchor`` still refer to the curve as given, so the label covers the
+        same stretch of it. An inverted axis or a change of the view is followed
+        on the next draw. The decision is for the whole label, so a label that
+        winds around, as along a spiral, reads upside down where it turns. A
+        label whose chord is near the vertical can turn over when the view
+        changes.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties
         applied to every glyph and every math run: ``color``, ``alpha``,
@@ -1184,7 +1224,8 @@ class CurvedText(mtext.Text):
           values.
         - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
     TypeError
-        If ``text`` is not a string or ``pos`` is not a number.
+        If ``text`` is not a string, ``pos`` is not a number, or ``upright``
+        is not a bool (``1`` and ``0`` are not accepted).
     matplotlib.units.ConversionError
         If the axes cannot convert the data of ``x`` or ``y``.
     AttributeError
@@ -1254,7 +1295,7 @@ class CurvedText(mtext.Text):
       output the label looks as it does on screen.
     - Axes: Cartesian and polar axes work. On polar axes the angle runs
       counterclockwise, so a curve from angle 0 to π runs right to left over
-      the top and its label reads upside down: reverse the arrays. A 3D axes
+      the top and its label reads upside down unless ``upright`` is set. A 3D axes
       accepts the call and draws nothing.
     - Animation: blitting is not supported, and ``ax.draw_artist(label)`` draws
       nothing. Redraw the whole figure (a ``FuncAnimation`` without blitting
@@ -1295,7 +1336,8 @@ class CurvedText(mtext.Text):
                  text: str, axes: Axes, *,
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                  box: bool | str | dict = False, crowding: str = "none",
-                 valign: str = "center", **kwargs: Any) -> None:
+                 valign: str = "center", upright: bool = False,
+                 **kwargs: Any) -> None:
         if not math.isfinite(pos):
             raise ValueError(f"pos must be finite, got {pos!r}")
         if anchor not in _ANCHORS:
@@ -1305,6 +1347,8 @@ class CurvedText(mtext.Text):
                 f"crowding must be one of {_CROWDING}, got {crowding!r}")
         if valign not in _VALIGN:
             raise ValueError(f"valign must be one of {_VALIGN}, got {valign!r}")
+        if not isinstance(upright, (bool, np.bool_)):
+            raise TypeError(f"upright must be a bool, got {upright!r}")
         # Optional casing behind the label: a fat line following the curve at
         # the label's height. It is built before the label touches the axes, so
         # a ``box`` it cannot draw raises with the axes as they were; its
@@ -1365,6 +1409,7 @@ class CurvedText(mtext.Text):
         self._offset = float(offset)
         self._crowding = crowding
         self._valign = valign
+        self._upright = bool(upright)
         axes.add_artist(self)
         # The converted curve is already kept, so the label must hear of a
         # change of units from now on, before its first placement too.
@@ -1755,7 +1800,26 @@ class CurvedText(mtext.Text):
             return False
         points, s_anchor = stretch
         base = _CurveFrame(points[:, 0], points[:, 1])
-        # Work in display pixels: build the arc-length frame of the stretch,
+        sizes = [t._size_px(renderer) for t in self._segments]
+        widths = [width for width, _ in sizes]
+        heights = [height for _, height in sizes]
+        # A segment's span is its width plus the kern toward the next glyph:
+        # the space it takes along the curve before the next one starts. The
+        # glyph itself keeps its own width as the chord it is rotated by.
+        spans = [w + k for w, k in zip(widths, self._kerns_px(renderer))]
+        lead = {"start": 0.0, "center": 0.5, "end": 1.0}[self._anchor]
+        # An upright label reads left to right on screen. The chord across the
+        # span the label covers decides, in display space on every draw, so an
+        # inverted axis or a changed view is followed. The label keeps its
+        # interval of the curve and only turns over: the curve is read from the
+        # other end, and ``lead`` counts from there, so ``pos`` and ``anchor``
+        # still refer to the curve as it was given.
+        if self._upright and _reads_leftward(base, s_anchor, lead, sum(spans)):
+            points = points[::-1]
+            s_anchor = base.length - s_anchor
+            lead = 1.0 - lead
+            base = _CurveFrame(points[:, 0], points[:, 1])
+        # Work in display pixels: take the arc-length frame of the stretch,
         # then shift it perpendicularly to the parallel (offset) curve the
         # label actually follows. Laying glyphs along the offset curve, rather
         # than projecting them off the base curve, keeps the clearance from
@@ -1787,19 +1851,10 @@ class CurvedText(mtext.Text):
             datum = _valign_datum(self._valign, lines)
             band = _valign_datum("center", lines) - datum
 
-        sizes = [t._size_px(renderer) for t in self._segments]
-        widths = [width for width, _ in sizes]
-        heights = [height for _, height in sizes]
-        # A segment's span is its width plus the kern toward the next glyph:
-        # the space it takes along the curve before the next one starts. The
-        # glyph itself keeps its own width as the chord it is rotated by.
-        spans = [w + k for w, k in zip(widths, self._kerns_px(renderer))]
-
         # Anchor at ``pos`` of the base curve, carried onto the offset curve, so
         # the user's placement reads against the curve they passed in. ``lead``
         # is the fraction of the label that sits before the anchor point.
         s0 = float(base.remap_arc(frame, s_anchor))
-        lead = {"start": 0.0, "center": 0.5, "end": 1.0}[self._anchor]
 
         # Per-glyph advances along the offset curve. In ``"curvature"`` mode
         # these are widened on bends (see ``_advances``); the curve is sampled
@@ -1850,7 +1905,8 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
                 y: ArrayLike | Sequence[Any], text: str, *,
                 pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                 box: bool | str | dict = False, crowding: str = "none",
-                valign: str = "center", **kwargs: Any) -> CurvedText:
+                valign: str = "center", upright: bool = False,
+                **kwargs: Any) -> CurvedText:
     """Draw ``text`` along the curve ``(x, y)`` on ``ax`` and return the artist.
 
     A short form of :class:`CurvedText`, with the same arguments and the same
@@ -1881,6 +1937,9 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
         ``"curvature"`` adds spacing between characters on tight bends.
     valign : {"center", "baseline", "ascender", "descender"}, default "center"
         Which line of the text lies on the curve.
+    upright : bool, default False
+        Turn the label over where it would read upside down.
+        :class:`CurvedText` describes the rule.
     **kwargs
         :class:`~matplotlib.text.Text` properties applied to every glyph and
         math run, such as ``color``, ``fontsize``, ``alpha``, and
@@ -1916,4 +1975,5 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
     >>> label = curved_text(ax, x, y, "a sine wave", pos=0.5, offset=8)
     """
     return CurvedText(x, y, text, ax, pos=pos, anchor=anchor, offset=offset,
-                      box=box, crowding=crowding, valign=valign, **kwargs)
+                      box=box, crowding=crowding, valign=valign,
+                      upright=upright, **kwargs)

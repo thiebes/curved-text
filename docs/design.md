@@ -42,6 +42,14 @@ Each rule states a constraint and the reason for it.
 - **Let `_CurveFrame` extend past the curve ends.** It clips arc length into the
   end links and follows the end tangents, so a label that overruns an end is not
   cut off. Tests depend on this behavior.
+- **Decide upright in display space, at placement.** `upright` turns a label
+  over by reversing the stretch before the frame is built, from the chord across
+  the span the label covers (`_reads_leftward`), on every draw. An axis
+  inversion or a changed view can change the answer, so it cannot be decided at
+  construction. The label keeps its interval of the curve: the anchor arc length
+  and `lead` are mirrored with the curve, so `pos` and `anchor` still refer to
+  the curve as given and the label never overruns an end it did not overrun
+  before.
 - **Keep segments out of figure layout.** Measuring them would run LaTeX once per
   character under usetex, and an unclipped label would stretch a tight bounding
   box to the segments' unused position at the display origin. The container's
@@ -642,6 +650,14 @@ Each bullet states an invariant that tests pin and names one or two of them in
   change of units moves it once: `test_unit_typed_curve_matches_float_curve`,
   `test_label_follows_a_change_of_axis_units`,
   `test_label_converts_its_curve_once_until_the_units_change`.
+- An upright label on reversed arrays draws the same outline as the forward
+  label, and keeps its interval of the curve under every anchor:
+  `test_upright_label_on_reversed_arrays_matches_the_forward_label`,
+  `test_upright_keeps_the_interval_of_the_curve`.
+- The turn is decided by the chord across the label, not by the tangent at the
+  anchor, and again on every draw, so an inverted axis is followed:
+  `test_upright_decides_by_the_chord_across_the_label_not_the_anchor_tangent`,
+  `test_upright_follows_an_inverted_axis_and_back`.
 
 ## Deferred
 

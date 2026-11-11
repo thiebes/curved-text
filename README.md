@@ -71,14 +71,14 @@ are listed under [Limits](#limits).
   (`numpy.polyfit`) works, and so does a Gaussian filter about one character
   wide. A short running mean usually does not.
 - The label reads in the order of the points on screen. A curve that runs from
-  right to left reads upside down: see Placement.
+  right to left reads upside down unless `upright=True`: see Placement.
 - The curve is in data coordinates, and the `transform` keyword is ignored. To
   place a label with axes fractions, convert the points to data coordinates
   first: `ax.transData.inverted().transform(ax.transAxes.transform(points))`.
 
 ### Placement
 
-Four independent parameters control where the label sits:
+Five independent parameters control where the label sits:
 
 - `pos` sets where the label is anchored along the curve, as a fraction of the
   curve's length. `0.0` is the start of the curve and `1.0` is its end. The
@@ -90,6 +90,8 @@ Four independent parameters control where the label sits:
 - `valign` sets which line of the text lies on the curve: `"center"`,
   `"baseline"`, `"ascender"`, or `"descender"`. The default is `"center"`. See
   [Vertical alignment (`valign`)](#vertical-alignment-valign) below.
+- `upright` turns the label over where it would read upside down. It is off by
+  default. The paragraph after the next figure describes it.
 
 The next figure sweeps `pos` from the first point to the last. The ring marks
 the anchor point in each panel.
@@ -97,11 +99,15 @@ the anchor point in each panel.
 ![Five panels of one arch-shaped curve with the word 'label' at pos = 0.0, 0.25, 0.5, 0.75, and 1.0. A ring marks the anchor point. It moves from the left end of the arch to the right end, and the label follows it.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/03_pos_sweep.png)
 
 The label reads in the order of the points as they appear on screen. If the
-points run from right to left, the text is upside down. Reverse both arrays
-(`x[::-1], y[::-1]`) to turn it upright. `pos` and `offset` also count from the
-first point. The Gallery section [Why a label reads upside down: direction of
-travel](https://thiebes.github.io/curved-text/gallery.html#why-a-label-reads-upside-down-direction-of-travel) shows
-the cases.
+points run from right to left, the text is upside down. Pass `upright=True` to
+turn the label over wherever it would read upside down, such as for contour
+labels and curves on an inverted axis. The label keeps its place on the curve,
+and a positive `offset` is then toward the tops of the letters. The decision is
+for the whole label, so one that winds around, as along a spiral, still reads
+upside down where it turns. `pos` counts from the first point. The Gallery
+section [Why a label reads upside down: direction of
+travel](https://thiebes.github.io/curved-text/gallery.html#why-a-label-reads-upside-down-direction-of-travel)
+shows the cases.
 
 If the label runs past either end of the curve, it is not cut off. The curve
 continues straight in the direction it had at that end, and the extra glyphs sit
@@ -367,7 +373,7 @@ does not return the label's string.
   looks as it does on screen.
 - **Axes:** Cartesian and polar axes work. On polar axes the angle runs
   counterclockwise, so a curve from angle 0 to π runs right to left over the top
-  and its label reads upside down: reverse the arrays. A 3D axes accepts the
+  and its label reads upside down unless `upright=True`. A 3D axes accepts the
   call and draws nothing.
 - **Animation:** Blitting is not supported: `ax.draw_artist(label)` draws
   nothing. Redraw the whole figure (a `FuncAnimation` without blitting works),

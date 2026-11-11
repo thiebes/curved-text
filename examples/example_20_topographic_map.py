@@ -42,13 +42,13 @@ CANDIDATE_POS = np.linspace(0.15, 0.85, 71)
 # a neighboring line does not run through the text.
 MIN_ROOM = 0.0015
 # The least distance, in degrees, between two labels.
-MIN_LABEL_SEPARATION = 0.04
-# A label is about 0.022 degrees long. The stretch of contour that must be
+MIN_LABEL_SEPARATION = 0.03
+# A label is about 0.02 degrees long. The stretch of contour that must be
 # straight is longer, so a bend just past the label's end does not crush its
 # last letter. A contour that turns by more than MAX_TURN_DEGREES in total
 # across that stretch, measured at TURN_SAMPLES points, is too curved for its
 # label.
-LABEL_LENGTH = 0.032
+LABEL_LENGTH = 0.028
 MAX_TURN_DEGREES = 22.0
 TURN_SAMPLES = 10
 # The factor that darkens the hillshading, so white labels can be read on it.

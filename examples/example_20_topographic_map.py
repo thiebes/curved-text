@@ -197,7 +197,7 @@ def make(images_dir):
             continue
         placed.append(point)
         curved_text(ax, seg[:, 0], seg[:, 1], f"{level:.0f} m", pos=pos,
-                    upright=True, fontsize=9, color="white")
+                    upright=True, fontsize=8, color="white")
     ax.set_xlabel("longitude (degrees)")
     ax.set_ylabel("latitude (degrees)")
 

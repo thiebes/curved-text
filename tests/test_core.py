@@ -503,6 +503,27 @@ def test_validates_inputs():
     plt.close(fig)
 
 
+@pytest.mark.parametrize("text", [
+    pytest.param(5, id="int"),
+    pytest.param(None, id="None"),
+    pytest.param(["a"], id="list"),
+    pytest.param(b"a", id="bytes"),
+])
+def test_non_string_text_raises_and_leaves_the_axes_empty(text):
+    # The string is checked before the label is added, so a non-string raises
+    # TypeError and leaves ax.texts empty. None, a list, and bytes fail the
+    # same way an int does.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 200)
+    y = np.sin(x)
+    with pytest.raises(TypeError) as caught:
+        curved_text(ax, x, y, text)
+    assert str(caught.value) == f"text must be a str, got {type(text).__name__!r}"
+    assert not ax.texts
+    _draw(fig)
+    plt.close(fig)
+
+
 @pytest.mark.parametrize("x, y", [
     pytest.param([0.0, np.nan, 1.0], [0.0, 0.0, 0.0], id="NaN between"),
     pytest.param([0.0, 1.0], [0.0, np.inf], id="infinite"),

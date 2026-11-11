@@ -20,7 +20,7 @@ MODULES = [
     "example_04_anchor_triptych",
     "example_05_offset_ladder",
     "example_06_overrun_tangent",
-    "example_07_glued_resize",
+    "example_07_aspect_ratio",
     "example_08_styling_passthrough",
     "example_09_seaborn_pandas",
     "example_10_mathtext",

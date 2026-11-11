@@ -25,10 +25,23 @@ pip install -e ".[test,examples]"
 
 ## Design notes
 
-Read the [design notes](docs/design-mathtext.md) before you change placement,
+Read the [design notes](docs/design.md) before you change placement,
 layout, the conversion of the curve, or the typesetting of math. They state
 the decisions the code depends on, and the reasons for them. Update them when
-a change alters the design.
+a change alters the design. The "Rules for changes" section lists the
+constraints that protect it.
+
+### Where documentation lives
+
+Each topic has one owner page. Keep the full text there and link to it from the
+others.
+
+- [README.md](README.md) is also the PyPI page, so its links to the site, the
+  Gallery, and images are absolute URLs.
+- [docs/usetex.md](docs/usetex.md) owns the usetex content for users.
+- [examples/README.md](examples/README.md) is the Gallery.
+- The docstrings in `src/curved_text/_core.py` own the parameter reference.
+- [docs/design.md](docs/design.md) owns the design decisions and their reasons.
 
 ## Running the tests
 

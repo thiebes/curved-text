@@ -1224,50 +1224,21 @@ class CurvedText(mtext.Text):
     onto the curve by arc length. The run sits on the same baseline as the
     surrounding plain glyphs. Fractions, radicals, and large brackets stay
     joined while the radius of curvature is larger than the height of the
-    expression. On a tighter bend the expression is squeezed along the curve.
-    Where the radius falls below its height on the concave side, it folds over
-    itself: ink beyond the center of curvature comes out mirrored. Choose the
-    text size to suit the curvature.
+    expression. A tighter bend squeezes the expression along the curve and can
+    fold it over itself, so choose the text size to suit the curvature.
 
     **LaTeX typesetting (usetex).** When ``text.usetex`` is set or
     ``usetex=True`` is passed, LaTeX (a typesetting system) typesets the label,
     so it matches the other usetex text of the figure. ``curved_text`` requires
     ``latex``, as for any matplotlib usetex figure. matplotlib's own usetex
-    text, such as tick labels, also needs ``dvipng``. A plain run is the plain
-    text between math runs, or between a math run and an end of the string.
-    Under usetex:
-
-    - Math runs and plain text are both typeset by LaTeX. Plain text is typeset
-      literally: characters that are TeX markup (such as ``%``, ``#``, and the
-      backslash) are escaped, so TeX commands work only inside ``$...$``.
-    - Each plain run is typeset in one LaTeX pass and kerned as TeX sets it.
-    - A plain run is typeset one character at a time, without kerning, in two
-      cases. One is a character that TeX builds from several pieces, such as an
-      accented letter in the default encoding. The other is a character that
-      can print nothing, such as a soft hyphen.
-    - Plain text is limited to characters the LaTeX preamble (the LaTeX setup
-      commands that come before the text) can typeset. The `README section on
-      LaTeX typesetting
-      <https://github.com/thiebes/curved-text#latex-typesetting-usetex>`_ shows
-      how to declare upright Greek letters.
-    - The ``valign`` ascender and descender lines are the height and depth that
-      TeX measures for the text ``()gy`` in the font it sets the label in.
-    - The first draw runs LaTeX once for each distinct plain run and math run,
-      and up to twice more to measure line heights. Later draws reuse the
-      caches.
-    - The usetex setting is fixed when the label is constructed, as matplotlib
-      fixes it for each glyph. Pass ``usetex`` or set the rcParam before creating
-      the label.
-    - Set the LaTeX preamble, font family, and font lists before the figure is
-      drawn. matplotlib caches text measurements per figure without them.
-      After a change, a redraw of the same figure keeps the old measurements of
-      math runs and of text typeset one character at a time. Plain runs follow
-      the change. matplotlib's own usetex text keeps the old measurements too.
-    - The font family comes from the ``font.family`` rcParam, as for
-      matplotlib's own usetex text, and the ``fontfamily`` keyword has no effect.
-    - Math runs are passed to LaTeX as written, so they can run TeX commands,
-      including ones that read local files. Do not pass untrusted text with
-      usetex on.
+    text, such as tick labels, also needs ``dvipng``. The usetex setting is
+    fixed when the label is created. Set the LaTeX preamble, font family, and
+    font lists before the figure is first drawn. Math runs are passed to LaTeX
+    as written, so they can run TeX commands, including ones that read local
+    files. Do not pass untrusted text with usetex on. See
+    `LaTeX typesetting (usetex)
+    <https://thiebes.github.io/curved-text/usetex.html>`_ for plain text, Greek
+    letters, the preamble, caching, and ``valign``.
 
     Glyphs are rendered from their outlines, not as hinted ``Text`` artists. On
     a rotated label this lets one baseline be pinned exactly, at the cost of

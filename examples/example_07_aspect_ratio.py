@@ -37,7 +37,7 @@ def make(images_dir):
     _panel(axes[1], "narrow aspect")
     panel_letters(axes)
 
-    path = os.path.join(images_dir, "07_glued_resize.png")
+    path = os.path.join(images_dir, "07_aspect_ratio.png")
     return save(fig, path)
 
 

@@ -1,9 +1,9 @@
 """Why a label reads upside down: the direction of travel.
 
-One sine curve labeled three ways: (a) points from left to right, (b) the
+One sine curve labeled four ways: (a) points from left to right, (b) the
 arrays reversed, (c) the same arrays on an inverted x axis, so the points run
-from right to left on screen. An arrowhead at the last point of each curve
-shows the direction.
+from right to left on screen, and (d) the inverted axis with ``upright=True``.
+An arrowhead at the last point of each curve shows the direction.
 """
 from __future__ import annotations
 
@@ -33,17 +33,20 @@ def _curve_with_arrowhead(ax, x, y):
 
 
 def make(images_dir):
-    fig = figure(17, 5.5, font_size=8)
-    axes = fig.subplots(1, 3)
+    fig = figure(17, 10, font_size=8)
+    axes = fig.subplots(2, 2)
 
     x = np.linspace(0, 2 * np.pi, 400)
     y = np.sin(x)
     panels = [
-        (x, y, False, "curved_text(ax, x, y, ...)"),
-        (x[::-1], y[::-1], False, "curved_text(ax, x[::-1], y[::-1], ...)"),
-        (x, y, True, "ax.invert_xaxis()\ncurved_text(ax, x, y, ...)"),
+        (x, y, False, False, "curved_text(ax, x, y, ...)"),
+        (x[::-1], y[::-1], False, False,
+         "curved_text(ax,\n    x[::-1], y[::-1], ...)"),
+        (x, y, True, False, "ax.invert_xaxis()\ncurved_text(ax, x, y, ...)"),
+        (x, y, True, True,
+         "ax.invert_xaxis()\ncurved_text(ax, x, y, ...,\n    upright=True)"),
     ]
-    for ax, (cx, cy, invert, call) in zip(axes, panels):
+    for ax, (cx, cy, invert, upright, call) in zip(axes.ravel(), panels):
         bare(ax)
         _curve_with_arrowhead(ax, cx, cy)
         # Room at the ends for the arrowhead.
@@ -52,7 +55,8 @@ def make(images_dir):
         if invert:
             ax.invert_xaxis()
         curved_text(ax, cx, cy, "reads this way", pos=0.4, anchor="center",
-                    offset=7.0, color=LABEL_COLOR, fontsize=10)
+                    offset=7.0, upright=upright, color=LABEL_COLOR,
+                    fontsize=10)
         caption(ax, call)
     panel_letters(axes)
 

@@ -153,14 +153,17 @@ one sine curve three ways:
   label is upside down.
 - (c) The x axis is inverted, so the points also run from right to left on
   screen, with the same result.
+- (d) The x axis is inverted and `upright=True` is passed, so the label turns
+  over and reads left to right.
 
 `pos` counts from the first point, and `offset` is measured to the left of the
 direction of travel. Reversing the arrays therefore also moves the label along
-the curve and to its other side. To make a label upright on a curve that runs
-from right to left on screen, reverse the arrays. In each caption, `...` stands
-for the same arguments: `pos=0.4, anchor="center", offset=7.0`.
+the curve and to its other side. With `upright=True`, the label covers the same
+stretch of the curve and turns over, and a positive `offset` is toward the tops
+of the letters. In each caption, `...` stands for the same arguments:
+`pos=0.4, anchor="center", offset=7.0`.
 
-![Three panels of one sine curve, each with an arrowhead at the end of the curve and the label 'reads this way'. In (a), the call is the plain one, the points run left to right, and the label is upright. In (b), the call uses x[::-1], y[::-1], and the label is upside down. In (c), the call follows ax.invert_xaxis(), and the label is upside down.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/17_direction_of_travel.png)
+![Four panels of one sine curve, each with an arrowhead at the end of the curve and the label 'reads this way'. In (a), the call is the plain one, the points run left to right, and the label is upright. In (b), the call uses x[::-1], y[::-1], and the label is upside down. In (c), the call follows ax.invert_xaxis(), and the label is upside down. In (d), the call follows ax.invert_xaxis() and passes upright=True, and the label is upright.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/17_direction_of_travel.png)
 
 [example_17_direction_of_travel.py](https://github.com/thiebes/curved-text/blob/main/examples/example_17_direction_of_travel.py)
 
@@ -385,7 +388,8 @@ r is the distance from the center, θ is the angle, and a is a constant. The
 turns keep an even spacing. Along the bottom of each turn, the text runs from
 right to left on screen and reads upside down, as
 [the direction-of-travel section](#why-a-label-reads-upside-down-direction-of-travel)
-explains.
+explains. `upright=True` does not help here: it turns a whole label, and this
+one winds around.
 
 ![In (a), a circle with 'its circumference is 2πr' upright above it and 'and its area is πr²' upright below it. In (b), the sentence 'an Archimedean spiral, r = aθ, keeps the same distance between its turns, so a long sentence can wind out from its center at an even spacing' winds outward along a spiral, upside down where the spiral runs from right to left.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/22_circle_spiral.png)
 

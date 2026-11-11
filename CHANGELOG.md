@@ -3,6 +3,20 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- The `upright` keyword turns a label over where it would read upside down:
+  on a curve that runs from right to left on screen, which includes most
+  contour labels and any curve on an inverted axis. It is off by default, so
+  existing output is unchanged. The decision is made on every draw from the
+  straight line across the stretch of curve the label covers, so a change of
+  axis or view is followed. The label keeps its place on the curve, and a
+  positive `offset` on a turned label is toward the tops of the letters. It
+  does not help a label that winds around, such as along a spiral, because it
+  turns the whole label.
+
 ## 0.8.0
 
 ### Added

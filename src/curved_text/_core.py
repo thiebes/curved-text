@@ -1135,18 +1135,20 @@ class CurvedText(mtext.Text):
         the anchor onto another stretch, and the label follows the stretch that
         holds its anchor. The label reads in the order of the points as they
         appear on screen. If the points run from right to left, the text is
-        upside down. Reverse both arrays (``x[::-1], y[::-1]``) to turn it
-        upright. ``pos`` and ``offset`` also count from the first point.
+        upside down unless ``upright`` is set. ``pos`` counts from the first
+        point.
     anchor : {"start", "center", "end"}, default "center"
         Which part of the label sits at ``pos``.
     offset : float, default 0.0
         Distance from the curve, perpendicular to it, in points (1/72 inch).
         Positive is to the left of the direction of travel, which is above a
-        curve that runs from left to right. The label is laid along the parallel
-        (offset) curve at that distance. The clearance from the curve and the
-        spacing of the characters stay even where the curve bends steeply or
-        asymmetrically. ``pos`` and ``anchor`` are measured against the original
-        curve and carried perpendicularly onto the offset curve.
+        curve that runs from left to right. On a label turned over by
+        ``upright``, positive is toward the tops of the letters. The label is
+        laid along the parallel (offset) curve at that distance. The clearance
+        from the curve and the spacing of the characters stay even where the
+        curve bends steeply or asymmetrically. ``pos`` and ``anchor`` are
+        measured against the original curve and carried perpendicularly onto
+        the offset curve.
     box : bool, str, or dict, default False
         A casing drawn behind the label to clear the lines it crosses: a band
         that follows the curve at the label's height, under the glyphs. ``True``
@@ -1174,6 +1176,16 @@ class CurvedText(mtext.Text):
         is one font-metric shift applied identically to every glyph and math run,
         so plain text and math stay aligned. Combine it with ``offset`` to lift
         the chosen line off the curve.
+    upright : bool, default False
+        Keep the text from reading upside down. Each draw, the label is turned
+        over when the straight line across the stretch of curve it covers points
+        left on screen, or straight down, so it reads left to right or from
+        bottom to top. The label keeps its place on the curve: ``pos`` and
+        ``anchor`` still refer to the curve as given, so the label covers the
+        same stretch of it. An inverted axis or a change of the view is followed
+        on the next draw. The decision is for the whole label, so a label that
+        winds around, as along a spiral, reads upside down where it turns. A
+        label near the vertical can turn over when the aspect ratio changes.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties
         applied to every glyph and every math run: ``color``, ``alpha``,
@@ -1277,7 +1289,7 @@ class CurvedText(mtext.Text):
       output the label looks as it does on screen.
     - Axes: Cartesian and polar axes work. On polar axes the angle runs
       counterclockwise, so a curve from angle 0 to π runs right to left over
-      the top and its label reads upside down: reverse the arrays. A 3D axes
+      the top and its label reads upside down unless ``upright`` is set. A 3D axes
       accepts the call and draws nothing.
     - Animation: blitting is not supported, and ``ax.draw_artist(label)`` draws
       nothing. Redraw the whole figure (a ``FuncAnimation`` without blitting
@@ -1919,6 +1931,9 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
         ``"curvature"`` adds spacing between characters on tight bends.
     valign : {"center", "baseline", "ascender", "descender"}, default "center"
         Which line of the text lies on the curve.
+    upright : bool, default False
+        Turn the label over where it would read upside down.
+        :class:`CurvedText` describes the rule.
     **kwargs
         :class:`~matplotlib.text.Text` properties applied to every glyph and
         math run, such as ``color``, ``fontsize``, ``alpha``, and

@@ -11,7 +11,7 @@ to left on screen, so every label is passed ``upright=True``.
 Each label sits on the straightest stretch of its contour that is clear of the
 other contours and over shading dark enough for white text. A contour with no
 such stretch has no label, and a label too close to one already placed is left
-out. The map is dark and the labels are white, with no casing or halo, so each
+out. Each elevation is labeled once, on its longest contour. The map is dark and the labels are white, with no casing or halo, so each
 label sits on its own contour line, which runs through the text. White text has
 a contrast of at least 4.5:1 against the shading under it.
 """
@@ -190,12 +190,16 @@ def make(images_dir):
         if pos is not None:
             candidates.append((room, level, seg, pos))
     placed = []
-    for _room, level, seg, pos in sorted(candidates, key=lambda c: -c[0]):
+    labeled_levels = set()
+    for _room, level, seg, pos in sorted(candidates,
+                                         key=lambda c: -len(c[2])):
         point = _point_at(seg, pos)
-        if any(np.hypot(*(point - other)) < MIN_LABEL_SEPARATION
-               for other in placed):
+        if level in labeled_levels or any(
+                np.hypot(*(point - other)) < MIN_LABEL_SEPARATION
+                for other in placed):
             continue
         placed.append(point)
+        labeled_levels.add(level)
         curved_text(ax, seg[:, 0], seg[:, 1], f"{level:.0f} m", pos=pos,
                     upright=True, fontsize=8, color="white")
     ax.set_xlabel("longitude (degrees)")

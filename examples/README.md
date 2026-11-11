@@ -18,19 +18,21 @@ A contour label is the classic label along a curve, and it needs the curve to
 be smooth. The script therefore smooths the terrain with a Gaussian filter six
 cells wide before it contours it, and maps the escarpment, where the contours run
 long and simple. Each contour is a path whose direction
-`ax.contour` chooses, and 4 of the 7 labels here sit on paths that run from
+`ax.contour` chooses, and 4 of the 5 labels here sit on paths that run from
 right to left on screen, so the script passes `upright=True` and every label
 reads left to right. The map is dark, and the labels and contour lines are
 white. The script places each label on the straightest stretch of its contour that
 is clear of the other contours and over shading dark enough for white text to
 reach the 4.5:1 contrast of the Web Content Accessibility Guidelines (WCAG). It
-skips a contour with no such stretch, and a label that would come too close to
-one already placed, so every label lies on a stretch that bends little. Each label sits on its own contour
+skips a contour with no such stretch, a label that would come too close to one
+already placed, and a second label for an elevation already labeled, taking the
+longest contour of each elevation. Every label lies on a stretch that bends
+little. Each label sits on its own contour
 line, which runs through the text, so the reader sees which line it names. A
 `box` casing would hide the ends of that line, and a halo drawn on each glyph
 would overlap its neighbors.
 
-![Dark shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.30 to 84.08 degrees west and latitude from 36.48 to 36.70 degrees north. Pale contour lines every 100 meters run from the upper right to the lower left along an escarpment between high ground at the left and a dark basin at the right. Seven contours carry a white label placed on the contour line itself: 400, 500, 500, 600, 700, 700, and 800 meters. Three of them, at 700 and 800 meters, sit on the winding contours of the ridge at the left. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
+![Dark shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.30 to 84.08 degrees west and latitude from 36.48 to 36.70 degrees north. Pale contour lines every 100 meters run from the upper right to the lower left along an escarpment between high ground at the left and a dark basin at the right. Five contours carry a white label placed on the contour line itself, one for each of 400, 500, 600, 700, and 800 meters. The last three sit on the winding contours of the ridge at the left. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
 
 [example_20_topographic_map.py](https://github.com/thiebes/curved-text/blob/main/examples/example_20_topographic_map.py)
 

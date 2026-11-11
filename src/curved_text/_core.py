@@ -1325,6 +1325,10 @@ class CurvedText(mtext.Text):
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                  box: bool | str | dict = False, crowding: str = "none",
                  valign: str = "center", **kwargs: Any) -> None:
+        # With the other argument checks, before the label is added, so a
+        # non-string raises here and leaves the axes unchanged.
+        if not isinstance(text, str):
+            raise TypeError(f"text must be a str, got {type(text).__name__!r}")
         if not math.isfinite(pos):
             raise ValueError(f"pos must be finite, got {pos!r}")
         if anchor not in _ANCHORS:

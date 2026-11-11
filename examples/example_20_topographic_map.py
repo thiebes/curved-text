@@ -6,13 +6,16 @@ about six cells wide so the contours are smooth enough to label, and shaded by
 a light from the northwest. Contours run every 50 m. ``ax.contour`` sets the
 direction of each contour path, and many run from right to left on screen, so
 every label is passed ``upright=True``. Each label sits where its contour has
-the most room, a contour too crowded or too curved for a label has none, and a
-label too close to one already placed is left out.
+the most room, a contour with no stretch straight and open enough for a label
+has none, and a label too close to one already placed is left out. Each label
+has a thin white halo, not a casing, so its contour runs into it from both
+sides.
 """
 from __future__ import annotations
 
 import os
 
+import matplotlib.patheffects as patheffects
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LightSource
@@ -37,12 +40,15 @@ MIN_LABEL_SEPARATION = 0.045
 # A label is about this long, in degrees, and a contour that turns by more than
 # MAX_TURN_DEGREES in total across that length, measured at TURN_SAMPLES points,
 # is too curved for its label.
-LABEL_LENGTH = 0.022
+LABEL_LENGTH = 0.025
 MAX_TURN_DEGREES = 30.0
 TURN_SAMPLES = 8
 # How far the hillshading is lightened toward white, so the contours stand out.
 SHADE_LIGHTENING = 0.4
 INK = "#3b2f2f"   # near-black brown, 12.9:1 against white
+# A thin white outline on each glyph, so the contour runs into the label from
+# both sides and the reader sees which line it names.
+HALO = [patheffects.withStroke(linewidth=3.5, foreground="white")]
 
 
 def _gaussian_blur(grid, sigma):
@@ -151,7 +157,7 @@ def make(images_dir):
             continue
         placed.append(point)
         curved_text(ax, seg[:, 0], seg[:, 1], f"{level:.0f} m", pos=pos,
-                    box=True, upright=True, fontsize=8, color=INK)
+                    upright=True, fontsize=9, color=INK, path_effects=HALO)
     ax.set_xlabel("longitude (degrees)")
     ax.set_ylabel("latitude (degrees)")
 

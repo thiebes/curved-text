@@ -85,7 +85,7 @@ def test_contour_figures_label_every_contour_upright(name, tmp_path,
                                                      monkeypatch):
     # ``ax.contour`` sets the direction of each path, and the labels of these
     # figures follow the paths as they come, which run either way on screen
-    # (4 of the 10 map labels read upright without ``upright=True``).
+    # (5 of the 10 map labels read upright without ``upright=True``).
     module = _load_example(name)
     labels = []
     real = module.curved_text

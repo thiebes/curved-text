@@ -17,14 +17,15 @@ ground heights) near the Jacksboro fault in Tennessee, with contours every 50 m.
 A contour label is the classic label along a curve, and it needs the curve to
 be smooth. The script therefore smooths the terrain with a Gaussian filter six
 cells wide before it contours it. Each contour is a path whose direction
-`ax.contour` chooses, and 6 of the 11 labels here sit on paths that run from
+`ax.contour` chooses, and 6 of the 10 labels here sit on paths that run from
 right to left on screen, so the script passes `upright=True` and every label
 reads left to right. It places each label where its contour is straight enough
-for the text and farthest from the other contours, skips a label that would
-come too close to one already placed, and gives each label a `box=True` casing
-that clears the lines behind it.
+for the text and farthest from the other contours. It skips a contour that is
+too crowded or too curved anywhere for a label, and a label that would come too
+close to one already placed. Each label has a `box=True` casing that clears the
+lines behind it.
 
-![Shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.41 to 84.08 degrees west and latitude from 36.45 to 36.73 degrees north. Contour lines every 50 meters wind across a ridge that runs from the upper left to the lower center. Eleven contours carry a label in a white casing: 350, 400, 450, 500, 500, 550, 550, 600, 650, 650, and 800 meters. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
+![Shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.41 to 84.08 degrees west and latitude from 36.45 to 36.73 degrees north. Contour lines every 50 meters wind across a ridge that runs from the upper left to the lower center. Ten contours carry a label in a white casing: 350, 350, 450, 500, 550, 550, 600, 650, 650, and 800 meters. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
 
 [example_20_topographic_map.py](https://github.com/thiebes/curved-text/blob/main/examples/example_20_topographic_map.py)
 

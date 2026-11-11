@@ -1,12 +1,13 @@
-"""A topographic map of real terrain, with every contour labeled upright.
+"""A topographic map of real terrain, with its contour labels upright.
 
 Elevation from matplotlib's ``jacksboro_fault_dem.npz`` sample data, a digital
 elevation model near the Jacksboro fault in Tennessee, smoothed by a Gaussian
 about six cells wide so the contours are smooth enough to label, and shaded by
 a light from the northwest. Contours run every 50 m. ``ax.contour`` sets the
-direction of each contour path, and most run from right to left on screen, so
+direction of each contour path, and many run from right to left on screen, so
 every label is passed ``upright=True``. Each label sits where its contour has
-the most room, and a label too close to one already placed is left out.
+the most room, a contour too crowded or too curved for a label has none, and a
+label too close to one already placed is left out.
 """
 from __future__ import annotations
 
@@ -26,7 +27,11 @@ CONTOUR_INTERVAL_M = 50
 # loops around a summit or a pit, or fragments at the edge.
 MIN_POINTS = 250
 # Where along a contour a label may sit, as fractions of its length.
-CANDIDATE_POS = np.linspace(0.25, 0.75, 11)
+CANDIDATE_POS = np.linspace(0.15, 0.85, 29)
+# The least distance, in degrees, from a label to the nearest other contour: a
+# little more than half the height of its casing, so the casing covers no
+# neighboring contour.
+MIN_ROOM = 0.0025
 # The least distance, in degrees, between two labels.
 MIN_LABEL_SEPARATION = 0.045
 # A label is about this long, in degrees, and a contour that turns by more than
@@ -78,16 +83,16 @@ def _turn_degrees(path, pos):
 
 def _roomiest_pos(path, others):
     """The candidate ``pos`` at which ``path`` is farthest from every other
-    contour, among those where it is straight enough for a label, and that
-    distance. Where contours crowd, as on a steep slope, a label would cover
-    its neighbors. ``None`` where no candidate is straight enough."""
+    contour, among those where it is straight enough for a label and clear of
+    its neighbors, and that distance. Where contours crowd, as on a steep slope,
+    a label would cover them. ``None`` where no candidate qualifies."""
     best = (None, -1.0)
     for pos in CANDIDATE_POS:
         if _turn_degrees(path, pos) > MAX_TURN_DEGREES:
             continue
         point = _point_at(path, pos)
         room = float(np.min(np.hypot(*(others - point).T)))
-        if room > best[1]:
+        if room > best[1] and room >= MIN_ROOM:
             best = (float(pos), room)
     return best
 

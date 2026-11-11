@@ -142,10 +142,10 @@ To add a figure:
 1. Write `examples/example_NN_name.py` with a `make(images_dir)` function that
    saves the figure into `images_dir` as `NN_name.png` (the module name without
    `example_`) and returns that path, or returns `None` when an optional
-   requirement is missing. Use the next free number `NN`; 20 and 24 are
-   reserved. Take the colors, the figure size, and the save call from
-   `examples/_style.py`, so that the figure follows the gallery's house style
-   (see the House style section of [examples/README.md](examples/README.md)).
+   requirement is missing. Use the next free number `NN`. Take the colors, the
+   figure size, and the save call from `examples/_style.py`, so that the figure
+   follows the gallery's house style (see the House style section of
+   [examples/README.md](examples/README.md)).
 2. Add the module name to `MODULES` in `examples/generate_all.py`.
    `tests/test_examples.py` then runs it.
 3. Run `python examples/generate_all.py` and commit the new image.

@@ -9,6 +9,25 @@ scripts, see [Running the scripts](#running-the-scripts).
 
 ## The case for the tool
 
+### Contour labels on a topographic map
+
+The figure shows real terrain: elevation from matplotlib's
+`jacksboro_fault_dem.npz` sample data, a digital elevation model (a grid of
+ground heights) near the Jacksboro fault in Tennessee, with contours every 50 m.
+A contour label is the classic label along a curve, and it needs the curve to
+be smooth. The script therefore smooths the terrain with a Gaussian filter six
+cells wide before it contours it. Each contour is a path whose direction
+`ax.contour` chooses, and 6 of the 11 labels here sit on paths that run from
+right to left on screen, so the script passes `upright=True` and every label
+reads left to right. It places each label where its contour is straight enough
+for the text and farthest from the other contours, skips a label that would
+come too close to one already placed, and gives each label a `box=True` casing
+that clears the lines behind it.
+
+![Shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.41 to 84.08 degrees west and latitude from 36.45 to 36.73 degrees north. Contour lines every 50 meters wind across a ridge that runs from the upper left to the lower center. Eleven contours carry a label in a white casing: 350, 400, 450, 500, 500, 550, 550, 600, 650, 650, and 800 meters. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
+
+[example_20_topographic_map.py](https://github.com/thiebes/curved-text/blob/main/examples/example_20_topographic_map.py)
+
 ### Direct labeling replaces the legend
 
 Each curve carries its own label, so the reader needs no legend. In (a), a
@@ -412,6 +431,22 @@ figure labels its lines the same way.
 ![Line chart on a logarithmic axis, 1990 to 2022, relative to January 1990, for Microsoft, IBM, Xerox, and the S&P 500. Microsoft ends near 740 times its 1990 value, the S&P 500 near 13, IBM near 12, and Xerox near 2. Each line carries its own label.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/23_stocks.png)
 
 [example_23_stocks.py](https://github.com/thiebes/curved-text/blob/main/examples/example_23_stocks.py)
+
+### Streamlines past a cylinder
+
+In potential flow, a uniform stream of speed U passes a cylinder of radius a.
+The stream function is psi = U (r - a²/r) sin θ, where r is the distance from
+the cylinder's axis and θ is the angle from the direction of the flow. A
+streamline is a curve of constant psi, so `ax.contour` of psi gives each one as
+one continuous path. (`streamplot` splits its output into short pieces.) Lengths
+are in units of a, and psi is in units of U a. Each label sits where its
+streamline passes over the cylinder. The paths from `ax.contour` happen to run
+from left to right here, and the script still passes `upright=True`, which keeps
+the labels upright if a contouring routine returns a path the other way.
+
+![Eight streamlines of flow from left to right past a gray cylinder of radius 1 centered at the origin, for x and y from minus 4 to 4 and minus 2.6 to 2.6. Four streamlines pass above the cylinder, labeled psi = 0.5, 1, 1.5, and 2, and four pass below it, labeled psi = minus 0.5, minus 1, minus 1.5, and minus 2. Each streamline bends to pass the cylinder and straightens to level far from it.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/24_streamlines.png)
+
+[example_24_streamlines.py](https://github.com/thiebes/curved-text/blob/main/examples/example_24_streamlines.py)
 
 ## Running the scripts
 

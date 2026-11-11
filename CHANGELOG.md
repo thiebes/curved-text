@@ -16,6 +16,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   positive `offset` on a turned label is toward the tops of the letters. It
   does not help a label that winds around, such as along a spiral, because it
   turns the whole label.
+- Two gallery figures: a topographic map of real terrain with every contour
+  labeled upright, which opens the gallery, and the streamlines of potential
+  flow past a cylinder.
 
 ### Fixed
 

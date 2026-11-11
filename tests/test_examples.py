@@ -3,10 +3,11 @@
 Runs each script ``examples/generate_all.py`` lists, as that script does, into
 a temporary folder, so a change to the library that breaks a gallery figure
 fails here. A script returns ``None`` when an optional dependency (seaborn,
-pandas, LaTeX with dvipng, or the ``Stocks.csv`` sample data, which
-matplotlib 3.5 does not ship) is missing, and its figure is skipped, unless the
-environment variable ``CURVED_TEXT_GALLERY_COMPLETE`` is set, as in the CI job
-that installs every one of them, where a skip would hide a figure from CI.
+pandas, LaTeX with dvipng, the ``Stocks.csv`` sample data, which matplotlib
+3.5 does not ship, or the ``jacksboro_fault_dem.npz`` sample data) is missing,
+and its figure is skipped, unless the environment variable
+``CURVED_TEXT_GALLERY_COMPLETE`` is set, as in the CI job that installs every
+one of them, where a skip would hide a figure from CI.
 """
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
@@ -79,18 +80,23 @@ def test_gallery_text_shades_are_legible():
         assert _wcag_contrast_on_white(color) >= 4.5, role
 
 
-@pytest.mark.parametrize("name", ["example_20_topographic_map",
-                                  "example_24_streamlines"])
-def test_contour_figures_label_every_contour_upright(name, tmp_path,
-                                                     monkeypatch):
+@pytest.mark.parametrize("name, label_count",
+                         [("example_20_topographic_map", 9),
+                          ("example_24_streamlines", 8)])
+def test_contour_figures_label_every_contour_upright(name, label_count,
+                                                     tmp_path, monkeypatch):
     # ``ax.contour`` sets the direction of each path, and the labels of these
-    # figures follow the paths as they come, which run either way on screen
-    # (5 of the 9 map labels read upright without ``upright=True``).
+    # figures follow the paths as they come, which can run either way on
+    # screen, so each label is passed ``upright=True`` and reads left to right.
+    # The streamline paths all run left to right today, so the keyword itself
+    # is checked as well as the result. The counts are those the README and
+    # the alt text describe.
     module = _load_example(name)
     labels = []
     real = module.curved_text
 
     def record(*args, **kwargs):
+        assert kwargs.get("upright") is True
         label = real(*args, **kwargs)
         labels.append(label)
         return label
@@ -102,8 +108,11 @@ def test_contour_figures_label_every_contour_upright(name, tmp_path,
     finally:
         plt.close("all")
     if path is None:
-        pytest.skip(f"{name} needs data that is missing")
-    assert labels
+        message = f"{name} needs data that is missing"
+        if os.environ.get("CURVED_TEXT_GALLERY_COMPLETE"):
+            pytest.fail(message)
+        pytest.skip(message)
+    assert len(labels) == label_count
     for label in labels:
         first, last = label._segments[0], label._segments[-1]
         span = last._s_left + last._width_px - first._s_left

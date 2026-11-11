@@ -2,19 +2,21 @@
 
 Elevation from matplotlib's ``jacksboro_fault_dem.npz`` sample data, a digital
 elevation model near the Jacksboro fault in Tennessee, smoothed by a Gaussian
-about six cells wide so the contours are smooth enough to label, cropped to the
-escarpment, and shaded by a light from the northwest and darkened. Contours run
-every 50 m.
-``ax.contour`` sets the direction of each contour path, and many run from right
-to left on screen, so every label is passed ``upright=True``.
+with a standard deviation of six cells so the contours are smooth enough to
+label, cropped to the escarpment, and shaded by a light from the northwest and
+darkened. Contours run every 50 m. ``ax.contour`` sets the direction of each
+contour path, and many run from right to left on screen, so every label is
+passed ``upright=True``.
 
-Each label sits on the straightest stretch of its contour that is clear of the
-other contours and over shading dark enough for white text. A contour with no
-such stretch has no label, and a label too close to one already placed is left
-out. Each elevation is labeled once, on its longest contour. The map is dark and
-the labels are white, with no casing or halo, so each label sits on its own
-contour line, which runs through the text. White text has a contrast of at least
-4.5:1 against the shading under it.
+Each label sits on the straightest stretch of its contour that has no other
+contour near its center and where the shading, sampled along the contour under
+the label, is dark enough for white text. A contour with no such stretch has no
+label. Each elevation is labeled once, on the contour with the most room, and a
+label too close to one already placed is left out. The map is dark and the
+labels are white, with no casing or halo, so each label sits on its own contour
+line, which runs through the text. White text has a contrast of at least 4.5:1
+against a background of the darkness that placement requires; the pale contour
+line through the text is not part of that measure.
 """
 from __future__ import annotations
 
@@ -39,8 +41,8 @@ WINDOW = (40, 300, 130, 403)
 MIN_POINTS = 150
 # Where along a contour a label may sit, as fractions of its length.
 CANDIDATE_POS = np.linspace(0.15, 0.85, 71)
-# The least distance, in degrees, from a label to the nearest other contour, so
-# a neighboring line does not run through the text.
+# The least distance, in degrees, from a label's center to the nearest other
+# contour, so a neighboring line is not at the center of the text.
 MIN_ROOM = 0.0007
 # The least distance, in degrees, between two labels.
 MIN_LABEL_SEPARATION = 0.02
@@ -56,8 +58,8 @@ TURN_SAMPLES = 10
 SHADE_DARKENING = 0.45
 # The labels and the contour lines are white. White text is at least 4.5:1
 # against a background whose relative luminance is at most this value, the
-# WCAG 2 minimum for text, so a label is placed only where the shading under it
-# is that dark.
+# WCAG 2 minimum for text, so a label is placed only where the shading sampled
+# along the contour under it is that dark.
 MAX_BACKGROUND_LUMINANCE = 0.18
 
 
@@ -147,9 +149,9 @@ def make(images_dir):
     west, east = longitude[0], longitude[-1]
     south, north = latitude[0], latitude[-1]
 
-    # Hillshading: a light from the northwest, with the relief exaggerated
-    # by the ratio of a degree of latitude to a degree of longitude, so the
-    # slopes are those of the ground.
+    # Hillshading: a light from the northwest. The cell sizes are in meters,
+    # so slopes are those of the ground, and the relief is exaggerated only by
+    # the factor ``vert_exag``.
     cell_m = 111200 * np.array([dem["dx"] * np.cos(np.radians(south)),
                                 dem["dy"]])
     shade = LightSource(azdeg=315, altdeg=40).shade(
@@ -160,8 +162,9 @@ def make(images_dir):
         shade.shape[:2])
 
     def dark_enough(path, pos):
-        """Whether the shading under a label centered at ``pos`` on ``path``
-        is dark enough everywhere along the label for white text."""
+        """Whether the shading is dark enough for white text at each of the
+        ``TURN_SAMPLES`` points along ``path`` under a label centered at
+        ``pos``."""
         length = np.hypot(*np.diff(path, axis=0).T).sum()
         half = LABEL_LENGTH / 2 / length
         points = np.array([_point_at(path, f) for f in
@@ -190,6 +193,8 @@ def make(images_dir):
         pos, room = _straightest_pos(seg, others, dark_enough)
         if pos is not None:
             candidates.append((room, level, seg, pos))
+    # The contour with the most room labels its elevation first, and wins a
+    # collision between two labels.
     placed = []
     labeled_levels = set()
     for _room, level, seg, pos in sorted(candidates, key=lambda c: -c[0]):

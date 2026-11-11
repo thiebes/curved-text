@@ -4,9 +4,10 @@ A uniform flow of speed U past a cylinder of radius a has the stream function
 psi = U (r - a^2 / r) sin(theta), where r is the distance from the cylinder's
 axis and theta is the angle from the direction of the flow. In Cartesian
 coordinates, psi = U y (1 - a^2 / (x^2 + y^2)). ``ax.contour`` of psi gives
-each streamline as one continuous path, and ``ax.contour`` sets the direction of
-every path, so each label is passed ``upright=True``. Lengths are in units of
-a, and psi is in units of U a.
+each streamline as one continuous path and sets the direction of every path.
+Here the paths happen to run from left to right, and each label is still passed
+``upright=True``, which keeps it upright if a path runs the other way. Lengths
+are in units of a, and psi is in units of U a.
 """
 from __future__ import annotations
 
@@ -42,7 +43,7 @@ def make(images_dir):
     ax.add_patch(Circle((0, 0), 1, facecolor="0.85", edgecolor=REFERENCE_COLOR,
                         linewidth=1.5, zorder=3))
     contours = ax.contour(xx, yy, psi, levels=LEVELS, colors=CURVE_COLOR,
-                          linewidths=1.5, negative_linestyles="solid")
+                          linewidths=1.5, linestyles="solid")
     for level, segments in zip(contours.levels, contours.allsegs):
         # Each level is one path across the plot, on its side of the cylinder.
         path = max(segments, key=len)

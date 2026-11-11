@@ -2,20 +2,22 @@
 
 Elevation from matplotlib's ``jacksboro_fault_dem.npz`` sample data, a digital
 elevation model near the Jacksboro fault in Tennessee, smoothed by a Gaussian
-about six cells wide so the contours are smooth enough to label, and shaded by
-a light from the northwest. Contours run every 50 m. ``ax.contour`` sets the
-direction of each contour path, and many run from right to left on screen, so
-every label is passed ``upright=True``. Each label sits where its contour has
-the most room, a contour with no stretch straight and open enough for a label
-has none, and a label too close to one already placed is left out. Each label
-has a thin white halo, not a casing, so its contour runs into it from both
-sides.
+about ten cells wide so the contours are smooth enough to label, and shaded by
+a light from the northwest and darkened. Contours run every 50 m.
+``ax.contour`` sets the direction of each contour path, and many run from right
+to left on screen, so every label is passed ``upright=True``.
+
+Each label sits on the straightest stretch of its contour that is clear of the
+other contours and over shading dark enough for white text. A contour with no
+such stretch has no label, and a label too close to one already placed is left
+out. The map is dark and the labels are white, with no casing or halo, so each
+label sits on its own contour line, which runs through the text. White text has
+a contrast of at least 4.5:1 against the shading under it.
 """
 from __future__ import annotations
 
 import os
 
-import matplotlib.patheffects as patheffects
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LightSource
@@ -24,31 +26,33 @@ from curved_text import curved_text
 from _style import data_axes, figure, sample_data, save
 
 # The standard deviation, in cells, of the Gaussian that smooths the terrain.
-SMOOTHING_CELLS = 6
+SMOOTHING_CELLS = 10
 CONTOUR_INTERVAL_M = 50
 # The shortest contour, in points, that is labeled: shorter ones are closed
 # loops around a summit or a pit, or fragments at the edge.
 MIN_POINTS = 250
 # Where along a contour a label may sit, as fractions of its length.
-CANDIDATE_POS = np.linspace(0.15, 0.85, 29)
-# The least distance, in degrees, from a label to the nearest other contour: a
-# little more than half the height of its casing, so the casing covers no
-# neighboring contour.
-MIN_ROOM = 0.0025
+CANDIDATE_POS = np.linspace(0.15, 0.85, 71)
+# The least distance, in degrees, from a label to the nearest other contour, so
+# a neighboring line does not run through the text.
+MIN_ROOM = 0.0015
 # The least distance, in degrees, between two labels.
-MIN_LABEL_SEPARATION = 0.045
-# A label is about this long, in degrees, and a contour that turns by more than
-# MAX_TURN_DEGREES in total across that length, measured at TURN_SAMPLES points,
-# is too curved for its label.
-LABEL_LENGTH = 0.025
-MAX_TURN_DEGREES = 30.0
-TURN_SAMPLES = 8
-# How far the hillshading is lightened toward white, so the contours stand out.
-SHADE_LIGHTENING = 0.4
-INK = "#3b2f2f"   # near-black brown, 12.9:1 against white
-# A thin white outline on each glyph, so the contour runs into the label from
-# both sides and the reader sees which line it names.
-HALO = [patheffects.withStroke(linewidth=3.5, foreground="white")]
+MIN_LABEL_SEPARATION = 0.04
+# A label is about 0.022 degrees long. The stretch of contour that must be
+# straight is longer, so a bend just past the label's end does not crush its
+# last letter. A contour that turns by more than MAX_TURN_DEGREES in total
+# across that stretch, measured at TURN_SAMPLES points, is too curved for its
+# label.
+LABEL_LENGTH = 0.032
+MAX_TURN_DEGREES = 22.0
+TURN_SAMPLES = 10
+# The factor that darkens the hillshading, so white labels can be read on it.
+SHADE_DARKENING = 0.5
+# The labels and the contour lines are white. White text is at least 4.5:1
+# against a background whose relative luminance is at most this value, the
+# WCAG 2 minimum for text, so a label is placed only where the shading under it
+# is that dark.
+MAX_BACKGROUND_LUMINANCE = 0.18
 
 
 def _gaussian_blur(grid, sigma):
@@ -74,6 +78,13 @@ def _point_at(path, pos):
                      for i in range(2)])
 
 
+def _luminance(rgb):
+    """The WCAG 2 relative luminance of each color in the (n, 3) array
+    ``rgb``."""
+    linear = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+    return linear @ np.array([0.2126, 0.7152, 0.0722])
+
+
 def _turn_degrees(path, pos):
     """The total turning of ``path``, in degrees, along a label's length
     centered at ``pos``, summed over short steps so a hairpin inside the
@@ -87,20 +98,24 @@ def _turn_degrees(path, pos):
     return float(np.abs(np.degrees(turns)).sum())
 
 
-def _roomiest_pos(path, others):
-    """The candidate ``pos`` at which ``path`` is farthest from every other
-    contour, among those where it is straight enough for a label and clear of
-    its neighbors, and that distance. Where contours crowd, as on a steep slope,
-    a label would cover them. ``None`` where no candidate qualifies."""
-    best = (None, -1.0)
+def _straightest_pos(path, others, dark_enough):
+    """The candidate ``pos`` at which ``path`` is straightest, among those where
+    it is straight enough for a label, clear of its neighbors, and over shading
+    dark enough for white text, and the distance from there to the nearest other
+    contour. The label then lies on the flattest stretch the contour offers,
+    where text follows it with the least bend. ``None`` where no candidate
+    qualifies."""
+    best = (None, None, np.inf)
     for pos in CANDIDATE_POS:
-        if _turn_degrees(path, pos) > MAX_TURN_DEGREES:
+        turn = _turn_degrees(path, pos)
+        if turn > MAX_TURN_DEGREES or turn >= best[2]:
             continue
-        point = _point_at(path, pos)
-        room = float(np.min(np.hypot(*(others - point).T)))
-        if room > best[1] and room >= MIN_ROOM:
-            best = (float(pos), room)
-    return best
+        if not dark_enough(path, pos):
+            continue
+        room = float(np.min(np.hypot(*(others - _point_at(path, pos)).T)))
+        if room >= MIN_ROOM:
+            best = (float(pos), room, turn)
+    return best[:2]
 
 
 def make(images_dir):
@@ -129,7 +144,22 @@ def make(images_dir):
     shade = LightSource(azdeg=315, altdeg=40).shade(
         smoothed, cmap=plt.cm.gist_earth, blend_mode="soft", vert_exag=2.0,
         dx=cell_m[0], dy=cell_m[1], fraction=0.9)
-    shade[..., :3] = (1 - SHADE_LIGHTENING) * shade[..., :3] + SHADE_LIGHTENING
+    shade[..., :3] *= SHADE_DARKENING
+    luminance = _luminance(shade[..., :3].reshape(-1, 3)).reshape(
+        shade.shape[:2])
+
+    def dark_enough(path, pos):
+        """Whether the shading under a label centered at ``pos`` on ``path``
+        is dark enough everywhere along the label for white text."""
+        length = np.hypot(*np.diff(path, axis=0).T).sum()
+        half = LABEL_LENGTH / 2 / length
+        points = np.array([_point_at(path, f) for f in
+                           np.linspace(pos - half, pos + half, TURN_SAMPLES)])
+        columns = np.round((points[:, 0] - west) / (east - west)
+                           * (luminance.shape[1] - 1)).astype(int)
+        rows = np.round((points[:, 1] - south) / (north - south)
+                        * (luminance.shape[0] - 1)).astype(int)
+        return bool(luminance[rows, columns].max() <= MAX_BACKGROUND_LUMINANCE)
 
     fig = figure(17, 14, font_size=9)
     ax = data_axes(fig.subplots())
@@ -138,7 +168,7 @@ def make(images_dir):
     levels = np.arange(CONTOUR_INTERVAL_M * np.ceil(smoothed.min() / 50),
                        smoothed.max(), CONTOUR_INTERVAL_M)
     contours = ax.contour(longitude, latitude, smoothed, levels=levels,
-                          colors=INK, linewidths=0.7)
+                          colors="white", linewidths=0.7, alpha=0.6)
 
     paths = [(level, seg) for level, segs in zip(contours.levels,
                                                  contours.allsegs)
@@ -146,7 +176,7 @@ def make(images_dir):
     candidates = []
     for index, (level, seg) in enumerate(paths):
         others = np.vstack([s for i, (_, s) in enumerate(paths) if i != index])
-        pos, room = _roomiest_pos(seg, others)
+        pos, room = _straightest_pos(seg, others, dark_enough)
         if pos is not None:
             candidates.append((room, level, seg, pos))
     placed = []
@@ -157,7 +187,7 @@ def make(images_dir):
             continue
         placed.append(point)
         curved_text(ax, seg[:, 0], seg[:, 1], f"{level:.0f} m", pos=pos,
-                    upright=True, fontsize=9, color=INK, path_effects=HALO)
+                    upright=True, fontsize=9, color="white")
     ax.set_xlabel("longitude (degrees)")
     ax.set_ylabel("latitude (degrees)")
 

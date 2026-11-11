@@ -15,19 +15,21 @@ The figure shows real terrain: elevation from matplotlib's
 `jacksboro_fault_dem.npz` sample data, a digital elevation model (a grid of
 ground heights) near the Jacksboro fault in Tennessee, with contours every 50 m.
 A contour label is the classic label along a curve, and it needs the curve to
-be smooth. The script therefore smooths the terrain with a Gaussian filter six
+be smooth. The script therefore smooths the terrain with a Gaussian filter ten
 cells wide before it contours it. Each contour is a path whose direction
-`ax.contour` chooses, and 5 of the 10 labels here sit on paths that run from
+`ax.contour` chooses, and 5 of the 7 labels here sit on paths that run from
 right to left on screen, so the script passes `upright=True` and every label
-reads left to right. It places each label where its contour is straight enough
-for the text and farthest from the other contours. It skips a contour with
-no stretch that is both straight and open enough for a label, and a label that
-would come too close to one already placed. Each label has a thin white halo, so its own
-contour runs into the label from both sides, and the reader sees which line it
-names. A `box` casing would hide the ends of that line and leave a blob that
-could name any neighbor.
+reads left to right. The map is dark, and the labels and contour lines are
+white. The script places each label on the straightest stretch of its contour that
+is clear of the other contours and over shading dark enough for white text to
+reach the 4.5:1 contrast of the Web Content Accessibility Guidelines (WCAG). It
+skips a contour with no such stretch, and a label that would come too close to
+one already placed, so every label lies on a stretch that bends little. Each label sits on its own contour
+line, which runs through the text, so the reader sees which line it names. A
+`box` casing would hide the ends of that line, and a halo drawn on each glyph
+would overlap its neighbors.
 
-![Shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.41 to 84.08 degrees west and latitude from 36.45 to 36.73 degrees north. Contour lines every 50 meters wind across a ridge that runs from the upper left to the lower center. Ten contours carry a label with a thin white outline, each on its own contour line: 300, 350, 350, 450, 500, 550, 600, 600, 650, and 800 meters. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
+![Dark shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.41 to 84.08 degrees west and latitude from 36.45 to 36.73 degrees north. Pale contour lines every 50 meters wind across a ridge that runs from the upper left to the lower center. Seven contours carry a white label placed on the contour line itself: 350, 350, 500, 600, 700, 750, and 800 meters. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
 
 [example_20_topographic_map.py](https://github.com/thiebes/curved-text/blob/main/examples/example_20_topographic_map.py)
 

@@ -13,12 +13,12 @@ scripts, see [Running the scripts](#running-the-scripts).
 
 The figure shows real terrain: elevation from matplotlib's
 `jacksboro_fault_dem.npz` sample data, a digital elevation model (a grid of
-ground heights) near the Jacksboro fault in Tennessee, with contours every 100 m.
+ground heights) near the Jacksboro fault in Tennessee, with contours every 50 m.
 A contour label is the classic label along a curve, and it needs the curve to
 be smooth. The script therefore smooths the terrain with a Gaussian filter six
 cells wide before it contours it, and maps the escarpment, where the contours run
 long and simple. Each contour is a path whose direction
-`ax.contour` chooses, and 4 of the 5 labels here sit on paths that run from
+`ax.contour` chooses, and 5 of the 9 labels here sit on paths that run from
 right to left on screen, so the script passes `upright=True` and every label
 reads left to right. The map is dark, and the labels and contour lines are
 white. The script places each label on the straightest stretch of its contour that
@@ -32,7 +32,7 @@ line, which runs through the text, so the reader sees which line it names. A
 `box` casing would hide the ends of that line, and a halo drawn on each glyph
 would overlap its neighbors.
 
-![Dark shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.30 to 84.08 degrees west and latitude from 36.48 to 36.70 degrees north. Pale contour lines every 100 meters run from the upper right to the lower left along an escarpment between high ground at the left and a dark basin at the right. Five contours carry a white label placed on the contour line itself, one for each of 400, 500, 600, 700, and 800 meters. The last three sit on the winding contours of the ridge at the left. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
+![Dark shaded relief map of the terrain near the Jacksboro fault, with longitude from 84.30 to 84.08 degrees west and latitude from 36.48 to 36.70 degrees north. Pale contour lines every 50 meters run from the upper right to the lower left along an escarpment between high ground at the left and a dark basin at the right. Nine contours carry a white label placed on the contour line itself, one for each of 300, 350, 400, 500, 550, 650, 750, 800, and 850 meters. The labels at 750, 800, and 850 meters sit on the winding contours of the ridge at the left. Every label reads left to right.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/20_topographic_map.png)
 
 [example_20_topographic_map.py](https://github.com/thiebes/curved-text/blob/main/examples/example_20_topographic_map.py)
 

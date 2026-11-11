@@ -4,7 +4,7 @@ Elevation from matplotlib's ``jacksboro_fault_dem.npz`` sample data, a digital
 elevation model near the Jacksboro fault in Tennessee, smoothed by a Gaussian
 about six cells wide so the contours are smooth enough to label, cropped to the
 escarpment, and shaded by a light from the northwest and darkened. Contours run
-every 100 m.
+every 50 m.
 ``ax.contour`` sets the direction of each contour path, and many run from right
 to left on screen, so every label is passed ``upright=True``.
 
@@ -29,28 +29,28 @@ from _style import data_axes, figure, sample_data, save
 
 # The standard deviation, in cells, of the Gaussian that smooths the terrain.
 SMOOTHING_CELLS = 6
-CONTOUR_INTERVAL_M = 100
+CONTOUR_INTERVAL_M = 50
 # The part of the model that is mapped, as (first row, last row, first column,
 # last column) counted from the south and west: the escarpment, whose contours
 # run long and simple.
 WINDOW = (40, 300, 130, 403)
 # The shortest contour, in points, that is labeled: shorter ones are closed
 # loops around a summit or a pit, or fragments at the edge.
-MIN_POINTS = 100
+MIN_POINTS = 150
 # Where along a contour a label may sit, as fractions of its length.
 CANDIDATE_POS = np.linspace(0.15, 0.85, 71)
 # The least distance, in degrees, from a label to the nearest other contour, so
 # a neighboring line does not run through the text.
-MIN_ROOM = 0.001
+MIN_ROOM = 0.0007
 # The least distance, in degrees, between two labels.
-MIN_LABEL_SEPARATION = 0.025
+MIN_LABEL_SEPARATION = 0.02
 # A label is about 0.02 degrees long. The stretch of contour that must be
 # straight is longer, so a bend just past the label's end does not crush its
 # last letter. A contour that turns by more than MAX_TURN_DEGREES in total
 # across that stretch, measured at TURN_SAMPLES points, is too curved for its
 # label.
 LABEL_LENGTH = 0.028
-MAX_TURN_DEGREES = 35
+MAX_TURN_DEGREES = 40
 TURN_SAMPLES = 10
 # The factor that darkens the hillshading, so white labels can be read on it.
 SHADE_DARKENING = 0.45
@@ -192,8 +192,7 @@ def make(images_dir):
             candidates.append((room, level, seg, pos))
     placed = []
     labeled_levels = set()
-    for _room, level, seg, pos in sorted(candidates,
-                                         key=lambda c: -len(c[2])):
+    for _room, level, seg, pos in sorted(candidates, key=lambda c: -c[0]):
         point = _point_at(seg, pos)
         if level in labeled_levels or any(
                 np.hypot(*(point - other)) < MIN_LABEL_SEPARATION

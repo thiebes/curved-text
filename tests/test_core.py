@@ -2735,7 +2735,7 @@ def test_default_leaves_a_leftward_label_upside_down():
     _draw(fig)
     assert np.array_equal(_outline(plain, fig), _outline(off, fig))
     angle = _rotation_deg(plain._segments[0])
-    assert abs(angle) > 90 or angle < -90 or angle > 90
+    assert abs(angle) > 90
     plt.close(fig)
 
 
@@ -2829,7 +2829,7 @@ def test_upright_reads_a_vertical_curve_from_bottom_to_top(direction, flips):
     plain = curved_text(ax, x, y, "vertical")
     up = curved_text(ax, x, y, "vertical", upright=True)
     _draw(fig)
-    assert np.allclose(_outline(plain, fig), _outline(up, fig)) is (not flips)
+    assert np.allclose(_outline(plain, fig), _outline(up, fig)) == (not flips)
     assert all(_rotation_deg(s) == pytest.approx(90) for s in up._segments)
     plt.close(fig)
 
@@ -2860,16 +2860,19 @@ def test_upright_flips_the_stretch_that_holds_the_anchor():
     plt.close(fig)
 
 
-def test_upright_on_a_closed_curve_uses_the_anchor_tangent():
-    t = np.linspace(0, 2 * np.pi, 200)
-    x, y = np.cos(t), np.sin(t)
-    fig, ax = plt.subplots()
-    ax.set_aspect("equal")
-    ct = curved_text(ax, x, y, "o", pos=0.0, upright=True)
-    _draw(fig)
-    assert all(np.isfinite(s._placed_path(fig.canvas.get_renderer()).vertices)
-               .all() for s in ct._segments)
-    plt.close(fig)
+@pytest.mark.parametrize("direction", [1.0, -1.0])
+def test_upright_on_a_closed_curve_uses_the_anchor_tangent(direction):
+    # A label that covers the whole circle has a chord of no length, so the
+    # tangent at the anchor decides. The circle starts at the top: clockwise
+    # (direction 1) it moves right there and left at the bottom, and
+    # counterclockwise it is the other way round.
+    t = np.linspace(0, 2 * np.pi, 400) * direction
+    points = np.column_stack([np.sin(t), np.cos(t)])
+    frame = _core._CurveFrame(points[:, 0], points[:, 1])
+    length = frame.length
+    assert _core._reads_leftward(frame, 0.0, 0.0, length) is (direction < 0)
+    assert _core._reads_leftward(frame, length / 2, 0.5, length) is (
+        direction > 0)
 
 
 @pytest.mark.parametrize("bad", [1, "yes", None, 0.5])

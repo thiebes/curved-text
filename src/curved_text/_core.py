@@ -469,6 +469,11 @@ class _CurveFrame:
 # stretch.
 _BOUNDARY_TOLERANCE = 1e-9
 
+# How short, relative to the span it crosses, a chord must be to count as having
+# no length, and how far from vertical (relative to its length) to count as
+# vertical: rounding must not decide the reading direction of a label.
+_CHORD_TOLERANCE = 1e-9
+
 
 # The open interval of values each axis scale with a bounded domain can place.
 # With ``nonpositive="clip"``, the default on a log axis, a log axis sends 0
@@ -546,8 +551,8 @@ def _stretch_at(curve_px: np.ndarray, pos: float,
 def _reads_leftward(frame: _CurveFrame, s_anchor: float, lead: float,
                     span: float) -> bool:
     """Whether text laid along ``frame`` across ``span`` pixels, with the
-    fraction ``lead`` of it before the arc length ``s_anchor``, reads against
-    the page: its chord points left, or straight down.
+    fraction ``lead`` of it before the arc length ``s_anchor``, reads leftward
+    on screen: its chord points left, or straight down.
 
     A vertical chord counts as upward, so a label on a vertical curve reads
     from bottom to top, as :class:`~matplotlib.text.Text` does at a rotation of
@@ -558,10 +563,9 @@ def _reads_leftward(frame: _CurveFrame, s_anchor: float, lead: float,
     xs, ys, rad = frame.points_and_angles(np.array([start, start + span,
                                                      s_anchor]))
     dx, dy = xs[1] - xs[0], ys[1] - ys[0]
-    if dx == 0.0 and dy == 0.0:
+    if np.hypot(dx, dy) <= _CHORD_TOLERANCE * span:
         dx, dy = np.cos(rad[2]), np.sin(rad[2])
-    # Rounding must not decide a vertical chord, which reads upward.
-    if abs(dx) <= 1e-9 * np.hypot(dx, dy):
+    if abs(dx) <= _CHORD_TOLERANCE * np.hypot(dx, dy):
         return bool(dy < 0.0)
     return bool(dx < 0.0)
 
@@ -1185,7 +1189,8 @@ class CurvedText(mtext.Text):
         same stretch of it. An inverted axis or a change of the view is followed
         on the next draw. The decision is for the whole label, so a label that
         winds around, as along a spiral, reads upside down where it turns. A
-        label near the vertical can turn over when the aspect ratio changes.
+        label whose chord is near the vertical can turn over when the view
+        changes.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties
         applied to every glyph and every math run: ``color``, ``alpha``,
@@ -1219,7 +1224,8 @@ class CurvedText(mtext.Text):
           values.
         - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
     TypeError
-        If ``text`` is not a string or ``pos`` is not a number.
+        If ``text`` is not a string, ``pos`` is not a number, or ``upright``
+        is not a bool (``1`` and ``0`` are not accepted).
     matplotlib.units.ConversionError
         If the axes cannot convert the data of ``x`` or ``y``.
     AttributeError
@@ -1813,7 +1819,7 @@ class CurvedText(mtext.Text):
             s_anchor = base.length - s_anchor
             lead = 1.0 - lead
             base = _CurveFrame(points[:, 0], points[:, 1])
-        # Work in display pixels: build the arc-length frame of the stretch,
+        # Work in display pixels: take the arc-length frame of the stretch,
         # then shift it perpendicularly to the parallel (offset) curve the
         # label actually follows. Laying glyphs along the offset curve, rather
         # than projecting them off the base curve, keeps the clearance from

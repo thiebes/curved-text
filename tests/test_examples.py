@@ -16,6 +16,7 @@ from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
@@ -76,3 +77,35 @@ def test_gallery_text_shades_are_legible():
     for role, color in [*style.TEXT.items(),
                         ("reference", style.REFERENCE_COLOR)]:
         assert _wcag_contrast_on_white(color) >= 4.5, role
+
+
+@pytest.mark.parametrize("name", ["example_20_topographic_map",
+                                  "example_24_streamlines"])
+def test_contour_figures_label_every_contour_upright(name, tmp_path,
+                                                     monkeypatch):
+    # ``ax.contour`` sets the direction of each path, and the labels of these
+    # figures follow the paths as they come, which run either way on screen
+    # (5 of the 11 map labels read upright without ``upright=True``).
+    module = _load_example(name)
+    labels = []
+    real = module.curved_text
+
+    def record(*args, **kwargs):
+        label = real(*args, **kwargs)
+        labels.append(label)
+        return label
+
+    monkeypatch.setattr(module, "curved_text", record)
+    try:
+        with mpl.rc_context():
+            path = module.make(str(tmp_path))
+    finally:
+        plt.close("all")
+    if path is None:
+        pytest.skip(f"{name} needs data that is missing")
+    assert labels
+    for label in labels:
+        first, last = label._segments[0], label._segments[-1]
+        span = last._s_left + last._width_px - first._s_left
+        angle = first._frame.chord_angles(first._s_left, span)
+        assert abs(np.degrees(angle)) <= 90, label._segments[0].get_text()

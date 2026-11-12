@@ -8,6 +8,7 @@ import functools
 import inspect
 import itertools
 import math
+import numbers
 import re
 import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -58,13 +59,27 @@ _MAX_CROWD = 0.6
 # against the curve within ``_ROUND_REACH`` ball radii of arc length with a
 # slack of ``_ROUND_TOL_PX`` (so a straight stretch is not flagged by
 # round-off), and is skipped where the chord-scale curvature times the radius
-# stays below ``_ROUND_GATE``.
+# stays below ``_ROUND_GATE``. The curvature is probed every ``_ROUND_PROBE``
+# ball radii. The sampling grid sits on whole steps of arc length, so a small
+# move of the label does not move the vertices. A bend that reaches the margin of
+# the sampled part widens the part, up to ``_ROUND_MAX_DOUBLINGS`` doublings of
+# the margin, so the rounding does not depend on where the part ends. A radius
+# below ``_ROUND_TOL_PX`` cannot be told from round-off, and one above
+# ``_ROUND_MAX_RADIUS_PX`` is as good as straight. Where the balls either side of
+# a run of points differ by more than ``_ROUND_BLEND_STEPS`` steps or
+# ``_ROUND_BLEND_RADIUS`` radii, no single ball fits, and the run is blended
+# instead.
 _MIN_RADIUS_CLEARANCE = 1.5
 _ROUND_STEP = 1 / 16
 _ROUND_MIN_STEP_PX = 0.25
 _ROUND_REACH = 2 * math.pi
 _ROUND_TOL_PX = 0.25
 _ROUND_GATE = 0.5
+_ROUND_PROBE = 0.5
+_ROUND_MAX_DOUBLINGS = 3
+_ROUND_MAX_RADIUS_PX = 1e7
+_ROUND_BLEND_STEPS = 2.0
+_ROUND_BLEND_RADIUS = 0.05
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
@@ -212,11 +227,16 @@ def _split_runs(text: str) -> list[_Run]:
 def _checked_min_radius(min_radius: float | str | None) -> float | str | None:
     """``min_radius`` as the label stores it: ``None`` (also for 0), ``"auto"``,
     or a positive radius in points. Anything else raises."""
-    if min_radius is None or (isinstance(min_radius, str)
-                              and min_radius == "auto"):
-        return min_radius
+    if min_radius is None:
+        return None
     if isinstance(min_radius, str):
-        raise ValueError(
+        if min_radius != "auto":
+            raise ValueError(
+                f"min_radius must be None, 'auto', or a number, got {min_radius!r}")
+        return min_radius
+    if isinstance(min_radius, (bool, np.bool_)) or not isinstance(
+            min_radius, numbers.Real):
+        raise TypeError(
             f"min_radius must be None, 'auto', or a number, got {min_radius!r}")
     if not math.isfinite(min_radius) or min_radius < 0:
         raise ValueError(
@@ -474,10 +494,12 @@ class _CurveFrame:
         vty[1:-1] = np.where(safe, my / denom, ty[:-1])
         return _CurveFrame(self._xf - distance * vty, self._yf + distance * vtx)
 
-    def rounded(self, radius: float, side: int, step: float) -> _CurveFrame:
+    def rounded(self, radius: float, side: int, step: float
+                ) -> tuple[_CurveFrame, bool]:
         """This curve with every bend toward ``side`` (+1 left, -1 right) that
         is tighter than ``radius`` pixels replaced by a circular arc of that
-        radius, with the same number of vertices.
+        radius, with the same number of vertices, and whether a bend comes
+        within the ball's reach of either end of the curve.
 
         The curve is sampled every ``step`` pixels. A ball of ``radius`` rolled
         along ``side`` of it touches the curve at a point when its center, on
@@ -486,29 +508,37 @@ class _CurveFrame:
         cannot touch is laid on the arc of the ball wedged in the corner, which
         keeps the curve continuous. Bends gentler than the ball are left
         exactly as they are, and so is a run that reaches an end of the curve.
+        A point near an end does not see all the curve within reach of it, so a
+        run that comes within reach of an end is not the run a longer curve
+        would give: the flag asks the caller for one.
         """
         n = len(self._xf)
         if radius <= 0.0 or n < 3:
-            return self
+            return self, False
         centers = self.offset(side * radius)
         px, py, cx, cy = self._xf, self._yf, centers._xf, centers._yf
         limit = (radius - _ROUND_TOL_PX) ** 2
+        reach = min(math.ceil(_ROUND_REACH * radius / step), n - 1)
         invalid = np.zeros(n, dtype=bool)
-        for k in range(1, min(math.ceil(_ROUND_REACH * radius / step),
-                              n - 1) + 1):
+        for k in range(1, reach + 1):
+            # Point i is compared with point i + k, and point i + k with point
+            # i, so each pair is tested from both ends: the center belongs to
+            # one point and the curve to the other.
             invalid[:-k] |= (cx[:-k] - px[k:]) ** 2 + (cy[:-k] - py[k:]) ** 2 < limit
             invalid[k:] |= (cx[k:] - px[:-k]) ** 2 + (cy[k:] - py[:-k]) ** 2 < limit
         if not invalid.any():
-            return self
+            return self, False
         x, y = px.copy(), py.copy()
         bad = np.flatnonzero(invalid)
+        near_end = False
         for run in np.split(bad, np.flatnonzero(np.diff(bad) > 1) + 1):
             a, b = int(run[0]), int(run[-1])
+            near_end |= a < reach or b >= n - reach
             if a == 0 or b == n - 1:
                 continue
             fraction = np.arange(1, b - a + 2) / (b - a + 2)
             gap = np.hypot(cx[b + 1] - cx[a - 1], cy[b + 1] - cy[a - 1])
-            if gap > max(2.0 * step, 0.05 * radius):
+            if gap > max(_ROUND_BLEND_STEPS * step, _ROUND_BLEND_RADIUS * radius):
                 # The balls either side of the run do not meet at one point, so
                 # no single ball fits: blend the two ends with their tangents.
                 chord = np.hypot(px[b + 1] - px[a - 1], py[b + 1] - py[a - 1])
@@ -535,7 +565,7 @@ class _CurveFrame:
             rad = r0 + fraction * (r1 - r0)
             x[a:b + 1] = ccx + rad * np.cos(phi0 + fraction * sweep)
             y[a:b + 1] = ccy + rad * np.sin(phi0 + fraction * sweep)
-        return _CurveFrame(x, y)
+        return _CurveFrame(x, y), near_end
 
     def remap_arc(self, other: _CurveFrame, s):
         """Map arc length ``s`` on this curve to the corresponding arc length on
@@ -1181,9 +1211,9 @@ class _PlainGlyph(_OutlineSegment):
 class _MathRun(_OutlineSegment):
     """One ``$...$`` math run, laid out by mathtext or, under usetex, by LaTeX,
     and drawn by bending the expression's glyph outlines and rule boxes through
-    the curve. Radicals, fractions, and sized delimiters stay joined while the
-    radius of curvature is larger than the height of the expression, and fold
-    over themselves on the concave side of a tighter bend. Its baseline is the
+    the curve. Radicals, fractions, and sized delimiters stay joined because the
+    path the label rides, rounded by ``min_radius``, has a radius larger than
+    the height of the expression on the inside of every bend. Its baseline is the
     same shared datum as the plain glyphs, so the run's main symbols sit level
     with neighboring characters."""
 
@@ -1305,20 +1335,27 @@ class CurvedText(mtext.Text):
         The least radius of curvature, in points, of the path the label rides.
         On the inside of a bend tighter than the label's ink, the ink would
         fold over itself, and an ``offset`` toward the inside of a bend larger
-        than its radius would lay the label along a path that doubles back. The
-        label rides a rounded copy of the curve instead: a ball of the least
-        radius is rolled along each side of the curve, and where the curve
-        bends more tightly than the ball, the ball's arc replaces it. A bend
-        gentler than the ball is left exactly as it is. ``"auto"`` takes, for
-        each side, 1.5 times the height of the label's ink on that side, above
-        the path for a left bend and below it for a right bend. A number sets
-        the radius for both sides, and ``None`` or ``0`` turns the rounding off.
-        At a tight bend the label leaves the curve by up to the least radius
-        less the curve's own radius, and by that much at a hairpin. A bend that
-        turns back so narrowly that the ball fits only far along the curve,
-        farther than the ball's reach of about six radii, is not rounded. The
-        rounding is worked out on every draw, and it combines with
-        ``crowding`` and ``offset``.
+        than the bend's radius would lay the label along a path that doubles
+        back. The label rides a rounded copy of the curve instead: a ball of
+        the least radius is rolled along each side of the curve, and where the
+        curve bends more tightly than the ball, the ball's arc replaces the
+        curve. A bend gentler than the ball is left exactly as it is.
+
+        ``"auto"`` takes, for each side of the path, 1.5 times the height of
+        the label's ink on that side: the ink above the path is on the inside
+        of a left bend, and the ink below it is on the inside of a right bend.
+        A number sets the radius, in points, for both sides. ``None`` or ``0``
+        turns the rounding off. The rounding is worked out on every draw, and
+        it combines with ``crowding`` and ``offset``.
+
+        At a tight bend the label leaves the curve by at most the least radius
+        less the curve's own radius. Two kinds of curve are outside the
+        guarantee, and the label can fold there as it does with ``None``: a
+        hairpin whose arms are less than about 25 degrees apart, because the
+        ball fits only beyond the reach of the ball test (about six radii of
+        arc length), and a jagged curve that changes direction at the scale of
+        the label's ink, such as noisy data plotted point by point. Pass a
+        smoothed curve for such data.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties
         applied to every glyph and every math run: ``color``, ``alpha``,
@@ -1361,8 +1398,9 @@ class CurvedText(mtext.Text):
           infinite, or NaN.
     TypeError
         If ``text`` is not a string, ``pos`` is not a number, ``upright`` is
-        not a bool (``1`` and ``0`` are not accepted), or ``axes`` is a 3D
-        axes.
+        not a bool (``1`` and ``0`` are not accepted), ``min_radius`` is
+        not ``None``, ``"auto"``, or a number (a bool is not accepted), or
+        ``axes`` is a 3D axes.
     matplotlib.units.ConversionError
         If the axes cannot convert the data of ``x`` or ``y``.
     AttributeError
@@ -1986,15 +2024,17 @@ class CurvedText(mtext.Text):
         runs past the ends of the curve along their tangents, as the frame does.
         A curvature test at the scale of the ball skips the sampling where no
         bend is tight enough to matter."""
-        left = max(0.0, ride[0] + offset_px)
-        right = max(0.0, ride[1] - offset_px)
+        left, right = (min(radius, _ROUND_MAX_RADIUS_PX)
+                       if radius >= _ROUND_TOL_PX else 0.0
+                       for radius in (ride[0] + offset_px, ride[1] - offset_px))
         widest = max(left, right)
         if widest <= 0.0:
             return None
         margin = _ROUND_REACH * widest
         s_lo = s_anchor - lead * length - margin
         s_hi = s_anchor + (1.0 - lead) * length + margin
-        kappa = base.curvature(np.arange(s_lo, s_hi, widest / 2.0), widest)
+        kappa = base.curvature(
+            np.arange(s_lo, s_hi, _ROUND_PROBE * widest), widest)
         # A side is rounded only where the curve bends toward it that tightly:
         # a left bend has positive curvature, a right bend negative.
         if np.max(kappa * left) < _ROUND_GATE:
@@ -2005,14 +2045,23 @@ class CurvedText(mtext.Text):
             return None
         step = max(min(r for r in (left, right) if r > 0.0) * _ROUND_STEP,
                    _ROUND_MIN_STEP_PX)
-        s = s_lo + step * np.arange(math.ceil((s_hi - s_lo) / step) + 1)
-        x, y, _ = base.points_and_angles(s)
-        work = _CurveFrame(x, y)
-        rounded = work.rounded(left, 1, step).rounded(right, -1, step)
+        for _ in range(_ROUND_MAX_DOUBLINGS + 1):
+            # The samples sit on whole steps of arc length, so the vertices do
+            # not move with the label.
+            first = math.floor((s_anchor - lead * length - margin) / step)
+            last = math.ceil((s_anchor + (1.0 - lead) * length + margin) / step)
+            s = step * np.arange(first, last + 1)
+            x, y, _angles = base.points_and_angles(s)
+            work = _CurveFrame(x, y)
+            left_rounded, left_near_end = work.rounded(left, 1, step)
+            rounded, right_near_end = left_rounded.rounded(right, -1, step)
+            if not (left_near_end or right_near_end):
+                break
+            margin *= 2.0
         if rounded is work:
             return None
-        anchor = float(np.interp((s_anchor - s_lo) / step,
-                                 np.arange(len(s)), work._arc))
+        anchor = float(np.interp(s_anchor / step - first, np.arange(len(s)),
+                                 work._arc))
         return work, rounded, anchor
 
     def _place_on_curve(self, renderer, curve_px: np.ndarray | None) -> bool:

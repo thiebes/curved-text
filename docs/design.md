@@ -7,8 +7,9 @@ The label is tokenized into runs: each plain character and each math run is
 rendered from its glyph outline, positioned so a single shared text baseline
 follows the curve. A plain character is placed rigidly (one rotation, shape
 undistorted); a math run bends its glyph outlines through the curve's arc-length
-frame, so radicals (square-root signs) and fractions stay joined on moderate
-bends. Mathtext arrives through the `text` argument, and `pos`, `anchor`,
+frame, so radicals (square-root signs) and fractions stay joined, on a tight
+bend too, because the path is rounded where it is tighter than the ink (the
+Tight bends section). Mathtext arrives through the `text` argument, and `pos`, `anchor`,
 `offset`, `valign`, and the keyword argument pass-through keep their meaning.
 Under LaTeX typesetting (usetex), LaTeX (a typesetting system) lays out the same
 segments; the LaTeX section below covers what changes.
@@ -469,7 +470,15 @@ segment read the rounded frame:
 3. The part of the curve the label can reach, with a margin of `_ROUND_REACH`
    radii on each side, is sampled at equal steps (extending along the end
    tangents past the ends of the curve, as the frame does). The label's length
-   for this includes crowding's widest gaps.
+   for this includes crowding's widest gaps. The samples sit on whole steps of
+   arc length, so a small move of the label does not move the vertices. A point
+   near the end of the sampled part does not see all the curve within reach of
+   it, so when a bend comes within reach of either end, the margin doubles, up
+   to `_ROUND_MAX_DOUBLINGS` times, and the part is sampled again. The rounding
+   of the bends beside the label then does not depend on where the part ends,
+   and the label does not jump as `pos` or the zoom changes. A radius below
+   `_ROUND_TOL_PX` is not rounded, and one above `_ROUND_MAX_RADIUS_PX` is
+   clamped.
 4. `_CurveFrame.rounded(radius, side, step)` runs for each side. The ball
    centers lie on the parallel curve. A point is one the ball cannot touch when
    the center is closer than the radius to another point of the curve within
@@ -482,8 +491,9 @@ segment read the rounded frame:
    rounded, offset frame through the shared vertices (`remap_arc`).
 
 **Cost to the label.** Where a bend is tighter than the least radius, the label
-leaves the curve: by about `0.41 * (R_min - R)` at a right-angle bend and by up
-to `R_min - R` at a hairpin. The inside edge of the ink is squeezed to
+leaves the curve: by about `0.29 * R_min` from either arm at a right-angle
+corner (`0.41 * R_min` from the corner point) and by up to `R_min - R` at a
+hairpin. The inside edge of the ink is squeezed to
 `1 - 1/clearance` of its natural length at the least radius, a third at 1.5. A
 clearance of 1.25 squeezes the inside edge more, and 2.0 moves the label
 farther from the curve. Hyperbola valleys and peaks of radius 5 to 40 points, a
@@ -491,11 +501,22 @@ right-angle V, and labels of math, a fraction, plain text, and plain text with
 an offset, at 10 and 20 points, showed no folding at 1.25, 1.5, 1.75, or 2.0;
 1.5 was chosen as the middle of the range.
 
-**Limit.** The ball test reaches `_ROUND_REACH` radii along the curve. A bend
-that turns back so narrowly that the ball fits only farther along the curve than
-that has no valid points inside the window, so it is not rounded, and the label
-folds as it does with `min_radius=None`. The case is a hairpin of a few degrees
-between its arms, with the arms closer together than the label is tall.
+**Limits.** The guarantee that no ink folds holds for smooth curves and for
+corners, and two kinds of curve fall outside it.
+
+- A hairpin. The ball test reaches `_ROUND_REACH` radii along the curve. A bend
+  that turns back so narrowly that the ball fits only farther along the curve
+  than that has no valid points inside the window, so it is not rounded. At 14
+  points, arms up to about 25 degrees apart folded in the cases measured, and
+  the limit moves with the label's size. The label folds as it does with
+  `min_radius=None`, and on a very narrow spike (1 px wide, 60 px tall) it
+  folded more: the run of invalid points is blended with no radius guarantee.
+- Jagged input. Where the curve changes direction at nearly every sample, at
+  the scale of the ink, the invalid runs are many and short. The balls either
+  side of a run often do not meet, so the Hermite blend replaces the arc, and it
+  has no radius guarantee. A noisy sine folded less than with `None` (5 to 198
+  height violations against 400 to 490), not never. Smoothing the tangents of
+  the blend would remove this. For noisy data, pass a smoothed curve.
 
 Interactions: `crowding="curvature"` samples the curvature of the rounded frame,
 so it widens less at a rounded bend; `box` follows the rounded frame;
@@ -508,8 +529,13 @@ height from the path it rides;
 `test_offset_label_keeps_its_letters_in_order` and
 `test_offset_path_never_runs_backwards` cover the offset symptom;
 `test_a_gentle_bend_is_drawn_as_it_is_without_rounding` pins the layout where
-no rounding is needed; and the radius, continuity, fillet-bound, anchor, end,
-zigzag, dpi, zoom, crowding, and box tests cover the rounding itself.
+no rounding is needed; `test_each_side_is_rounded_for_the_ink_on_the_inside_of_the_bend`
+covers the radius taken for each side under every `valign`, on a valley and on a
+peak; `test_auto_takes_one_and_a_half_times_the_ink_on_each_side` pins the
+clearance; `test_the_label_moves_smoothly_as_pos_moves` pins the sampling that
+does not depend on where the part ends; `test_a_narrow_hairpin_is_a_documented_limit`
+pins the hairpin limit; and the radius, corner, fillet, anchor, end, zigzag, dpi,
+zoom, crowding, and box tests cover the shape of the rounded path.
 
 ## LaTeX (`usetex`)
 

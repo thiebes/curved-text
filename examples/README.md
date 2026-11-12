@@ -275,7 +275,8 @@ label then leaves the curve a little at the tightest part of the bend. Panels
 (a) and (b) are the math label, and (c) and (d) are plain text with an `offset`
 toward the inside of the bend.
 
-Every panel makes this call, with the label and the argument its caption names:
+Every panel makes this call, with the label and the argument its caption names.
+Panels (c) and (d) add `offset=22.0`:
 
 ```python
 curved_text(ax, x, y, text, fontsize=14, min_radius=min_radius)

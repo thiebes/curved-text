@@ -340,11 +340,14 @@ each side of the path. Pass a number to set the least radius in points for both
 sides, or `None` to turn the rounding off. A bend gentler than the ball is left
 exactly as it is, so a label on a gentle curve is unchanged.
 
-At a tight bend the label leaves the curve, by up to the least radius less the
-curve's own radius. The rounding does not apply where a bend turns back so
-narrowly that the ball fits only far along the curve, farther than six of its
-radii: at a hairpin of that kind the label folds as it would with
-`min_radius=None`.
+At a tight bend the label leaves the curve, by at most the least radius less the
+curve's own radius. Two kinds of curve are outside the guarantee, and the label
+can fold there as it does with `min_radius=None`. One is a hairpin whose arms
+are less than about 25 degrees apart: the ball fits only far along the curve,
+farther than six of its radii, so the bend is not rounded, and on a very narrow
+spike the label can fold more than without the rounding. The other is a jagged
+curve that changes direction at the scale of the label's ink, such as noisy data
+plotted point by point. Pass a smoothed curve for such data.
 
 The Gallery section [Labels on the inside of a tight bend](https://thiebes.github.io/curved-text/gallery.html#labels-on-the-inside-of-a-tight-bend)
 shows a math label and an offset label on a tight valley, with and without the

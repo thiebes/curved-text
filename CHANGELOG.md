@@ -35,8 +35,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   longer lays the label along a path that doubles back, so letters keep their
   order ([#32](https://github.com/thiebes/curved-text/issues/32)). A label on
   such a bend leaves the curve a little where it is tighter than the ball, and
-  `min_radius=None` restores the earlier layout. A bend that turns back so
-  narrowly that the ball fits only far along the curve is still not rounded.
+  `min_radius=None` restores the earlier layout. A hairpin whose arms are less
+  than about 25 degrees apart, and a jagged curve such as noisy data plotted
+  point by point, can still fold.
 - A `text` that is not a string raises `TypeError`, naming the argument and
   the type received, without leaving a half-made label on the axes. Before,
   the label was added to the axes first, so `ax.texts` held it after the

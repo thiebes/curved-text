@@ -26,6 +26,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the type received, without leaving a half-made label on the axes. Before,
   the label was added to the axes first, so `ax.texts` held it after the
   error ([#70](https://github.com/thiebes/curved-text/issues/70)).
+- A `rotation` keyword raises `ValueError`. Before, it was accepted and
+  widened each glyph's box, so the characters spread apart
+  ([#66](https://github.com/thiebes/curved-text/issues/66)).
+- A `gid` is written once for each part of the label: `"lab"` becomes
+  `"lab-0"`, `"lab-1"`, and so on, numbered in order along the label, one
+  number for each character and each math run. Before, every part wrote the
+  same id, so a saved SVG had duplicate ids
+  ([#67](https://github.com/thiebes/curved-text/issues/67)).
+- A label on a 3D axes raises `TypeError`, naming the axes class. Before, the
+  call was accepted and drew nothing
+  ([#68](https://github.com/thiebes/curved-text/issues/68)).
 
 ## 0.8.0
 

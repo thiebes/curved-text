@@ -184,8 +184,12 @@ raises `AttributeError`.
 Extra keyword arguments are `Text` properties applied to every glyph, such as
 `color`, `alpha`, `fontsize`, `fontfamily`, and `path_effects`. Properties that
 describe one text box, such as `ha`, `va`, `bbox`, and `wrap`, have no effect,
-and `transform` is replaced. Do not pass `rotation`: it changes the spacing of
-the characters. The [API reference](https://thiebes.github.io/curved-text/api.html)
+and `transform` is replaced. `rotation` raises `ValueError`, because the curve
+sets each glyph's angle. A `gid` of `"lab"` becomes `"lab-0"`, `"lab-1"`, and
+so on, numbered in order along the label, one number for each character and
+each math run, so a saved SVG has each id once; select the parts by prefix,
+for example `[id^=lab-]`. The
+[API reference](https://thiebes.github.io/curved-text/api.html)
 lists every property.
 
 ## Features
@@ -373,8 +377,8 @@ does not return the label's string.
   looks as it does on screen.
 - **Axes:** Cartesian and polar axes work. On polar axes the angle runs
   counterclockwise, so a curve from angle 0 to π runs right to left over the top
-  and its label reads upside down unless `upright=True`. A 3D axes accepts the
-  call and draws nothing.
+  and its label reads upside down unless `upright=True`. A 3D axes raises
+  `TypeError`.
 - **Animation:** Blitting is not supported: `ax.draw_artist(label)` draws
   nothing. Redraw the whole figure (a `FuncAnimation` without blitting works),
   or leave the label out of the blit.

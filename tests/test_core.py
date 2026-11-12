@@ -7,7 +7,9 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 import datetime
 import functools
 import inspect
+import io
 import pickle
+import re
 import shutil
 import subprocess
 
@@ -1176,6 +1178,69 @@ def test_label_draws_on_polar_axes_whose_radius_starts_above_zero():
     assert axes_box.contains(extent.x1, extent.y1)
     plt.close(fig)
     plt.close(flat_fig)
+
+
+def test_rotation_raises_and_leaves_the_axes_unchanged():
+    # Each glyph's own rotation widens its box and spreads the characters, so
+    # it is rejected before the label touches the axes.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    with pytest.raises(ValueError, match="rotation"):
+        curved_text(ax, x, np.sin(x), "hello world", rotation=45)
+    assert not ax.artists and not ax.texts
+    _draw(fig)
+    plt.close(fig)
+
+
+def test_3d_axes_raises_and_leaves_the_axes_unchanged():
+    # A 3D axes has no single display-space path, so the call is refused
+    # instead of drawing nothing.
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    x = np.linspace(0, 10, 50)
+    with pytest.raises(TypeError, match="3D axes"):
+        curved_text(ax, x, np.sin(x), "label")
+    assert not ax.artists and not ax.texts
+    _draw(fig)
+    plt.close(fig)
+
+
+def test_gid_is_written_once_for_each_part_in_a_saved_svg():
+    # Every part draws in its own SVG group and an id must be unique in the
+    # file, so the label's gid takes each part's number.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 200)
+    ct = curved_text(ax, x, np.sin(x), "ab $x^2$", gid="lab")
+    buffer = io.StringIO()
+    fig.savefig(buffer, format="svg")
+    ids = re.findall(r'id="(lab[^"]*)"', buffer.getvalue())
+    # A space has no outline, so it draws no group.
+    drawn = [seg.get_gid() for seg in ct._segments if seg.get_text().strip()]
+    assert drawn == ["lab-0", "lab-1", "lab-3"]
+    assert sorted(ids) == drawn
+    plt.close(fig)
+
+
+def test_gid_numbers_the_parts_in_order_not_by_character_offset():
+    # A math run is one part however many characters it spans, so the
+    # characters after it follow it in the numbering, not in the string.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.sin(x), "$x^2$ab", gid="lab")
+    assert [seg.get_gid() for seg in ct._segments] == [
+        "lab-0", "lab-1", "lab-2"]
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("gid", ["", 0])
+def test_a_falsy_gid_is_left_as_it_is_on_every_part(gid):
+    # A falsy gid names nothing (the SVG backend writes no id for it), so no
+    # part gets a suffix such as "-0".
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.sin(x), "ab", gid=gid)
+    assert [seg.get_gid() for seg in ct._segments] == [gid, gid]
+    plt.close(fig)
 
 
 # A curve of 50 daily dates, the values a time series plots against them, and

@@ -33,9 +33,11 @@ MODULES = [
     "example_17_direction_of_travel",
     "example_18_repeated_labels",
     "example_19_halo_or_box",
+    "example_20_topographic_map",
     "example_21_blackbody",
     "example_22_circle_spiral",
     "example_23_stocks",
+    "example_24_streamlines",
     "example_25_pan_zoom",
     "example_26_gaps",
 ]

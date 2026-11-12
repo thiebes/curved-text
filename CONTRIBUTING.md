@@ -65,7 +65,8 @@ handling for bad input. Add to this file when you change behavior.
 [tests/test_examples.py](tests/test_examples.py) runs every figure script the
 gallery lists, so a change that breaks one fails there. A figure whose
 requirement is missing is skipped: seaborn and pandas, LaTeX with `dvipng`, or
-the `Stocks.csv` sample data, which matplotlib 3.5 does not include. Set the
+the `Stocks.csv` sample data, which matplotlib 3.5 does not include. The
+`jacksboro_fault_dem.npz` sample data is skipped the same way. Set the
 environment variable `CURVED_TEXT_GALLERY_COMPLETE` to `1` to make such a skip
 fail instead, as the continuous integration (CI) job that installs every
 requirement does. The module skips itself in a source distribution, which
@@ -133,19 +134,20 @@ regenerate, and commit only the figures that your change affects.
 Regenerating needs the `examples` extra (seaborn and pandas) for the one
 integration figure. It needs a LaTeX installation with `dvipng` for the usetex
 figure. It needs a matplotlib that includes the `Stocks.csv` sample data (3.5
-does not) for the seaborn and stock price figures. Each of those scripts skips
-its figure when its requirement is missing, so the other figures still
-regenerate.
+does not) for the seaborn and stock price figures, and the
+`jacksboro_fault_dem.npz` sample data for the topographic map. Each of those
+scripts skips its figure when its requirement is missing, so the other figures
+still regenerate.
 
 To add a figure:
 
 1. Write `examples/example_NN_name.py` with a `make(images_dir)` function that
    saves the figure into `images_dir` as `NN_name.png` (the module name without
    `example_`) and returns that path, or returns `None` when an optional
-   requirement is missing. Use the next free number `NN`; 20 and 24 are
-   reserved. Take the colors, the figure size, and the save call from
-   `examples/_style.py`, so that the figure follows the gallery's house style
-   (see the House style section of [examples/README.md](examples/README.md)).
+   requirement is missing. Use the next free number `NN`. Take the colors, the
+   figure size, and the save call from `examples/_style.py`, so that the figure
+   follows the gallery's house style (see the House style section of
+   [examples/README.md](examples/README.md)).
 2. Add the module name to `MODULES` in `examples/generate_all.py`.
    `tests/test_examples.py` then runs it.
 3. Run `python examples/generate_all.py` and commit the new image.

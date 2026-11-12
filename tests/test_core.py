@@ -3092,3 +3092,305 @@ def test_offset_path_never_runs_backwards(R):
     frame = ct._segments[0]._frame
     assert np.all(np.diff(frame._xf) >= -1e-6)
     plt.close(fig)
+
+
+def _chord_curvature(ct, renderer, span_px=8.0):
+    """The largest chord-scale curvature, in radians per pixel, of the path
+    the label rides across the span it covers."""
+    first, last = ct._segments[0], ct._segments[-1]
+    frame = first._frame
+    s = np.linspace(first._s_left, last._s_left + last._width_px, 200)
+    return float(np.max(np.abs(frame.curvature(s, span_px))))
+
+
+def _distance_to_polyline(points, polyline):
+    """The distance from each of ``points`` to the polyline, both in pixels."""
+    a, b = polyline[:-1], polyline[1:]
+    ab = b - a
+    t = np.clip(((points[:, None, :] - a) * ab).sum(axis=2)
+                / (ab ** 2).sum(axis=1), 0.0, 1.0)
+    nearest = a + t[..., None] * ab
+    return np.sqrt(((points[:, None, :] - nearest) ** 2).sum(axis=2)).min(axis=1)
+
+
+def _corner_axes():
+    """Axes with one data unit per point, holding a right-angle V from
+    (-100, 100) down to (0, 0) and up to (100, 100)."""
+    fig = plt.figure(figsize=(3.4, 2.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(-122.4, 122.4)
+    ax.set_ylim(-20, 100)
+    ax.set_aspect("equal")
+    return fig, ax, np.array([-100.0, 0.0, 100.0]), np.array([100.0, 0.0, 100.0])
+
+
+@pytest.mark.parametrize("R", [120, 400])
+def test_a_gentle_bend_is_drawn_as_it_is_without_rounding(R):
+    # The rounding returns the curve itself where no bend is tighter than the
+    # ink, so a label on a gentle bend is placed exactly as without it.
+    outlines = []
+    for min_radius in ("auto", None):
+        fig, ax, x, y = _valley(R)
+        ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20,
+                         min_radius=min_radius)
+        _draw(fig)
+        outlines.append(_outline(ct, fig))
+        plt.close(fig)
+    np.testing.assert_array_equal(*outlines)
+
+
+def test_a_straight_line_and_a_sine_are_drawn_as_they_were():
+    x, y = _sine()
+    outlines = []
+    for min_radius in ("auto", None):
+        fig, ax = plt.subplots()
+        wave = curved_text(ax, x, y, "a sine wave", min_radius=min_radius)
+        line = curved_text(ax, x, np.zeros_like(x), "flat",
+                           min_radius=min_radius)
+        _draw(fig)
+        outlines.append(np.vstack([_outline(wave, fig), _outline(line, fig)]))
+        plt.close(fig)
+    np.testing.assert_array_equal(*outlines)
+
+
+@pytest.mark.parametrize("offset", [20, 0, -20])
+def test_the_ridden_path_respects_an_explicit_minimum_radius(offset):
+    # With the offset toward and away from the center of the bend, the path the
+    # label rides, not the curve it was given, has at least the radius asked.
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, offset=offset,
+                     min_radius=30)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    radius_px = 30 * renderer.points_to_pixels(1.0)
+    assert _chord_curvature(ct, renderer) <= 1.15 / radius_px
+    plt.close(fig)
+
+
+def test_the_rounded_path_is_continuous():
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, min_radius=30)
+    _draw(fig)
+    frame = ct._segments[0]._frame
+    radius_px = 30 * fig.canvas.get_renderer().points_to_pixels(1.0)
+    step = max(radius_px * _core._ROUND_STEP, _core._ROUND_MIN_STEP_PX)
+    gaps = np.hypot(np.diff(frame._xf), np.diff(frame._yf))
+    assert gaps.max() <= 2.0 * step
+    plt.close(fig)
+
+
+def test_a_right_angle_corner_leaves_the_curve_by_the_fillet_bound():
+    # A ball of radius r in a right-angle corner leaves the corner by
+    # (sqrt(2) - 1) * r. Points farther from the corner than the fillet reaches
+    # are the curve's own.
+    fig, ax, x, y = _corner_axes()
+    ct = curved_text(ax, x, y, "corner label here", fontsize=12, min_radius=30)
+    _draw(fig)
+    pt = fig.canvas.get_renderer().points_to_pixels(1.0)
+    frame = ct._segments[0]._frame
+    polyline = ax.transData.transform(np.column_stack([x, y]))
+    # The frame runs on past the ends of the curve along their tangents.
+    points = np.column_stack([frame._xf, frame._yf])
+    points = points[(points[:, 0] >= polyline[0, 0])
+                    & (points[:, 0] <= polyline[-1, 0])]
+    gap = _distance_to_polyline(points, polyline)
+    assert gap.max() <= (np.sqrt(2) - 1) * 30 * pt + 1.0
+    far = np.hypot(*(points - polyline[1]).T) > 30 * pt * 2.5
+    assert far.any() and gap[far].max() < 1e-6
+    plt.close(fig)
+
+
+def test_a_coarse_polyline_corner_does_not_fold_a_math_run():
+    fig, ax, x, y = _corner_axes()
+    ct = curved_text(ax, x, y, r"$\sqrt{\frac{a}{b}}$ tip", fontsize=14)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    assert _height_violations(ct, renderer)[0] == 0
+    assert _reversed_rule_steps(ct, renderer)[0] == 0
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("valign", ["baseline", "center"])
+def test_a_peak_rounds_for_the_ink_below_the_line(valign):
+    # On a peak the center of the bend is below the path, so the ink below it
+    # is on the inside of the bend.
+    fig, ax, x, y = _valley(5, flip=True)
+    ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20, valign=valign)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    assert _reversed_rule_steps(ct, renderer)[0] == 0
+    assert _height_violations(ct, renderer)[0] == 0
+    plt.close(fig)
+
+
+def test_the_anchor_follows_the_rounded_path():
+    # The valley is symmetric about x = 0, so a label centered at pos 0.5 has
+    # its center there however the path is rounded.
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, min_radius=30)
+    _draw(fig)
+    first, last = ct._segments[0], ct._segments[-1]
+    middle = (first._s_left + last._s_left + last._width_px) / 2.0
+    cx, _, _ = first._frame.points_and_angles(middle)
+    assert abs(float(cx) - ax.transData.transform((0.0, 0.0))[0]) < 0.5
+    plt.close(fig)
+
+
+def test_a_label_that_overruns_the_end_of_a_tight_bend_does_not_fold():
+    fig, ax, x, y = _valley(5)
+    near = np.abs(x) <= 30
+    ct = curved_text(ax, x[near], y[near], _FOLD_LABEL, fontsize=20)
+    _draw(fig)
+    assert np.isfinite(_outline(ct, fig)).all()
+    assert _height_violations(ct, fig.canvas.get_renderer())[0] == 0
+    plt.close(fig)
+
+
+def test_a_zigzag_shorter_than_the_rounding_stays_continuous():
+    fig = plt.figure(figsize=(3.4, 2.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(-10, 110)
+    ax.set_ylim(-20, 40)
+    ax.set_aspect("equal")
+    x = np.linspace(0, 100, 41)
+    y = np.where(np.arange(41) % 2 == 0, 0.0, 6.0)
+    ct = curved_text(ax, x, y, "zigzag", fontsize=12, min_radius=20)
+    _draw(fig)
+    frame = ct._segments[0]._frame
+    assert np.isfinite(frame._xf).all() and np.isfinite(frame._yf).all()
+    radius_px = 20 * fig.canvas.get_renderer().points_to_pixels(1.0)
+    step = max(radius_px * _core._ROUND_STEP, _core._ROUND_MIN_STEP_PX)
+    assert np.hypot(np.diff(frame._xf), np.diff(frame._yf)).max() <= 2.0 * step
+    plt.close(fig)
+
+
+def test_rounding_gives_the_same_label_at_any_dpi():
+    extents = []
+    for dpi in (72, 200):
+        fig, ax, x, y = _valley(5)
+        fig.set_dpi(dpi)
+        ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20)
+        _draw(fig)
+        box = ct.get_window_extent(fig.canvas.get_renderer())
+        size = np.array(fig.get_size_inches()) * dpi
+        extents.append(np.array([box.x0, box.y0, box.x1, box.y1])
+                       / np.tile(size, 2))
+        plt.close(fig)
+    np.testing.assert_allclose(extents[0], extents[1], atol=0.01)
+
+
+def test_rounding_follows_the_zoom():
+    # Zoomed in, the bend is gentle in pixels and needs no rounding, so the
+    # label rides the curve itself; zoomed out it is rounded again.
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20)
+    _draw(fig)
+    assert len(ct._segments[0]._frame._xf) != len(x)
+    ax.set_xlim(-12.24, 12.24)
+    ax.set_ylim(5 - 4.32, 5 + 12.96)
+    _draw(fig)
+    assert len(ct._segments[0]._frame._xf) == len(x)
+    ax.set_xlim(-122.4, 122.4)
+    ax.set_ylim(5 - 43.2, 5 + 129.6)
+    _draw(fig)
+    assert len(ct._segments[0]._frame._xf) != len(x)
+    plt.close(fig)
+
+
+def test_crowding_composes_with_rounding():
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20, crowding="curvature")
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    assert _height_violations(ct, renderer)[0] == 0
+    assert _reversed_rule_steps(ct, renderer)[0] == 0
+    plt.close(fig)
+
+
+def test_the_box_follows_the_rounded_path():
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, box=True,
+                     valign="baseline")
+    _draw(fig)
+    frame = ct._segments[0]._frame
+    box = ax.transData.transform(np.column_stack(ct._box.get_data()))
+    ridden = np.column_stack([frame._xf, frame._yf])
+    # The casing sits over the ink, half its band off the ridden baseline.
+    assert _distance_to_polyline(box, ridden).max() < 20.0
+    plt.close(fig)
+
+
+def _make_class(ax, x, y, text, **kwargs):
+    return CurvedText(x, y, text, ax, **kwargs)
+
+
+@pytest.mark.parametrize("make", [curved_text, _make_class])
+@pytest.mark.parametrize("bad", ["fast", "", float("nan"), float("inf"), -1.0])
+def test_min_radius_must_be_none_auto_or_a_non_negative_number(make, bad):
+    x, y = _sine()
+    fig, ax = plt.subplots()
+    with pytest.raises(ValueError, match="min_radius"):
+        make(ax, x, y, "text", min_radius=bad)
+    assert not ax.artists and not ax.texts
+    plt.close(fig)
+
+
+def test_a_min_radius_of_zero_is_the_same_as_none():
+    outlines = []
+    for min_radius in (0, None):
+        fig, ax, x, y = _valley(5)
+        ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20,
+                         min_radius=min_radius)
+        _draw(fig)
+        outlines.append(_outline(ct, fig))
+        plt.close(fig)
+    np.testing.assert_array_equal(*outlines)
+
+
+def test_min_radius_none_keeps_the_fold():
+    # Switching the rounding off restores the layout that folds.
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20, min_radius=None)
+    _draw(fig)
+    assert _height_violations(ct, fig.canvas.get_renderer())[0] > 0
+    plt.close(fig)
+
+
+def test_the_ink_band_matches_the_placed_ink():
+    # On a flat curve the band of a glyph, converted to pixels about the datum,
+    # is the vertical extent of its placed outline about the curve.
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.zeros_like(x), "Hg", fontsize=24)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    ppu = _px_per_unit(renderer, 24)
+    _, line_y = ax.transData.transform((0.0, 0.0))
+    for seg in ct._segments:
+        highest, lowest = seg._ink_band()
+        placed = seg._placed_path(renderer).vertices[:, 1] - line_y
+        assert placed.max() == pytest.approx((highest - seg._datum) * ppu,
+                                             abs=0.01)
+        assert placed.min() == pytest.approx((lowest - seg._datum) * ppu,
+                                             abs=0.01)
+    plt.close(fig)
+
+
+def test_a_blank_segment_has_no_ink_band():
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.sin(x), "a b")
+    assert ct._segments[1]._ink_band() == (-np.inf, np.inf)
+    plt.close(fig)
+
+
+@needs_latex
+@pytest.mark.parametrize("R", [15, 5])
+def test_a_usetex_math_run_does_not_fold_in_a_tight_valley(R):
+    fig, ax, x, y = _valley(R)
+    ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20, usetex=True)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    assert _reversed_rule_steps(ct, renderer)[0] == 0
+    assert _height_violations(ct, renderer)[0] == 0
+    plt.close(fig)

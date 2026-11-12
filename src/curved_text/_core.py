@@ -54,21 +54,29 @@ _MAX_CROWD = 0.6
 # Rounding of the path a label rides (``min_radius``). A bend tighter than the
 # label's ink on the inside of the bend folds the ink, so the path is rounded to
 # a minimum radius: ``_MIN_RADIUS_CLEARANCE`` times the ink extent on that side
-# for ``"auto"``. The rounding works on a copy of the curve resampled every
-# ``_ROUND_STEP`` ball radii (at least ``_ROUND_MIN_STEP_PX``), tests each point
-# against the curve within ``_ROUND_REACH`` ball radii of arc length with a
-# slack of ``_ROUND_TOL_PX`` (so a straight stretch is not flagged by
-# round-off), and is skipped where the chord-scale curvature times the radius
+# for ``"auto"``.
+#
+# Gate: the rounding is skipped where the chord-scale curvature times the radius
 # stays below ``_ROUND_GATE``. The curvature is probed every ``_ROUND_PROBE``
-# ball radii. The sampling grid sits on whole steps of arc length, so a small
-# move of the label does not move the vertices. A bend that reaches the margin of
-# the sampled part widens the part, up to ``_ROUND_MAX_DOUBLINGS`` doublings of
-# the margin, so the rounding does not depend on where the part ends. A radius
-# below ``_ROUND_TOL_PX`` cannot be told from round-off, and one above
-# ``_ROUND_MAX_RADIUS_PX`` is as good as straight. Where the balls either side of
-# a run of points differ by more than ``_ROUND_BLEND_STEPS`` steps or
-# ``_ROUND_BLEND_RADIUS`` radii, no single ball fits, and the run is blended
-# instead.
+# ball radii.
+#
+# Ball test: the rounding works on a copy of the curve resampled every
+# ``_ROUND_STEP`` ball radii (at least ``_ROUND_MIN_STEP_PX``, which bounds the
+# number of samples), and tests each point against the curve within
+# ``_ROUND_REACH`` ball radii of arc length with a slack of ``_ROUND_TOL_PX``
+# (so a straight stretch is not flagged by round-off). A radius below
+# ``_ROUND_TOL_PX`` cannot be told from round-off, and one above
+# ``_ROUND_MAX_RADIUS_PX`` is as good as straight.
+#
+# Sampled part: its grid sits on whole steps of arc length, so a small move of
+# the label does not move the vertices. A bend that comes within reach of an
+# end of the part doubles the margin and samples again, at most
+# ``_ROUND_MAX_DOUBLINGS`` times, so the rounding beside the label does not
+# depend on where the part ends.
+#
+# Blend: where the balls either side of a run of points are more than
+# ``_ROUND_BLEND_STEPS`` steps or ``_ROUND_BLEND_RADIUS`` radii apart, no single
+# ball fits, and the run is blended instead of laid on an arc.
 _MIN_RADIUS_CLEARANCE = 1.5
 _ROUND_STEP = 1 / 16
 _ROUND_MIN_STEP_PX = 0.25
@@ -508,9 +516,11 @@ class _CurveFrame:
         cannot touch is laid on the arc of the ball wedged in the corner, which
         keeps the curve continuous. Bends gentler than the ball are left
         exactly as they are, and so is a run that reaches an end of the curve.
+        The curve itself is returned, not a copy, when nothing changes.
+
         A point near an end does not see all the curve within reach of it, so a
         run that comes within reach of an end is not the run a longer curve
-        would give: the flag asks the caller for one.
+        would give: the flag is true then, to ask the caller for a longer one.
         """
         n = len(self._xf)
         if radius <= 0.0 or n < 3:
@@ -1350,12 +1360,13 @@ class CurvedText(mtext.Text):
 
         At a tight bend the label leaves the curve by at most the least radius
         less the curve's own radius. Two kinds of curve are outside the
-        guarantee, and the label can fold there as it does with ``None``: a
-        hairpin whose arms are less than about 25 degrees apart, because the
-        ball fits only beyond the reach of the ball test (about six radii of
-        arc length), and a jagged curve that changes direction at the scale of
-        the label's ink, such as noisy data plotted point by point. Pass a
-        smoothed curve for such data.
+        guarantee, and the label can fold there, as with ``None`` or, near a
+        narrow hairpin, more: a hairpin whose arms are less than about 20
+        degrees apart (more for a larger label), where the ball fits only
+        beyond the reach of the ball test (about six radii of arc length), and
+        a jagged curve that changes direction at the scale of the label's ink,
+        such as noisy data plotted point by point. Pass a smoothed curve for
+        such data.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties
         applied to every glyph and every math run: ``color``, ``alpha``,
@@ -2023,18 +2034,27 @@ class CurvedText(mtext.Text):
         part reaches ``_ROUND_REACH`` radii beyond the label on each side, and
         runs past the ends of the curve along their tangents, as the frame does.
         A curvature test at the scale of the ball skips the sampling where no
-        bend is tight enough to matter."""
+        bend is tight enough to matter.
+
+        Where a bend comes within reach of an end of the part, the margin
+        doubles and the part is sampled again, up to ``_ROUND_MAX_DOUBLINGS``
+        times, and stops earlier once the rounded path across the label has not
+        changed for two passes in a row. A bend that is still there after the
+        last doubling is rounded as far as the part shows it."""
+        # A radius below the round-off slack is not rounded, and one beyond any
+        # figure is as good as straight; zero means this side is skipped.
         left, right = (min(radius, _ROUND_MAX_RADIUS_PX)
                        if radius >= _ROUND_TOL_PX else 0.0
                        for radius in (ride[0] + offset_px, ride[1] - offset_px))
         widest = max(left, right)
         if widest <= 0.0:
             return None
-        margin = _ROUND_REACH * widest
-        s_lo = s_anchor - lead * length - margin
-        s_hi = s_anchor + (1.0 - lead) * length + margin
+        label_lo = s_anchor - lead * length
+        label_hi = s_anchor + (1.0 - lead) * length
+        reach = _ROUND_REACH * widest
         kappa = base.curvature(
-            np.arange(s_lo, s_hi, _ROUND_PROBE * widest), widest)
+            np.arange(label_lo - reach, label_hi + reach,
+                      _ROUND_PROBE * widest), widest)
         # A side is rounded only where the curve bends toward it that tightly:
         # a left bend has positive curvature, a right bend negative.
         if np.max(kappa * left) < _ROUND_GATE:
@@ -2045,19 +2065,33 @@ class CurvedText(mtext.Text):
             return None
         step = max(min(r for r in (left, right) if r > 0.0) * _ROUND_STEP,
                    _ROUND_MIN_STEP_PX)
-        for _ in range(_ROUND_MAX_DOUBLINGS + 1):
-            # The samples sit on whole steps of arc length, so the vertices do
-            # not move with the label.
-            first = math.floor((s_anchor - lead * length - margin) / step)
-            last = math.ceil((s_anchor + (1.0 - lead) * length + margin) / step)
+        # The samples sit on whole steps of arc length, so the vertices do not
+        # move with the label. The whole steps that lie across the label are
+        # the same for every margin, which lets one pass be compared with the
+        # last.
+        across = slice(math.ceil(label_lo / step), math.floor(label_hi / step) + 1)
+        across_before, agreed = None, 0
+        for doubling in range(_ROUND_MAX_DOUBLINGS + 1):
+            margin = reach * 2 ** doubling
+            first = math.floor((label_lo - margin) / step)
+            last = math.ceil((label_hi + margin) / step)
             s = step * np.arange(first, last + 1)
-            x, y, _angles = base.points_and_angles(s)
+            x, y, _ = base.points_and_angles(s)
             work = _CurveFrame(x, y)
             left_rounded, left_near_end = work.rounded(left, 1, step)
             rounded, right_near_end = left_rounded.rounded(right, -1, step)
             if not (left_near_end or right_near_end):
                 break
-            margin *= 2.0
+            across_now = np.column_stack([rounded._xf, rounded._yf])[
+                across.start - first:across.stop - first]
+            if across_before is not None and np.allclose(
+                    across_now, across_before, rtol=0.0, atol=1e-6):
+                agreed += 1
+                if agreed == 2:
+                    break
+            else:
+                agreed = 0
+            across_before = across_now
         if rounded is work:
             return None
         anchor = float(np.interp(s_anchor / step - first, np.arange(len(s)),

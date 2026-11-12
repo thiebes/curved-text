@@ -212,11 +212,13 @@ The whole expression bends with the curve:
 
 ![A mathtext expression, E = square root of ((pc) squared + (mc squared) squared), as a label above an arch-shaped curve. The square-root bar and the superscripts bend with the curve and stay connected.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/10_mathtext.png)
 
-Fractions, radicals, and large brackets stay joined while the radius of
-curvature is larger than the height of the expression. On a tighter bend the
-expression is squeezed along the curve. Where the radius falls below its height
-on the concave side, it folds over itself: ink beyond the center of curvature
-comes out mirrored. Choose the text size to suit the curvature.
+Fractions, radicals, and large brackets stay joined, because the label rides a
+path whose radius is at least 1.5 times the height of its ink on the inside of a
+bend. Where the path bends toward the expression, its inside edge is squeezed
+along the curve, to a third of its natural length at the tightest bend the path
+allows. A curve that bends more tightly is rounded: the label leaves it to ride
+the rounded path, so the expression does not fold over itself. See
+[Labels on the inside of a tight bend](#labels-on-the-inside-of-a-tight-bend-min_radius).
 
 Pass `parse_math=False` to treat dollar signs literally.
 
@@ -316,6 +318,41 @@ The Gallery section [Even spacing on a tight bend](https://thiebes.github.io/cur
 shows a sharp bend, where the correction visibly separates the glyphs. It also
 shows a gentle bend of the same word, unchanged because it falls below the
 deadband.
+
+### Labels on the inside of a tight bend (`min_radius`)
+
+On the inside of a bend tighter than the label is tall, the ink would fold over
+itself: a fraction bar or a radical's overline would run backward, and ink past
+the center of curvature would come out mirrored. An `offset` toward the inside
+of a bend larger than the bend's radius has the same cause. It lays the label
+along a path that doubles back, so letters overlap or change order. By default
+the label rides a rounded copy of the curve instead. A ball of a least radius is
+rolled along each side of the curve, and where the curve bends more tightly than
+the ball, the ball's arc replaces it:
+
+```python
+curved_text(ax, x, y, r"flux $\sqrt{\frac{a^2+b^2}{c^2}}$ out",
+            min_radius="auto")
+```
+
+`"auto"` is the default. It takes 1.5 times the height of the label's ink on
+each side of the path. Pass a number to set the least radius in points for both
+sides, or `None` to turn the rounding off. A bend gentler than the ball is left
+exactly as it is, so a label on a gentle curve is unchanged.
+
+At a tight bend the label leaves the curve, by at most the least radius less the
+curve's own radius. Two kinds of curve are outside the guarantee, and the label
+fold there, as with `min_radius=None` or, near a narrow hairpin, more. One is a
+hairpin whose arms are less than about 20 degrees apart, more for a larger
+label: the ball fits only far along the curve, farther than six of its radii,
+so the bend is blended instead of rounded, wherever the label sits on the arm.
+The other is a jagged curve that changes direction at the scale of the label's
+ink, such as noisy data plotted point by point. Pass a smoothed curve for such
+data.
+
+The Gallery section [Labels on the inside of a tight bend](https://thiebes.github.io/curved-text/gallery.html#labels-on-the-inside-of-a-tight-bend)
+shows a math label and an offset label on a tight valley, with and without the
+rounding.
 
 ### Vertical alignment (`valign`)
 

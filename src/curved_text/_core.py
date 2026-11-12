@@ -1202,9 +1202,11 @@ class CurvedText(mtext.Text):
         ``backgroundcolor``. ``antialiased``, ``snap``, and ``sketch_params``
         are accepted and have no effect. ``label=`` adds no legend entry, and
         ``legend()`` warns once for each part of the label. ``transform`` is
-        replaced, because glyphs are drawn in display pixels. Do not pass
-        ``rotation``: it changes the spacing of the characters. Use ``box`` for
-        a background. An unknown property raises ``AttributeError``.
+        replaced, because glyphs are drawn in display pixels. ``gid`` becomes
+        ``gid-0``, ``gid-1``, and so on, one for each part, so a saved SVG has
+        each id once. ``rotation`` raises ``ValueError``, because the curve sets
+        each glyph's angle. Use ``box`` for a background. An unknown property
+        raises ``AttributeError``.
 
         ``parse_math=False`` treats dollar signs literally (the default comes
         from the ``text.parse_math`` rcParam, a matplotlib runtime setting).
@@ -1353,6 +1355,16 @@ class CurvedText(mtext.Text):
             raise ValueError(f"valign must be one of {_VALIGN}, got {valign!r}")
         if not isinstance(upright, (bool, np.bool_)):
             raise TypeError(f"upright must be a bool, got {upright!r}")
+        # A 3D axes has no single display-space path before its projection,
+        # so a label there would draw nothing.
+        if getattr(axes, "name", None) == "3d":
+            raise TypeError(
+                f"curved_text does not support 3D axes, got {type(axes).__name__}")
+        # The curve places every glyph, and a rotation of each glyph's own
+        # widens its box, so the characters spread apart.
+        if "rotation" in kwargs:
+            raise ValueError(
+                "rotation is not supported: the curve sets each glyph's angle")
         # Optional casing behind the label: a fat line following the curve at
         # the label's height. It is built before the label touches the axes, so
         # a ``box`` it cannot draw raises with the axes as they were; its
@@ -1435,14 +1447,23 @@ class CurvedText(mtext.Text):
         self._segments: list[_OutlineSegment] = []
         runs = (_split_runs(text) if self.get_parse_math()
                 else [_Run(False, text)])
+        gid = self.get_gid()
+
+        def segment_kwargs() -> dict[str, Any]:
+            # Each segment draws in its own SVG group, and an id must be unique
+            # in the file, so the label's gid takes the segment's number.
+            if gid is None:
+                return kwargs
+            return {**kwargs, "gid": f"{gid}-{len(self._segments)}"}
+
         for run in runs:
             if run.is_math:
-                segment = _MathRun(run.text, **kwargs)
+                segment = _MathRun(run.text, **segment_kwargs())
                 axes.add_artist(segment)
                 self._segments.append(segment)
                 continue
             for index, ch in enumerate(run.text):
-                glyph = _PlainGlyph(ch, run.text, index, **kwargs)
+                glyph = _PlainGlyph(ch, run.text, index, **segment_kwargs())
                 axes.add_artist(glyph)
                 self._segments.append(glyph)
         # Apply the layered zorders now that the casing and glyphs exist: the

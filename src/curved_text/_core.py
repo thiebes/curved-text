@@ -1971,8 +1971,14 @@ class CurvedText(mtext.Text):
         margin = _ROUND_REACH * widest
         s_lo = s_anchor - lead * length - margin
         s_hi = s_anchor + (1.0 - lead) * length + margin
-        kappa = base.curvature(np.arange(s_lo, s_hi, widest / 4.0), widest)
-        if np.max(np.maximum(kappa * left, -kappa * right)) < _ROUND_GATE:
+        kappa = base.curvature(np.arange(s_lo, s_hi, widest / 2.0), widest)
+        # A side is rounded only where the curve bends toward it that tightly:
+        # a left bend has positive curvature, a right bend negative.
+        if np.max(kappa * left) < _ROUND_GATE:
+            left = 0.0
+        if np.max(-kappa * right) < _ROUND_GATE:
+            right = 0.0
+        if left <= 0.0 and right <= 0.0:
             return None
         step = max(min(r for r in (left, right) if r > 0.0) * _ROUND_STEP,
                    _ROUND_MIN_STEP_PX)

@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from matplotlib.backend_bases import MouseEvent
+from matplotlib.backends.backend_agg import RendererAgg
 from matplotlib.backends.backend_pdf import FigureCanvasPdf
 from matplotlib.path import Path
 from matplotlib.testing import jpl_units
@@ -449,25 +450,59 @@ def test_wrapper_matches_class():
     plt.close(fig)
 
 
-def test_set_zorder_lifts_glyphs_above_container():
+def _line_over_label(line_zorder, label_zorder=None):
+    """The strongly red pixels left when a wide white line, at ``line_zorder``,
+    runs through a red label with a red casing, at its default zorder or at
+    ``label_zorder`` set after it is made."""
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 100)
+    y = np.full_like(x, 5.0)
+    ax.plot(x, y, color="white", linewidth=60, zorder=line_zorder)
+    ct = curved_text(ax, x, y, "label", fontsize=30, color="red", box="red")
+    if label_zorder is not None:
+        ct.set_zorder(label_zorder)
+    count = _red_pixels(fig)
+    plt.close(fig)
+    return count
+
+
+def test_the_label_draws_its_casing_and_glyphs_at_one_zorder():
+    # The label draws as one artist, casing then glyphs, at its own zorder, so
+    # a line above it covers both and a line below it covers neither.
+    default = 3  # the zorder of text
+    assert _line_over_label(default - 1) > 1000
+    assert _line_over_label(default + 0.25) == 0
+    assert _line_over_label(default + 0.75) == 0
+
+
+def test_set_zorder_sets_the_zorder_of_the_whole_label():
+    assert _line_over_label(4, label_zorder=5) > 1000
+    assert _line_over_label(6, label_zorder=5) == 0
+
+
+def test_the_axes_holds_only_the_label_not_its_parts():
+    # The glyphs and the casing belong to the label, so the axes lists one
+    # text, which is the label, and no artist or line for a part.
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)
-    ct = curved_text(ax, x, np.zeros_like(x), "ab", pos=0.5, anchor="center")
-    ct.set_zorder(5)
-    assert ct.get_zorder() == 5
-    assert all(t.get_zorder() == 6 for t in ct._segments)
+    ct = curved_text(ax, x, np.zeros_like(x), r"ab $x$", box=True)
+    assert list(ax.texts) == [ct]
+    assert ax.get_children().count(ct) == 1
+    assert not ax.get_lines()
+    assert not any(part in ax.get_children() for part in ct._parts())
     plt.close(fig)
 
 
-def test_remove_drops_child_glyphs():
+def test_remove_drops_the_label():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)
     ct = curved_text(ax, x, np.zeros_like(x), "ab", pos=0.5, anchor="center")
-    chars = list(ct._segments)
     ct.remove()
-    children = ax.get_children()
-    assert ct not in children
-    assert all(t not in children for t in chars)
+    assert ct not in ax.get_children()
+    assert not ax.texts
     plt.close(fig)
 
 
@@ -888,10 +923,9 @@ def test_box_creates_and_removes_casing():
     plain = curved_text(ax, x, np.zeros_like(x), "ab")
     assert plain._box is None
     boxed = curved_text(ax, x, np.zeros_like(x), "ab", box=True)
-    assert boxed._box is not None and boxed._box in ax.get_lines()
-    casing = boxed._box
+    assert boxed._box is not None and boxed._box not in ax.get_lines()
     boxed.remove()
-    assert casing not in ax.get_lines()
+    assert boxed not in ax.get_children()
     plt.close(fig)
 
 
@@ -925,26 +959,31 @@ def test_box_hidden_on_degenerate_redraw():
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 50)
-    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.5, box=True)
-    _draw(fig)
-    assert ct._box.get_visible()
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.5,
+                     box="red")
+    assert _red_pixels(fig) > 0
     # Collapse the curve to a single point, then redraw. There is no public
     # setter for the curve, so drop its converted copy too.
     ct._cx = np.full_like(ct._cx, 5.0)
     ct._cy = np.full_like(ct._cy, 5.0)
     ct._forget_curve_floats()
-    _draw(fig)
-    assert not ct._box.get_visible()
+    assert _red_pixels(fig) == 0
     plt.close(fig)
 
 
-def test_box_sits_below_glyphs_in_zorder():
-    fig, ax = plt.subplots()
+def test_box_is_drawn_before_the_glyphs():
+    # A blue label on a red casing shows blue where the glyphs are, which it
+    # could not if the casing drew over them.
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
     x = np.linspace(0, 1, 10)
-    ct = curved_text(ax, x, np.zeros_like(x), "ab", box=True)
-    ct.set_zorder(5)
-    assert all(t.get_zorder() == 6 for t in ct._segments)
-    assert ct._box.get_zorder() < min(t.get_zorder() for t in ct._segments)
+    curved_text(ax, x, np.full_like(x, 0.5), "label", fontsize=30,
+                color="blue", box="red")
+    _draw(fig)
+    image = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
+    blue = int(((image[..., 2] > 200) & (image[..., 0] < 80)
+                & (image[..., 1] < 80)).sum())
+    assert blue > 100 and _strongly_red(image) > blue
     plt.close(fig)
 
 
@@ -989,12 +1028,9 @@ def test_set_zorder_and_remove_cover_math_runs():
     x = np.linspace(0, 1, 10)
     ct = curved_text(ax, x, np.zeros_like(x), r"a$b$c", pos=0.5)
     ct.set_zorder(5)
-    assert all(t.get_zorder() == 6 for t in ct._segments)
-    segments = list(ct._segments)
+    assert ct.get_zorder() == 5
     ct.remove()
-    children = ax.get_children()
-    assert ct not in children
-    assert all(t not in children for t in segments)
+    assert ct not in ax.get_children()
     plt.close(fig)
 
 
@@ -1228,6 +1264,7 @@ def test_gid_numbers_the_parts_in_order_not_by_character_offset():
     fig, ax = plt.subplots()
     x = np.linspace(0, 10, 50)
     ct = curved_text(ax, x, np.sin(x), "$x^2$ab", gid="lab")
+    _draw(fig)
     assert [seg.get_gid() for seg in ct._segments] == [
         "lab-0", "lab-1", "lab-2"]
     plt.close(fig)
@@ -1853,13 +1890,12 @@ def test_label_with_no_stretch_left_to_draw_is_hidden():
     ax.set_xlim(-5, 5)
     ax.set_ylim(0, 10)
     x = np.linspace(-4, -1, 30)
-    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
-                     color="red", box="red")
+    curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
+                color="red", box="red")
     assert _red_pixels(fig) > 0
     ax.set_xscale("log", nonpositive="mask")
     ax.set_xlim(0.1, 10)
     assert _red_pixels(fig) == 0
-    assert not ct._box.get_visible()
     assert np.isfinite(fig.get_tightbbox(fig.canvas.get_renderer()).bounds).all()
     plt.close(fig)
 
@@ -2118,8 +2154,8 @@ def test_hidden_label_hides_its_glyphs_and_takes_no_room():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     shown = ct.get_window_extent(renderer)
+    assert _red_pixels_above_axes(fig, ct.axes) == 0 and shown.width > 0
     ct.set_visible(False)
-    assert not any(seg.get_visible() for seg in ct._segments)
     hidden = ct.get_window_extent(renderer)
     assert hidden.width == hidden.height == 0
     ct.set_visible(True)
@@ -2138,9 +2174,9 @@ def test_hidden_label_hides_its_casing(hide_at_construction):
     fig, ct = _flat_label("label", box="red", **kwargs)
     if not hide_at_construction:
         ct.set_visible(False)
-    _draw(fig)
-    assert not ct._box.get_visible()
-    assert not any(seg.get_visible() for seg in ct._segments)
+    assert _red_pixels(fig) == 0
+    ct.set_visible(True)
+    assert _red_pixels(fig) > 0
     plt.close(fig)
 
 
@@ -2158,19 +2194,37 @@ def test_unclipped_label_keeps_its_casing_outside_the_axes():
     assert red_above(clip_on=True) == 0
 
 
-def test_clipping_set_after_construction_reaches_every_part():
-    fig, ct = _flat_label("label $x$", box=True)
-    parts = [*ct._segments, ct._box]
+def test_clipping_set_after_construction_reaches_what_is_drawn():
+    # The label's clipping applies to its glyphs and its casing as set now, so
+    # a label made clipped and then unclipped draws outside the axes, and
+    # clipped again, does not.
+    fig, ct = _rising_label(clip_on=True, box="red")
+    ax = ct.axes
+    assert _red_pixels_above_axes(fig, ax) == 0
     ct.set_clip_on(False)
-    assert not any(part.get_clip_on() for part in parts)
+    assert _red_pixels_above_axes(fig, ax) > 1000
     ct.set_clip_on(True)
-    assert all(part.get_clip_on() for part in parts)
-    circle = plt.Circle((5, 5), 2, transform=ct.axes.transData)
-    ct.set_clip_path(circle)
-    assert all(part.get_clip_path() is not None for part in parts)
-    clip_box = ct.axes.bbox
+    assert _red_pixels_above_axes(fig, ax) == 0
+    plt.close(fig)
+
+
+def test_a_clip_box_and_a_clip_path_set_after_construction_cut_the_label():
+    fig, ct = _flat_label("label $x$", box="red")
+    ax = ct.axes
+    before = _red_pixels(fig)
+    right_half = int(ax.bbox.x0 + ax.bbox.width / 2)
+    clip_box = Bbox([[ax.bbox.x0, ax.bbox.y0], [right_half, ax.bbox.y1]])
     ct.set_clip_box(clip_box)
-    assert all(part.get_clip_box() is clip_box for part in parts)
+    def red_right_of(x_px):
+        _draw(fig)
+        return _strongly_red(np.asarray(fig.canvas.buffer_rgba())[:, x_px:])
+
+    assert 0 < _red_pixels(fig) < before
+    assert red_right_of(right_half + 2) == 0
+    ct.set_clip_box(None)
+    circle = plt.Circle((0, 0), 0.5, transform=ax.transData)
+    ct.set_clip_path(circle)
+    assert _red_pixels(fig) == 0
     plt.close(fig)
 
 
@@ -2232,10 +2286,8 @@ def _first_glyph_centre(ct):
 def test_label_is_picked_on_its_glyphs():
     # Picking and hover test a point against the label's placed glyphs, so a
     # click on a glyph hits the label and a click in empty space does not. The
-    # glyph segments take the forwarded picker too, but never answer a pick
-    # themselves, so a click just inside their unused Text box at the display
-    # origin, outside every axes, where matplotlib still asks the axes'
-    # children, picks nothing, and no segment contains it for hover.
+    # glyph segments are not artists of the axes, so a click at the display
+    # origin, outside every axes, picks nothing.
     fig, ct, picked = _picking_label(picker=True)
     ax = ct.axes
     on_glyph = _click(fig, *_first_glyph_centre(ct))
@@ -2247,7 +2299,6 @@ def test_label_is_picked_on_its_glyphs():
     assert picked == [ct]
     fig.canvas.callbacks.process("button_press_event", inside_segment_text_box)
     assert picked == [ct]
-    assert not any(seg.contains(inside_segment_text_box)[0] for seg in ct._segments)
     ct.set_visible(False)
     assert not ct.contains(on_glyph)[0]
     plt.close(fig)
@@ -3541,3 +3592,121 @@ def test_a_narrow_hairpin_is_a_documented_limit(pos):
     _draw(fig)
     assert _height_violations(ct, fig.canvas.get_renderer())[0] > 0
     plt.close(fig)
+
+
+def _composite_label(**kwargs):
+    """A figure with a red label and a red casing on a flat curve; return the
+    figure, the axes, and the label. ``kwargs`` go to the label."""
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(1, 9, 50)
+    kwargs.setdefault("box", "red")
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=24,
+                     color="red", **kwargs)
+    return fig, ax, ct
+
+
+def test_draw_artist_draws_the_glyphs_and_the_casing():
+    # A blitting loop draws each animated artist with ``ax.draw_artist``. The
+    # figure's own draw skips an animated label, and ``draw_artist`` draws all
+    # of it: the casing as well as the glyphs.
+    fig, ax, ct = _composite_label(animated=True)
+    assert _red_pixels(fig) == 0
+    ax.draw_artist(ct)
+    drawn = _strongly_red(np.asarray(fig.canvas.buffer_rgba()))
+    fig2, _, _ = _composite_label()
+    assert drawn == _red_pixels(fig2) > 0
+    plt.close(fig)
+    plt.close(fig2)
+
+
+def test_animated_casing_does_not_stay_in_the_background():
+    # The casing is drawn only by the label, so once the label has been drawn
+    # with ``draw_artist``, a figure draw that skips it still leaves no casing
+    # in the background a blit loop saves and restores.
+    fig, ax, ct = _composite_label(animated=True)
+    ax.draw_artist(ct)
+    assert _red_pixels(fig) == 0
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("setter, value", [
+    ("set_color", "blue"), ("set_alpha", 0.2), ("set_visible", False)])
+def test_a_setter_called_after_construction_changes_what_is_drawn(setter,
+                                                                   value):
+    fig, ax, ct = _composite_label(box=False)
+    before = _red_pixels(fig)
+    getattr(ct, setter)(value)
+    if setter == "set_color":
+        # The glyphs turn blue.
+        _draw(fig)
+        image = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
+        blue = int(((image[..., 2] > 200) & (image[..., 0] < 80)
+                    & (image[..., 1] < 80)).sum())
+        assert blue > 100 and _strongly_red(image) < before
+    else:
+        assert _red_pixels(fig) < before
+    plt.close(fig)
+
+
+def test_gid_and_url_set_after_construction_reach_the_svg():
+    fig, ax, ct = _composite_label()
+    ct.set_gid("lab")
+    ct.set_url("https://example.org/label")
+    buffer = io.StringIO()
+    fig.savefig(buffer, format="svg")
+    svg = buffer.getvalue()
+    assert re.findall(r'id="(lab-\d+)"', svg)
+    assert "https://example.org/label" in svg
+    plt.close(fig)
+
+
+def test_rasterized_set_after_construction_rasterizes_the_label():
+    fig, ax, ct = _composite_label()
+    vector, raster = io.StringIO(), io.StringIO()
+    fig.savefig(vector, format="svg")
+    ct.set_rasterized(True)
+    fig.savefig(raster, format="svg")
+    assert "<image" not in vector.getvalue()
+    assert "<image" in raster.getvalue()
+    plt.close(fig)
+
+
+def test_sketch_params_set_after_construction_change_the_glyphs():
+    fig, ax, ct = _composite_label()
+    _draw(fig)
+    plain = np.asarray(fig.canvas.buffer_rgba()).copy()
+    ct.set_sketch_params(scale=4, length=20, randomness=3)
+    _draw(fig)
+    assert (np.asarray(fig.canvas.buffer_rgba()) != plain).any()
+    plt.close(fig)
+
+
+def test_measuring_with_another_renderer_leaves_what_is_drawn_alone():
+    # A measurement with a renderer of another resolution between a draw and
+    # the next ``draw_artist`` must not move the glyphs the label draws. The
+    # segments draw from the placement the last draw gave them, and a
+    # measurement places the label apart from them.
+    def drawn_after(measure):
+        fig, ax, ct = _composite_label()
+        _draw(fig)
+        renderer = fig.canvas.get_renderer()
+        placed = [seg._placed_path(renderer).vertices.copy()
+                  for seg in ct._segments
+                  if seg._placed_path(renderer) is not None]
+        if measure:
+            assert ct.get_window_extent(RendererAgg(1200, 900, 300)).width > 0
+            after = [seg._placed_path(renderer).vertices
+                     for seg in ct._segments
+                     if seg._placed_path(renderer) is not None]
+            for before, now in zip(placed, after):
+                np.testing.assert_array_equal(before, now)
+        renderer.clear()
+        ax.draw_artist(ct)
+        image = np.asarray(fig.canvas.buffer_rgba()).copy()
+        plt.close(fig)
+        return image
+
+    np.testing.assert_array_equal(drawn_after(True), drawn_after(False))

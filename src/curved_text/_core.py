@@ -1202,11 +1202,13 @@ class CurvedText(mtext.Text):
         ``backgroundcolor``. ``antialiased``, ``snap``, and ``sketch_params``
         are accepted and have no effect. ``label=`` adds no legend entry, and
         ``legend()`` warns once for each part of the label. ``transform`` is
-        replaced, because glyphs are drawn in display pixels. ``gid`` becomes
-        ``gid-0``, ``gid-1``, and so on, one for each part, so a saved SVG has
-        each id once. ``rotation`` raises ``ValueError``, because the curve sets
-        each glyph's angle. Use ``box`` for a background. An unknown property
-        raises ``AttributeError``.
+        replaced, because glyphs are drawn in display pixels. A ``gid`` of
+        ``"lab"`` becomes ``"lab-0"``, ``"lab-1"``, and so on, numbered by
+        position in the string (a space takes a number and draws nothing), so
+        a saved SVG has each id once. Select the parts by prefix, for example
+        ``[id^=lab-]``. ``rotation`` raises ``ValueError``, because the curve
+        sets each glyph's angle. Use ``box`` for a background. An unknown
+        property raises ``AttributeError``.
 
         ``parse_math=False`` treats dollar signs literally (the default comes
         from the ``text.parse_math`` rcParam, a matplotlib runtime setting).
@@ -1225,9 +1227,11 @@ class CurvedText(mtext.Text):
         - ``anchor``, ``valign``, or ``crowding`` is not one of the listed
           values.
         - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
+        - ``rotation`` is passed, because the curve sets each glyph's angle.
     TypeError
-        If ``text`` is not a string, ``pos`` is not a number, or ``upright``
-        is not a bool (``1`` and ``0`` are not accepted).
+        If ``text`` is not a string, ``pos`` is not a number, ``upright`` is
+        not a bool (``1`` and ``0`` are not accepted), or ``axes`` is a 3D
+        axes.
     matplotlib.units.ConversionError
         If the axes cannot convert the data of ``x`` or ``y``.
     AttributeError
@@ -1298,7 +1302,7 @@ class CurvedText(mtext.Text):
     - Axes: Cartesian and polar axes work. On polar axes the angle runs
       counterclockwise, so a curve from angle 0 to π runs right to left over
       the top and its label reads upside down unless ``upright`` is set. A 3D axes
-      accepts the call and draws nothing.
+      raises ``TypeError``.
     - Animation: blitting is not supported, and ``ax.draw_artist(label)`` draws
       nothing. Redraw the whole figure (a ``FuncAnimation`` without blitting
       works), or leave the label out of the blit.
@@ -1360,8 +1364,8 @@ class CurvedText(mtext.Text):
         if getattr(axes, "name", None) == "3d":
             raise TypeError(
                 f"curved_text does not support 3D axes, got {type(axes).__name__}")
-        # The curve places every glyph, and a rotation of each glyph's own
-        # widens its box, so the characters spread apart.
+        # The curve places every glyph, and each glyph's own rotation widens
+        # its box, so the characters spread apart.
         if "rotation" in kwargs:
             raise ValueError(
                 "rotation is not supported: the curve sets each glyph's angle")
@@ -1452,7 +1456,7 @@ class CurvedText(mtext.Text):
         def segment_kwargs() -> dict[str, Any]:
             # Each segment draws in its own SVG group, and an id must be unique
             # in the file, so the label's gid takes the segment's number.
-            if gid is None:
+            if not gid:
                 return kwargs
             return {**kwargs, "gid": f"{gid}-{len(self._segments)}"}
 

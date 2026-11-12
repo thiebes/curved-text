@@ -1301,6 +1301,24 @@ class CurvedText(mtext.Text):
         winds around, as along a spiral, reads upside down where it turns. A
         label whose chord is near the vertical can turn over when the view
         changes.
+    min_radius : {"auto"}, None, or float, default "auto"
+        The least radius of curvature, in points, of the path the label rides.
+        On the inside of a bend tighter than the label's ink, the ink would
+        fold over itself, and an ``offset`` toward the inside of a bend larger
+        than its radius would lay the label along a path that doubles back. The
+        label rides a rounded copy of the curve instead: a ball of the least
+        radius is rolled along each side of the curve, and where the curve
+        bends more tightly than the ball, the ball's arc replaces it. A bend
+        gentler than the ball is left exactly as it is. ``"auto"`` takes, for
+        each side, 1.5 times the height of the label's ink on that side, above
+        the path for a left bend and below it for a right bend. A number sets
+        the radius for both sides, and ``None`` or ``0`` turns the rounding off.
+        At a tight bend the label leaves the curve by up to the least radius
+        less the curve's own radius, and by that much at a hairpin. A bend that
+        turns back so narrowly that the ball fits only far along the curve,
+        farther than the ball's reach of about six radii, is not rounded. The
+        rounding is worked out on every draw, and it combines with
+        ``crowding`` and ``offset``.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties
         applied to every glyph and every math run: ``color``, ``alpha``,
@@ -1339,6 +1357,8 @@ class CurvedText(mtext.Text):
           values.
         - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
         - ``rotation`` is passed, because the curve sets each glyph's angle.
+        - ``min_radius`` is a string other than ``"auto"``, or is negative,
+          infinite, or NaN.
     TypeError
         If ``text`` is not a string, ``pos`` is not a number, ``upright`` is
         not a bool (``1`` and ``0`` are not accepted), or ``axes`` is a 3D
@@ -1381,9 +1401,12 @@ class CurvedText(mtext.Text):
     engine. Every glyph outline and every bar, such as a fraction bar, is mapped
     onto the curve by arc length. The run sits on the same baseline as the
     surrounding plain glyphs. Fractions, radicals, and large brackets stay
-    joined while the radius of curvature is larger than the height of the
-    expression. A tighter bend squeezes the expression along the curve and can
-    fold it over itself, so choose the text size to suit the curvature.
+    joined, because the label rides a path whose radius is at least 1.5 times
+    the height of its ink on the inside of a bend (``min_radius``). Where the
+    path bends toward the expression, its inside edge is squeezed along the
+    curve, to a third of its natural length at the tightest bend the path
+    allows. A curve that bends more tightly is rounded: the label leaves it to
+    ride the rounded path, so the expression does not fold over itself.
 
     **LaTeX typesetting (usetex).** When ``text.usetex`` is set or
     ``usetex=True`` is passed, LaTeX (a typesetting system) typesets the label,
@@ -2168,6 +2191,10 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
     upright : bool, default False
         Turn the label over where it would read upside down.
         :class:`CurvedText` describes the rule.
+    min_radius : {"auto"}, None, or float, default "auto"
+        The least radius, in points, of the path the label rides.
+        ``"auto"`` rounds a bend tighter than the label's ink; ``None`` turns
+        the rounding off. :class:`CurvedText` describes the rule.
     **kwargs
         :class:`~matplotlib.text.Text` properties applied to every glyph and
         math run, such as ``color``, ``fontsize``, ``alpha``, and

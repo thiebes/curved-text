@@ -65,10 +65,11 @@ superscripts stay joined.
 
 [example_10_mathtext.py](https://github.com/thiebes/curved-text/blob/main/examples/example_10_mathtext.py)
 
-On a bend tighter than the height of the expression, the expression is
-squeezed along the curve and can fold over itself. The
+On a bend tighter than the height of the expression, the label rides a rounded
+copy of the curve, so the expression does not fold. The
 [README](https://thiebes.github.io/curved-text/index.html#mathtext) explains
-the limit.
+the rounding, and [Labels on the inside of a tight bend](#labels-on-the-inside-of-a-tight-bend)
+shows it.
 
 ### Plain words and math share one baseline
 
@@ -261,6 +262,28 @@ curved_text(ax, x, y, "winds", pos=0.5, anchor="center", offset=-13.0,
 ![Four panels with the word 'winds'. In (a) and (b), a tight semicircle: with crowding 'none' the characters crowd on the inside of the bend, and with 'curvature' they are spaced apart. In (c) and (d), a gentle arc, with 'none' and 'curvature': the two look the same.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/13_crowding.png)
 
 [example_13_crowding.py](https://github.com/thiebes/curved-text/blob/main/examples/example_13_crowding.py)
+
+### Labels on the inside of a tight bend
+
+`min_radius` keeps a label from folding on the inside of a bend tighter than the
+label is tall. The curve is a valley whose radius at the bottom is smaller than
+the text. Without the rounding, in (a) the expression folds over itself and in
+(c) the letters of an offset label overlap and change order. By default, in (b)
+and (d), the label rides a rounded copy of the curve, a path whose radius is at
+least 1.5 times the height of the label's ink on the inside of the bend. The
+label then leaves the curve a little at the tightest part of the bend. Panels
+(a) and (b) are the math label, and (c) and (d) are plain text with an `offset`
+toward the inside of the bend.
+
+Every panel makes this call, with the label and the argument its caption names:
+
+```python
+curved_text(ax, x, y, text, fontsize=14, min_radius=min_radius)
+```
+
+![Four panels of a label on a valley whose bend is tighter than the text. In (a), with min_radius None, a math expression with a fraction, a radical, and a sum folds over itself at the bottom of the valley. In (b), with 'auto', it rides a rounded path and stays whole. In (c), with None, the letters of 'Temperature' offset toward the inside of the bend overlap. In (d), with 'auto', the letters keep their order.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/27_tight_bends.png)
+
+[example_27_tight_bends.py](https://github.com/thiebes/curved-text/blob/main/examples/example_27_tight_bends.py)
 
 ### Gaps in the curve
 

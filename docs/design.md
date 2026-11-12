@@ -112,9 +112,12 @@ point and every rule box through the same curvilinear map
 where `u` is arc length along the label and `v` is height above the
 baseline. Seams are impossible by construction because there is only one
 frame. The single failure mode is smooth distortion that grows with label
-height times curvature. The result stays readable down to a radius near the
-height of the expression. Below that radius the expression folds on the concave
-side.
+height times curvature. The rate at which the map advances along the text is the
+curve's own rate times `1 - kappa * v`, where `kappa` is the curvature and `v`
+the height. On the inside of a bend the factor reaches zero at `v = R` and goes
+negative past it, so the ink stops, reverses, and mirrors. Spacing along the
+curve (`crowding`) scales the rate and cannot change that sign. See "Tight
+bends" below for what the label rides instead.
 
 ## Mixed-string semantics
 
@@ -405,6 +408,109 @@ default is the flat layout),
 `test_crowding_curvature_spreads_glyphs_on_a_tight_bend`, and
 `test_crowding_curvature_is_negligible_on_a_gentle_bend` (the deadband).
 
+## Tight bends
+
+A label rides a path, and every point of its ink sits at its own height from
+that path along the normal. Where the path bends toward the ink more tightly
+than the ink is tall, that placement has no valid answer: part of the label lies
+farther from the path than the path's radius of curvature, past the center of
+curvature. Two symptoms follow from the one cause.
+
+- **Math runs.** The bend map advances at the curve's own rate times
+  `1 - kappa * v`. On the inside of a bend the factor reaches zero at `v = R`,
+  so a radical's overline hooks back along the curve and ink past the center of
+  curvature is drawn mirrored.
+- **Offset labels, plain text included.** An `offset` toward the inside of a
+  bend that is larger than the bend's radius gives a parallel curve that runs
+  backward for a stretch, so letters overlap or change order.
+
+Spacing along the curve (`crowding`) scales the rate and cannot change the sign
+of the factor. A fix has to change either the curvature of the path or the
+heights of the ink.
+
+**Rejected.** Stretching each math run so its inner edge keeps its natural width
+removes the squeeze at moderate bends, but cannot prevent the fold, and does
+nothing for offset labels. Bending math runs only partly leaves their ends
+detached from the neighboring plain glyphs, which still follow the curve.
+Compressing the heights of the ink on the inside distorts the glyphs. Warning
+and leaving the output as it is does not help the label.
+
+**Chosen.** Lay every label along a rounded copy of its curve, so the path has a
+radius of at least a least value on each side, and plain and math segments stay
+on one shared baseline. A ball of the least radius is rolled along each side of
+the curve; where the curve bends more tightly than the ball, the ball's arc
+replaces it. The rule is geometric. It handles smooth curves, the sharp corners
+of a polyline (radius zero), and hairpins alike, and a bend gentler than the
+ball is left exactly as it is, so a label on a gentle curve draws as it would
+without the rounding.
+
+The least radius, `min_radius`:
+
+- `"auto"` (the default): `_MIN_RADIUS_CLEARANCE` (1.5) times the height of the
+  label's ink on each side of the path. A left bend has the ink above the path
+  on its inside, so it takes the height above the path; a right bend takes the
+  depth below it. The ink band of each segment comes from the true extents of
+  its outline (`_OutlineSegment._ink_band`), cached with the outline.
+- A number, in points: the least radius for both sides.
+- `None` or `0`: no rounding, the layout without it.
+
+**Where it runs.** In `_place_on_curve`, after the stretch and the `upright`
+decision and before the offset, so `pos`, `anchor`, the box casing, and every
+segment read the rounded frame:
+
+1. The offset `d` shifts the radii asked of the curve. The path at distance `d`
+   to the left of a curve of radius `r` has radius `r - d` on a left bend and
+   `r + d` on a right bend, so the curve is asked for `ride_left + d` and
+   `ride_right - d`. The same rounding removes the swallowtail that a large
+   offset creates.
+2. A curvature test at the scale of the ball (`_CurveFrame.curvature`) decides,
+   for each side, whether any bend within the label's reach is tight enough to
+   matter. Where none is, that side is skipped.
+3. The part of the curve the label can reach, with a margin of `_ROUND_REACH`
+   radii on each side, is sampled at equal steps (extending along the end
+   tangents past the ends of the curve, as the frame does). The label's length
+   for this includes crowding's widest gaps.
+4. `_CurveFrame.rounded(radius, side, step)` runs for each side. The ball
+   centers lie on the parallel curve. A point is one the ball cannot touch when
+   the center is closer than the radius to another point of the curve within
+   `_ROUND_REACH` radii of arc length. Each run of such points is laid on the arc
+   of the ball wedged between the last valid point before it and the first valid
+   point after it. If the two balls do not meet at one point, a cubic Hermite
+   blend of the end points and their tangents replaces the arc. The rounded
+   curve keeps the vertices of the sampled one.
+5. The anchor, given on the curve as it was passed in, carries over to the
+   rounded, offset frame through the shared vertices (`remap_arc`).
+
+**Cost to the label.** Where a bend is tighter than the least radius, the label
+leaves the curve: by about `0.41 * (R_min - R)` at a right-angle bend and by up
+to `R_min - R` at a hairpin. The inside edge of the ink is squeezed to
+`1 - 1/clearance` of its natural length at the least radius, a third at 1.5. A
+clearance of 1.25 squeezes the inside edge more, and 2.0 moves the label
+farther from the curve. Hyperbola valleys and peaks of radius 5 to 40 points, a
+right-angle V, and labels of math, a fraction, plain text, and plain text with
+an offset, at 10 and 20 points, showed no folding at 1.25, 1.5, 1.75, or 2.0;
+1.5 was chosen as the middle of the range.
+
+**Limit.** The ball test reaches `_ROUND_REACH` radii along the curve. A bend
+that turns back so narrowly that the ball fits only farther along the curve than
+that has no valid points inside the window, so it is not rounded, and the label
+folds as it does with `min_radius=None`. The case is a hairpin of a few degrees
+between its arms, with the arms closer together than the label is tall.
+
+Interactions: `crowding="curvature"` samples the curvature of the rounded frame,
+so it widens less at a rounded bend; `box` follows the rounded frame;
+`valign` shifts the datum and so the heights; usetex changes only where the
+outline comes from; pan, zoom, and dpi act in pixels on every draw.
+
+Pinned by tests: `test_math_run_does_not_fold_in_a_tight_valley` measures the
+placed outline against the invariant that every point sits at exactly its
+height from the path it rides;
+`test_offset_label_keeps_its_letters_in_order` and
+`test_offset_path_never_runs_backwards` cover the offset symptom;
+`test_a_gentle_bend_is_drawn_as_it_is_without_rounding` pins the layout where
+no rounding is needed; and the radius, continuity, fillet-bound, anchor, end,
+zigzag, dpi, zoom, crowding, and box tests cover the rounding itself.
+
 ## LaTeX (`usetex`)
 
 When a segment's usetex setting is on (the `text.usetex` rcParam, or
@@ -588,12 +694,11 @@ reads on top.
   [LaTeX typesetting (usetex)](https://thiebes.github.io/curved-text/usetex.html) describes what users see).
 - Under `usetex`, the library does not load LaTeX packages itself, because the
   preamble is one global setting (the usetex page gives the reason).
-- Fractions, radicals, and large brackets stay joined while the radius of
-  curvature is larger than the height of the expression. On a tighter bend the
-  expression is squeezed along the curve, and where the radius falls below its
-  height on the concave side it folds over itself: ink beyond the center of
-  curvature comes out mirrored. The docstring states this and leaves the choice
-  of text size to suit the curvature to the user.
+- Fractions, radicals, and large brackets stay joined because the path the
+  label rides has a radius of at least 1.5 times the height of its ink on the
+  inside of a bend (`min_radius="auto"`). The inside edge is squeezed along the
+  curve, to a third of its natural length at that radius. A tighter bend is
+  rounded, so the label leaves the curve instead of folding.
 
 ## Test pins
 

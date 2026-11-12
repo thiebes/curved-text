@@ -16,12 +16,27 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   positive `offset` on a turned label is toward the tops of the letters. It
   does not help a label that winds around, such as along a spiral, because it
   turns the whole label.
-- Two gallery figures: a topographic map of real terrain with its contour
-  labels upright, which opens the gallery, and the streamlines of potential
-  flow past a cylinder.
+- The `min_radius` keyword sets the least radius, in points, of the path a
+  label rides. The default, `"auto"`, rounds the path where a bend is tighter
+  than 1.5 times the height of the label's ink on the inside of the bend, by
+  rolling a ball of that radius along the curve. `None` turns the rounding off.
+  A bend gentler than that is left exactly as it is.
+- Three gallery figures: a topographic map of real terrain with its contour
+  labels upright, which opens the gallery, the streamlines of potential flow
+  past a cylinder, and a label on a bend tighter than the text, with and
+  without the rounding of `min_radius`.
 
 ### Fixed
 
+- A label does not fold over itself on the inside of a bend tighter than the
+  label is tall. A fraction bar or a radical's overline no longer runs
+  backward, and ink no longer comes out mirrored past the center of curvature.
+  An `offset` toward the inside of a bend larger than the bend's radius no
+  longer lays the label along a path that doubles back, so letters keep their
+  order ([#32](https://github.com/thiebes/curved-text/issues/32)). A label on
+  such a bend leaves the curve a little where it is tighter than the ball, and
+  `min_radius=None` restores the earlier layout. A bend that turns back so
+  narrowly that the ball fits only far along the curve is still not rounded.
 - A `text` that is not a string raises `TypeError`, naming the argument and
   the type received, without leaving a half-made label on the axes. Before,
   the label was added to the axes first, so `ax.texts` held it after the

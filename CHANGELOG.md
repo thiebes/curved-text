@@ -29,8 +29,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A `rotation` keyword raises `ValueError`. Before, it was accepted and
   widened each glyph's box, so the characters spread apart
   ([#66](https://github.com/thiebes/curved-text/issues/66)).
-- A `gid` is written once for each part of the label, as `gid-0`, `gid-1`,
-  and so on, numbered by position in the string. Before, every part wrote the
+- A `gid` is written once for each part of the label: `"lab"` becomes
+  `"lab-0"`, `"lab-1"`, and so on, numbered in order along the label, one
+  number for each character and each math run. Before, every part wrote the
   same id, so a saved SVG had duplicate ids
   ([#67](https://github.com/thiebes/curved-text/issues/67)).
 - A label on a 3D axes raises `TypeError`, naming the axes class. Before, the

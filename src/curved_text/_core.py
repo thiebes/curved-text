@@ -1203,9 +1203,10 @@ class CurvedText(mtext.Text):
         are accepted and have no effect. ``label=`` adds no legend entry, and
         ``legend()`` warns once for each part of the label. ``transform`` is
         replaced, because glyphs are drawn in display pixels. A ``gid`` of
-        ``"lab"`` becomes ``"lab-0"``, ``"lab-1"``, and so on, numbered by
-        position in the string (a space takes a number and draws nothing), so
-        a saved SVG has each id once. Select the parts by prefix, for example
+        ``"lab"`` becomes ``"lab-0"``, ``"lab-1"``, and so on, numbered in
+        order along the label, one number for each character and one for each
+        math run (a space takes a number and draws nothing), so a saved SVG
+        has each id once. Select the parts by prefix, for example
         ``[id^=lab-]``. ``rotation`` raises ``ValueError``, because the curve
         sets each glyph's angle. Use ``box`` for a background. An unknown
         property raises ``AttributeError``.
@@ -1455,7 +1456,8 @@ class CurvedText(mtext.Text):
 
         def segment_kwargs() -> dict[str, Any]:
             # Each segment draws in its own SVG group, and an id must be unique
-            # in the file, so the label's gid takes the segment's number.
+            # in the file, so the label's gid takes the segment's number. An
+            # empty gid names nothing, so it is passed on as it is.
             if not gid:
                 return kwargs
             return {**kwargs, "gid": f"{gid}-{len(self._segments)}"}

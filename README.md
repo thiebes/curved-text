@@ -186,8 +186,9 @@ Extra keyword arguments are `Text` properties applied to every glyph, such as
 describe one text box, such as `ha`, `va`, `bbox`, and `wrap`, have no effect,
 and `transform` is replaced. `rotation` raises `ValueError`, because the curve
 sets each glyph's angle. A `gid` of `"lab"` becomes `"lab-0"`, `"lab-1"`, and
-so on, numbered by position in the string, so a saved SVG has each id once;
-select the parts by prefix, for example `[id^=lab-]`. The
+so on, numbered in order along the label, one number for each character and
+each math run, so a saved SVG has each id once; select the parts by prefix,
+for example `[id^=lab-]`. The
 [API reference](https://thiebes.github.io/curved-text/api.html)
 lists every property.
 

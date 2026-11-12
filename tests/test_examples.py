@@ -88,9 +88,9 @@ def test_contour_figures_label_every_contour_upright(name, label_count,
     # ``ax.contour`` sets the direction of each path, and the labels of these
     # figures follow the paths as they come, which can run either way on
     # screen, so each label is passed ``upright=True`` and reads left to right.
-    # The streamline paths all run left to right today, so the keyword itself
-    # is checked as well as the result. The counts are those the README and
-    # the alt text describe.
+    # The streamline paths all run left to right, so the keyword itself is
+    # checked as well as the result. The counts pin the labeling the figures
+    # have, so a change to either script's placement shows here.
     module = _load_example(name)
     labels = []
     real = module.curved_text

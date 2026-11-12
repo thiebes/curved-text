@@ -15,8 +15,8 @@ label. Each elevation is labeled once, on the contour with the most room, and a
 label too close to one already placed is left out. The map is dark and the
 labels are white, with no casing or halo, so each label sits on its own contour
 line, which runs through the text. White text has a contrast of at least 4.5:1
-against a background of the darkness that placement requires; the pale contour
-line through the text is not part of that measure.
+against any shading dark enough to pass placement; the pale contour line
+through the text is not part of that measure.
 """
 from __future__ import annotations
 
@@ -108,7 +108,8 @@ def _turn_degrees(path, pos):
 
 def _straightest_pos(path, others, dark_enough):
     """The candidate ``pos`` at which ``path`` is straightest, among those where
-    it is straight enough for a label, clear of its neighbors, and over shading
+    it is straight enough for a label, has no other contour near its center,
+    and lies over shading
     dark enough for white text, and the distance from there to the nearest other
     contour. The label then lies on the flattest stretch the contour offers,
     where text follows it with the least bend. ``None`` where no candidate

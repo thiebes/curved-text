@@ -473,7 +473,7 @@ To run one script on its own:
 python examples/example_02_sine_hello.py
 ```
 
-Most scripts need only matplotlib and numpy, which the package installs. Three
+Most scripts need only matplotlib and numpy, which the package installs. Four
 scripts have further requirements:
 
 - The seaborn figure (09) needs seaborn and pandas, which the `examples` extra
@@ -483,6 +483,8 @@ scripts have further requirements:
 - The seaborn figure (09) and the stock price figure (23) read the
   `Stocks.csv` sample data. matplotlib 3.5 does not include it, and both
   scripts skip their figures there.
+- The topographic map (20) reads the `jacksboro_fault_dem.npz` sample data and
+  skips its figure where matplotlib does not include it.
 
 ## House style
 

@@ -65,8 +65,8 @@ handling for bad input. Add to this file when you change behavior.
 [tests/test_examples.py](tests/test_examples.py) runs every figure script the
 gallery lists, so a change that breaks one fails there. A figure whose
 requirement is missing is skipped: seaborn and pandas, LaTeX with `dvipng`, or
-the `Stocks.csv` sample data, which matplotlib 3.5 does not include, or the
-`jacksboro_fault_dem.npz` sample data. Set the
+the `Stocks.csv` sample data, which matplotlib 3.5 does not include. The
+`jacksboro_fault_dem.npz` sample data is skipped the same way. Set the
 environment variable `CURVED_TEXT_GALLERY_COMPLETE` to `1` to make such a skip
 fail instead, as the continuous integration (CI) job that installs every
 requirement does. The module skips itself in a source distribution, which

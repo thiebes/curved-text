@@ -20,7 +20,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   label rides. The default, `"auto"`, rounds the path where a bend is tighter
   than 1.5 times the height of the label's ink on the inside of the bend, by
   rolling a ball of that radius along the curve. `None` turns the rounding off.
-  A bend gentler than that is left exactly as it is.
+  A bend gentler than that is left exactly as it is. A `min_radius` that is
+  not `None`, `"auto"`, or a real number (a bool is not one) raises
+  `TypeError`; a negative or non-finite number or another string raises
+  `ValueError`.
 - Three gallery figures: a topographic map of real terrain with its contour
   labels upright, which opens the gallery, the streamlines of potential flow
   past a cylinder, and a label on a bend tighter than the text, with and
@@ -36,7 +39,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   order ([#32](https://github.com/thiebes/curved-text/issues/32)). A label on
   such a bend leaves the curve a little where it is tighter than the ball, and
   `min_radius=None` restores the earlier layout. A hairpin whose arms are less
-  than about 25 degrees apart, and a jagged curve such as noisy data plotted
+  than about 20 degrees apart, and a jagged curve such as noisy data plotted
   point by point, can still fold.
 - A `text` that is not a string raises `TypeError`, naming the argument and
   the type received, without leaving a half-made label on the axes. Before,

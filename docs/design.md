@@ -476,7 +476,12 @@ segment read the rounded frame:
    it, so when a bend comes within reach of either end, the margin doubles, up
    to `_ROUND_MAX_DOUBLINGS` times, and the part is sampled again. The rounding
    of the bends beside the label then does not depend on where the part ends,
-   and the label does not jump as `pos` or the zoom changes. A radius below
+   and the label does not jump as `pos` or the zoom changes. The loop stops
+   early once the rounded path across the label has not changed for two
+   passes, and a bend still in reach after the last doubling is rounded as far
+   as the part shows it. A curve with bends all along it, such as noisy data,
+   pays two or three passes: about 10 to 17 ms a draw, against 1 to 3 ms for a
+   gentle curve or one isolated bend. A radius below
    `_ROUND_TOL_PX` is not rounded, and one above `_ROUND_MAX_RADIUS_PX` is
    clamped.
 4. `_CurveFrame.rounded(radius, side, step)` runs for each side. The ball
@@ -506,17 +511,19 @@ corners, and two kinds of curve fall outside it.
 
 - A hairpin. The ball test reaches `_ROUND_REACH` radii along the curve. A bend
   that turns back so narrowly that the ball fits only farther along the curve
-  than that has no valid points inside the window, so it is not rounded. At 14
-  points, arms up to about 25 degrees apart folded in the cases measured, and
-  the limit moves with the label's size. The label folds as it does with
-  `min_radius=None`, and on a very narrow spike (1 px wide, 60 px tall) it
-  folded more: the run of invalid points is blended with no radius guarantee.
+  than that is not laid on a ball. Its run of invalid points is blended with no
+  radius guarantee, and the blend can distort the straight arms the label
+  rides, so the label can fold where `min_radius=None` does not, wherever it
+  sits on the arm. The largest apex angle at which a label still folded was
+  18, 22, 26, and 30 degrees at 10, 14, 20, and 28 points, and 8 to 12 degrees
+  gave about 25 to 80 violations (outline points closer to the path than their
+  height) with a 14 point math label.
 - Jagged input. Where the curve changes direction at nearly every sample, at
   the scale of the ink, the invalid runs are many and short. The balls either
   side of a run often do not meet, so the Hermite blend replaces the arc, and it
-  has no radius guarantee. A noisy sine folded less than with `None` (5 to 198
-  height violations against 400 to 490), not never. Smoothing the tangents of
-  the blend would remove this. For noisy data, pass a smoothed curve.
+  has no radius guarantee. On a noisy sine the label folded far less than with
+  `None`, but not never. Smoothing the tangents of the blend would remove this.
+  For noisy data, pass a smoothed curve.
 
 Interactions: `crowding="curvature"` samples the curvature of the rounded frame,
 so it widens less at a rounded bend; `box` follows the rounded frame;

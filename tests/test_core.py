@@ -1181,14 +1181,14 @@ def test_label_draws_on_polar_axes_whose_radius_starts_above_zero():
 
 
 def test_rotation_raises_and_leaves_the_axes_unchanged():
-    # A rotation of each glyph's own widens its box and spreads the characters,
-    # so it is rejected before the label touches the axes.
+    # Each glyph's own rotation widens its box and spreads the characters, so
+    # it is rejected before the label touches the axes.
     fig, ax = plt.subplots()
     x = np.linspace(0, 10, 50)
-    before = len(ax.artists)
     with pytest.raises(ValueError, match="rotation"):
         curved_text(ax, x, np.sin(x), "hello world", rotation=45)
-    assert len(ax.artists) == before
+    assert not ax.texts
+    _draw(fig)
     plt.close(fig)
 
 
@@ -1200,7 +1200,8 @@ def test_3d_axes_raises_and_leaves_the_axes_unchanged():
     x = np.linspace(0, 10, 50)
     with pytest.raises(TypeError, match="3D axes"):
         curved_text(ax, x, np.sin(x), "label")
-    assert not ax.artists
+    assert not ax.texts
+    _draw(fig)
     plt.close(fig)
 
 
@@ -1217,6 +1218,15 @@ def test_gid_is_written_once_for_each_part_in_a_saved_svg():
     drawn = [seg.get_gid() for seg in ct._segments if seg.get_text().strip()]
     assert drawn == ["lab-0", "lab-1", "lab-3"]
     assert sorted(ids) == drawn
+    plt.close(fig)
+
+
+def test_an_empty_gid_is_left_as_it_is_on_every_part():
+    # An empty gid names nothing, so no part gets a bare suffix such as "-0".
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.sin(x), "ab", gid="")
+    assert [seg.get_gid() for seg in ct._segments] == ["", ""]
     plt.close(fig)
 
 

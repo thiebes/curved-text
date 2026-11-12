@@ -3627,6 +3627,7 @@ def test_animated_casing_does_not_stay_in_the_background():
     # with ``draw_artist``, a figure draw that skips it still leaves no casing
     # in the background a blit loop saves and restores.
     fig, ax, ct = _composite_label(animated=True)
+    _draw(fig)
     ax.draw_artist(ct)
     assert _red_pixels(fig) == 0
     plt.close(fig)

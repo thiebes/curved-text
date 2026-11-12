@@ -15,8 +15,9 @@ Under LaTeX typesetting (usetex), LaTeX (a typesetting system) lays out the same
 segments; the LaTeX section below covers what changes.
 
 Two design invariants hold: all geometry is computed per draw in display space,
-and children are independent artists that the parent positions before they
-render (the zorder + 1 ordering).
+and the label is a composite artist: its parts are not children of the axes, and
+`CurvedText.draw` places them and then draws them itself, the casing first and
+the glyphs after it, with its own properties applied to each.
 
 ## Rules for changes
 
@@ -51,22 +52,27 @@ Each rule states a constraint and the reason for it.
   and `lead` are mirrored with the curve, so `pos` and `anchor` still refer to
   the curve as given and the label never overruns an end it did not overrun
   before.
-- **Keep segments out of figure layout.** Measuring them would run LaTeX once per
-  character under usetex, and an unclipped label would stretch a tight bounding
-  box to the segments' unused position at the display origin. The container's
-  `get_window_extent` reports the label instead.
-- **Keep the zorder layering: container at `z`, casing at `z + 0.5`, glyphs at
-  `z + 1`.** The casing must sit above the container, because the container's
-  `draw` is what positions the casing, and a lower zorder would draw it before
-  its geometry is set.
-- **Forward display properties to `_parts()`.** The container draws nothing
-  itself, so `set_visible` and the clipping setters (`set_clip_on`,
-  `set_clip_box`, `set_clip_path`) pass to the segments and the casing. A new
-  display property that should reach the drawn label is forwarded the same way,
-  or the property changes the container and leaves the label as it was.
-- **Pass extra keyword arguments to every glyph and math run.** The one exception
-  is `transform`, which each segment replaces with `IdentityTransform()`, because
-  segments draw in display pixels and a data transform would move them.
+- **Keep the parts out of the axes.** The axes holds only the label, so it
+  never draws or measures a segment or the casing on its own. Measuring a
+  segment would run LaTeX once per character under usetex, and an unclipped
+  label would stretch a tight bounding box to the segments' unused position at
+  the display origin. The container's `get_window_extent` reports the label.
+- **Keep one zorder for the whole label.** The label draws its casing and then
+  its glyphs inside its own `draw`, at its own zorder. The parts have none.
+- **Take display properties from the label at draw time.** `draw` gives each
+  part the label's color, alpha, URL, snap, sketch parameters, path effects, and
+  clipping (`_pass_properties`), and the label's gid with the part's number, so
+  a setter called after construction reaches what is drawn. The font stays with
+  each segment, which builds its outline from it. A new display property that
+  should reach the drawn label is passed the same way.
+- **Keep placement apart from drawing.** `_place_on_curve` returns a
+  `_Placement` value and writes nothing to a segment. `draw` alone hands the
+  places to the segments, so a measurement with another renderer, for
+  `get_window_extent` or picking, cannot change where the segments draw.
+- **Pass extra keyword arguments to every glyph and math run.** They set the
+  font and the usetex setting each segment builds its outline from. The one
+  exception is `transform`, which each segment replaces with `IdentityTransform()`,
+  because segments draw in display pixels and a data transform would move them.
 - **Test with the Agg backend and measure the drawn outline.** Tests force a
   draw and read placement from `seg._placed_path(renderer)`, or from the helpers
   `_anchor_xy` and `_rotation_deg` in `tests/test_core.py`, not from
@@ -687,35 +693,38 @@ no glyph's stroke overwrites another's fill. Its centerline is shifted off the
 curve by the glyph band's offset (the text lies on its `valign` datum, so the
 ink band is centered off the bare curve) so the band covers the ink. The band's
 center line comes from
-the same font lines as the label, under usetex the TeX ones. It is a child
-artist positioned per draw in `CurvedText._place_on_curve`, like the glyphs.
-When placement fails early (no segments, detached axes, no stretch of
-the curve with a span, or a degenerate offset curve) it hides the casing and
-clears every glyph's frame, so neither a stale band nor stale glyphs are left
-painted.
+the same font lines as the label, under usetex the TeX ones. It is a part of the
+label, placed per draw in `CurvedText._place_on_curve` and drawn by
+`CurvedText.draw` before the glyphs. When placement fails early (no segments,
+detached axes, no stretch of the curve with a span, or a degenerate offset
+curve) `draw` clears every glyph's placement and draws nothing, so neither a
+stale band nor stale glyphs are left painted.
 
-The container draws nothing itself, so the properties that decide whether and
-where the label shows reach the parts it draws. `set_visible` passes to every
-segment and the casing; a hidden label is not placed and has an empty extent,
-as matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
-clip path pass to them as well, at construction and through the setters, so an
-unclipped label keeps its casing outside the axes. Picking tests the mouse
-against the box of each placed glyph (`contains`), as matplotlib's own text
-tests its box; a click on the casing's band between glyphs is not a hit. The
-segments take the forwarded `picker` but are never pickable themselves
-(`pickable` is false), since matplotlib asks a picker function without calling
-`contains`, and their `contains` is false for hover, since matplotlib's
-`Text.contains` tests the base `Text` box at their unused position, the display
-origin, not the empty extent they report. A click there picks nothing. The
-label measures its casing, so the casing, like the segments, stays out of
-figure layout itself.
+The label draws its parts itself, so its own properties decide what is drawn.
+A hidden label is not placed, draws nothing, and has an empty extent, as
+matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
+clip path apply to the glyphs and the casing as they are at each draw, so an
+unclipped label keeps its casing outside the axes. Color, alpha, URL, snap,
+sketch parameters, and path effects reach the glyphs the same way; `set_gid`
+gives the glyphs `gid-0`, `gid-1`, and so on. A rasterized label rasterizes as
+one piece, because the parts draw inside the label's own `draw`. Picking tests
+the mouse against the box of each placed glyph (`contains`), as matplotlib's
+own text tests its box; a click on the casing's band between glyphs is not a
+hit. The parts are not artists of the axes, so they take no part in picking,
+hover, `ax.texts`, legend placement, or figure layout. The label measures its
+glyphs and its casing for them.
 
-Layering is by zorder, applied once in `__init__` and maintained by
-`set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at
-`z + 1`. The casing must sit above the container because the container's `draw`
-is what positions it: a lower zorder would draw the casing before its geometry
-is set, leaving it stale or empty. It must sit below the glyphs so the text
-reads on top.
+Layering is by the label's zorder alone: the casing draws first and the glyphs
+after it, inside `CurvedText.draw`, so the text reads on top of its casing and
+an artist at any zorder above the label covers both.
+
+Measuring is kept apart from drawing. `_place_on_curve` returns a `_Placement`
+(a place for each segment and for the casing) and writes nothing to a segment.
+`get_window_extent` and `contains` keep the placement for the renderer they
+were given, with the key it was made for, and `draw` places the label afresh
+and alone gives the segments their places. A measurement with a renderer of
+another resolution, between a draw and the glyphs' next draw, cannot move the
+glyphs.
 
 ## Behavior rules
 

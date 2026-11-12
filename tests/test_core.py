@@ -1187,7 +1187,7 @@ def test_rotation_raises_and_leaves_the_axes_unchanged():
     x = np.linspace(0, 10, 50)
     with pytest.raises(ValueError, match="rotation"):
         curved_text(ax, x, np.sin(x), "hello world", rotation=45)
-    assert not ax.texts
+    assert not ax.artists and not ax.texts
     _draw(fig)
     plt.close(fig)
 
@@ -1200,7 +1200,7 @@ def test_3d_axes_raises_and_leaves_the_axes_unchanged():
     x = np.linspace(0, 10, 50)
     with pytest.raises(TypeError, match="3D axes"):
         curved_text(ax, x, np.sin(x), "label")
-    assert not ax.texts
+    assert not ax.artists and not ax.texts
     _draw(fig)
     plt.close(fig)
 
@@ -1221,12 +1221,25 @@ def test_gid_is_written_once_for_each_part_in_a_saved_svg():
     plt.close(fig)
 
 
-def test_an_empty_gid_is_left_as_it_is_on_every_part():
-    # An empty gid names nothing, so no part gets a bare suffix such as "-0".
+def test_gid_numbers_the_parts_in_order_not_by_character_offset():
+    # A math run is one part however many characters it spans, so the
+    # characters after it follow it in the numbering, not in the string.
     fig, ax = plt.subplots()
     x = np.linspace(0, 10, 50)
-    ct = curved_text(ax, x, np.sin(x), "ab", gid="")
-    assert [seg.get_gid() for seg in ct._segments] == ["", ""]
+    ct = curved_text(ax, x, np.sin(x), "$x^2$ab", gid="lab")
+    assert [seg.get_gid() for seg in ct._segments] == [
+        "lab-0", "lab-1", "lab-2"]
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("gid", ["", 0])
+def test_a_falsy_gid_is_left_as_it_is_on_every_part(gid):
+    # A falsy gid names nothing (the SVG backend writes no id for it), so no
+    # part gets a suffix such as "-0".
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.sin(x), "ab", gid=gid)
+    assert [seg.get_gid() for seg in ct._segments] == [gid, gid]
     plt.close(fig)
 
 

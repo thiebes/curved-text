@@ -25,6 +25,7 @@ import pandas as pd
 import pytest
 from matplotlib.backend_bases import MouseEvent
 from matplotlib.backends.backend_pdf import FigureCanvasPdf
+from matplotlib.path import Path
 from matplotlib.testing import jpl_units
 from matplotlib.texmanager import TexManager
 from matplotlib.transforms import Bbox
@@ -2977,4 +2978,117 @@ def test_upright_accepts_a_numpy_bool():
     ct = curved_text(ax, x[::-1], y[::-1], "np", upright=np.bool_(True))
     _draw(fig)
     assert all(abs(_rotation_deg(s)) < 90 for s in ct._segments)
+    plt.close(fig)
+
+
+# Tight bends: a label on the inside of a bend tighter than its ink.
+_FOLD_LABEL = r"flux $\sqrt{\frac{a^2+b^2}{c^2}}\,\sum_{i=1}^{n} x_i$ out"
+
+
+def _valley(R, *, flip=False):
+    """A figure and axes with one data unit per point and the curve
+    ``y = sqrt(x**2 + R**2)``, whose radius of curvature at its vertex is R
+    points. With ``flip`` the curve is mirrored to a peak, ``y = -sqrt(...)``."""
+    fig = plt.figure(figsize=(3.4, 2.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(-122.4, 122.4)
+    sign = -1.0 if flip else 1.0
+    lo, hi = R - 43.2, R + 129.6
+    ax.set_ylim(*sorted((sign * lo, sign * hi)))
+    ax.set_aspect("equal")
+    x = np.linspace(-245, 245, 4001)
+    y = sign * np.sqrt(x ** 2 + R ** 2)
+    ax.plot(x, y)
+    return fig, ax, x, y
+
+
+def _reversed_rule_steps(ct, renderer):
+    """Steps along horizontal outline edges (fraction bars, radical overlines)
+    of the math runs whose placed displacement runs backwards along the ridden
+    path's tangent, and the number of such steps."""
+    reversed_steps = rule_steps = 0
+    for seg in _math_runs(ct):
+        flat, codes = seg._outline_units()
+        placed = seg._placed_path(renderer)
+        ppu = _px_per_unit(renderer, seg.get_fontsize())
+        for i in range(1, len(codes)):
+            if codes[i] != Path.LINETO:
+                continue
+            du = flat[i, 0] - flat[i - 1, 0]
+            if abs(flat[i, 1] - flat[i - 1, 1]) > 1e-9 or abs(du) < 1e-9:
+                continue
+            rule_steps += 1
+            s = seg._s_left + 0.5 * (flat[i, 0] + flat[i - 1, 0]) * ppu
+            _, _, angle = seg._frame.points_and_angles(s)
+            d = placed.vertices[i] - placed.vertices[i - 1]
+            if np.sign(du) * (d[0] * np.cos(angle) + d[1] * np.sin(angle)) < 0:
+                reversed_steps += 1
+    return reversed_steps, rule_steps
+
+
+def _height_violations(ct, renderer, tolerance_px=1.0):
+    """Math outline points that sit closer to the ridden path than their own
+    height above it. A bend keeps every point exactly its height away from the
+    path, so a point closer than that has passed the center of curvature."""
+    violations = total = 0
+    for seg in _math_runs(ct):
+        flat, _ = seg._outline_units()
+        placed = seg._placed_path(renderer).vertices
+        ppu = _px_per_unit(renderer, seg.get_fontsize())
+        height = np.abs(flat[:, 1] - seg._datum) * ppu
+        fx, fy = seg._frame._xf, seg._frame._yf
+        for chunk in np.array_split(np.arange(len(placed)),
+                                    max(1, len(placed) // 500)):
+            gap = np.sqrt(np.min((placed[chunk, 0, None] - fx) ** 2
+                                 + (placed[chunk, 1, None] - fy) ** 2, axis=1))
+            violations += int(np.sum(gap < height[chunk] - tolerance_px))
+        total += len(placed)
+    return violations, total
+
+
+def _glyph_centers_x(ct, renderer):
+    """The mean x of each drawn plain glyph's placed outline, in order."""
+    xs = []
+    for seg in ct._segments:
+        path = seg._placed_path(renderer)
+        if path is not None:
+            xs.append(float(path.vertices[:, 0].mean()))
+    return np.array(xs)
+
+
+@pytest.mark.parametrize("R", [15, 5])
+def test_math_run_does_not_fold_in_a_tight_valley(R):
+    # On the inside of a bend tighter than the expression is tall, the map
+    # from an outline point to the curve reverses and mirrors the ink. Rule
+    # steps (a fraction bar, a radical's overline) must keep advancing, and
+    # every point must sit its own height from the path it rides.
+    fig, ax, x, y = _valley(R)
+    ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=20)
+    _draw(fig)
+    renderer = fig.canvas.get_renderer()
+    assert _reversed_rule_steps(ct, renderer)[0] == 0
+    assert _height_violations(ct, renderer)[0] == 0
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("R", [15, 5])
+def test_offset_label_keeps_its_letters_in_order(R):
+    # An offset toward the inside of a bend larger than the bend's radius lays
+    # the label along a parallel curve that runs backwards for a stretch, so
+    # letters overlap or change order.
+    fig, ax, x, y = _valley(R)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, offset=20)
+    _draw(fig)
+    centers = _glyph_centers_x(ct, fig.canvas.get_renderer())
+    assert np.all(np.diff(centers) > 0)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("R", [15, 5])
+def test_offset_path_never_runs_backwards(R):
+    fig, ax, x, y = _valley(R)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, offset=20)
+    _draw(fig)
+    frame = ct._segments[0]._frame
+    assert np.all(np.diff(frame._xf) >= -1e-6)
     plt.close(fig)

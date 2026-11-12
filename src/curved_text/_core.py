@@ -50,6 +50,22 @@ _CROWDING = ("none", "curvature")
 _CROWD_SLACK = 0.2
 _MAX_CROWD = 0.6
 
+# Rounding of the path a label rides (``min_radius``). A bend tighter than the
+# label's ink on the inside of the bend folds the ink, so the path is rounded to
+# a minimum radius: ``_MIN_RADIUS_CLEARANCE`` times the ink extent on that side
+# for ``"auto"``. The rounding works on a copy of the curve resampled every
+# ``_ROUND_STEP`` ball radii (at least ``_ROUND_MIN_STEP_PX``), tests each point
+# against the curve within ``_ROUND_REACH`` ball radii of arc length with a
+# slack of ``_ROUND_TOL_PX`` (so a straight stretch is not flagged by
+# round-off), and is skipped where the chord-scale curvature times the radius
+# stays below ``_ROUND_GATE``.
+_MIN_RADIUS_CLEARANCE = 1.5
+_ROUND_STEP = 1 / 16
+_ROUND_MIN_STEP_PX = 0.25
+_ROUND_REACH = 2 * math.pi
+_ROUND_TOL_PX = 0.25
+_ROUND_GATE = 0.5
+
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
 
@@ -191,6 +207,21 @@ def _split_runs(text: str) -> list[_Run]:
     if cursor < len(text) or not runs:
         runs.append(_Run(False, text[cursor:].replace(r"\$", "$")))
     return runs
+
+
+def _checked_min_radius(min_radius: float | str | None) -> float | str | None:
+    """``min_radius`` as the label stores it: ``None`` (also for 0), ``"auto"``,
+    or a positive radius in points. Anything else raises."""
+    if min_radius is None or (isinstance(min_radius, str)
+                              and min_radius == "auto"):
+        return min_radius
+    if isinstance(min_radius, str):
+        raise ValueError(
+            f"min_radius must be None, 'auto', or a number, got {min_radius!r}")
+    if not math.isfinite(min_radius) or min_radius < 0:
+        raise ValueError(
+            f"min_radius must be finite and at least 0, got {min_radius!r}")
+    return float(min_radius) or None
 
 
 def _box_config(box: bool | str | dict) -> dict | None:
@@ -442,6 +473,69 @@ class _CurveFrame:
         vtx[1:-1] = np.where(safe, mx / denom, tx[:-1])
         vty[1:-1] = np.where(safe, my / denom, ty[:-1])
         return _CurveFrame(self._xf - distance * vty, self._yf + distance * vtx)
+
+    def rounded(self, radius: float, side: int, step: float) -> _CurveFrame:
+        """This curve with every bend toward ``side`` (+1 left, -1 right) that
+        is tighter than ``radius`` pixels replaced by a circular arc of that
+        radius, with the same number of vertices.
+
+        The curve is sampled every ``step`` pixels. A ball of ``radius`` rolled
+        along ``side`` of it touches the curve at a point when its center, on
+        the parallel curve, is no closer than ``radius`` to any other point
+        within ``_ROUND_REACH`` radii of arc length. Each run of points the ball
+        cannot touch is laid on the arc of the ball wedged in the corner, which
+        keeps the curve continuous. Bends gentler than the ball are left
+        exactly as they are, and so is a run that reaches an end of the curve.
+        """
+        n = len(self._xf)
+        if radius <= 0.0 or n < 3:
+            return self
+        centers = self.offset(side * radius)
+        px, py, cx, cy = self._xf, self._yf, centers._xf, centers._yf
+        limit = (radius - _ROUND_TOL_PX) ** 2
+        invalid = np.zeros(n, dtype=bool)
+        for k in range(1, min(math.ceil(_ROUND_REACH * radius / step),
+                              n - 1) + 1):
+            invalid[:-k] |= (cx[:-k] - px[k:]) ** 2 + (cy[:-k] - py[k:]) ** 2 < limit
+            invalid[k:] |= (cx[k:] - px[:-k]) ** 2 + (cy[k:] - py[:-k]) ** 2 < limit
+        if not invalid.any():
+            return self
+        x, y = px.copy(), py.copy()
+        bad = np.flatnonzero(invalid)
+        for run in np.split(bad, np.flatnonzero(np.diff(bad) > 1) + 1):
+            a, b = int(run[0]), int(run[-1])
+            if a == 0 or b == n - 1:
+                continue
+            fraction = np.arange(1, b - a + 2) / (b - a + 2)
+            gap = np.hypot(cx[b + 1] - cx[a - 1], cy[b + 1] - cy[a - 1])
+            if gap > max(2.0 * step, 0.05 * radius):
+                # The balls either side of the run do not meet at one point, so
+                # no single ball fits: blend the two ends with their tangents.
+                chord = np.hypot(px[b + 1] - px[a - 1], py[b + 1] - py[a - 1])
+                m0 = chord * np.array([np.cos(self._rads[a - 1]),
+                                       np.sin(self._rads[a - 1])])
+                end = self._rads[min(b + 1, n - 2)]
+                m1 = chord * np.array([np.cos(end), np.sin(end)])
+                p0 = np.array([px[a - 1], py[a - 1]])
+                p1 = np.array([px[b + 1], py[b + 1]])
+                t = fraction[:, None]
+                blend = ((2 * t ** 3 - 3 * t ** 2 + 1) * p0
+                         + (t ** 3 - 2 * t ** 2 + t) * m0
+                         + (-2 * t ** 3 + 3 * t ** 2) * p1
+                         + (t ** 3 - t ** 2) * m1)
+                x[a:b + 1], y[a:b + 1] = blend[:, 0], blend[:, 1]
+                continue
+            ccx = (cx[a - 1] + cx[b + 1]) / 2.0
+            ccy = (cy[a - 1] + cy[b + 1]) / 2.0
+            phi0 = np.arctan2(py[a - 1] - ccy, px[a - 1] - ccx)
+            phi1 = np.arctan2(py[b + 1] - ccy, px[b + 1] - ccx)
+            sweep = np.mod(side * (phi1 - phi0), 2.0 * np.pi) * side
+            r0 = np.hypot(px[a - 1] - ccx, py[a - 1] - ccy)
+            r1 = np.hypot(px[b + 1] - ccx, py[b + 1] - ccy)
+            rad = r0 + fraction * (r1 - r0)
+            x[a:b + 1] = ccx + rad * np.cos(phi0 + fraction * sweep)
+            y[a:b + 1] = ccy + rad * np.sin(phi0 + fraction * sweep)
+        return _CurveFrame(x, y)
 
     def remap_arc(self, other: _CurveFrame, s):
         """Map arc length ``s`` on this curve to the corresponding arc length on
@@ -860,6 +954,7 @@ class _OutlineSegment(mtext.Text):
         self._width_px = 0.0
         self._datum = 0.0
         self._outline_cache: tuple | None = None
+        self._band_cache: tuple | None = None
 
     def get_window_extent(self, renderer=None, dpi=None) -> Bbox:
         """An empty extent. A segment is measured as part of its label
@@ -988,6 +1083,21 @@ class _OutlineSegment(mtext.Text):
             self._outline_cache = (key, self._build_outline(
                 self.get_fontproperties(), self.get_text(), self.get_usetex()))
         return self._outline_cache[1]
+
+    def _ink_band(self) -> tuple[float, float]:
+        """The highest and lowest ink of the outline, in the same layout units,
+        from the curves' true extents; ``(-inf, inf)`` for a blank segment. It
+        is cached with the outline's content."""
+        key = self._content_key()
+        if self._band_cache is None or self._band_cache[0] != key:
+            verts, codes = self._outline_units()
+            if len(verts) == 0:
+                band = (-np.inf, np.inf)
+            else:
+                box = Path(verts, codes).get_extents()
+                band = (float(box.y1), float(box.y0))
+            self._band_cache = (key, band)
+        return self._band_cache[1]
 
     def _build_outline(self, prop: font_manager.FontProperties, text: str,
                        usetex: bool) -> tuple[np.ndarray, np.ndarray]:
@@ -1344,6 +1454,7 @@ class CurvedText(mtext.Text):
                  pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                  box: bool | str | dict = False, crowding: str = "none",
                  valign: str = "center", upright: bool = False,
+                 min_radius: float | str | None = "auto",
                  **kwargs: Any) -> None:
         # With the other argument checks, before the label is added, so a
         # non-string raises here and leaves the axes unchanged.
@@ -1360,6 +1471,7 @@ class CurvedText(mtext.Text):
             raise ValueError(f"valign must be one of {_VALIGN}, got {valign!r}")
         if not isinstance(upright, (bool, np.bool_)):
             raise TypeError(f"upright must be a bool, got {upright!r}")
+        min_radius = _checked_min_radius(min_radius)
         # A 3D axes has no single display-space path before its projection,
         # so a label there would draw nothing.
         if getattr(axes, "name", None) == "3d":
@@ -1431,6 +1543,7 @@ class CurvedText(mtext.Text):
         self._crowding = crowding
         self._valign = valign
         self._upright = bool(upright)
+        self._min_radius = min_radius
         axes.add_artist(self)
         # The converted curve is already kept, so the label must hear of a
         # change of units from now on, before its first placement too.
@@ -1810,6 +1923,69 @@ class CurvedText(mtext.Text):
         x, y = self.get_transform().transform(position)
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
+    def _ride_radii(self, renderer, datum: float) -> tuple[float, float]:
+        """The least radius, in display pixels, of the path the label rides
+        where it bends left and where it bends right; ``(0, 0)`` without
+        rounding. Ink above the path (toward the left of the direction of
+        travel) is on the inside of a left bend, so a left bend needs the
+        radius of the ink's height above the path, and a right bend that of its
+        depth below it."""
+        if self._min_radius is None:
+            return 0.0, 0.0
+        if self._min_radius != "auto":
+            radius = self._min_radius * renderer.points_to_pixels(1.0)
+            return radius, radius
+        px_per_unit = _px_per_unit(
+            renderer, self._segments[0].get_fontproperties()
+            .get_size_in_points())
+        top = bottom = 0.0
+        for segment in self._segments:
+            highest, lowest = segment._ink_band()
+            top = max(top, (highest - datum) * px_per_unit)
+            bottom = max(bottom, (datum - lowest) * px_per_unit)
+        return _MIN_RADIUS_CLEARANCE * top, _MIN_RADIUS_CLEARANCE * bottom
+
+    @staticmethod
+    def _round_curve(base: _CurveFrame, s_anchor: float, lead: float,
+                     length: float, ride: tuple[float, float],
+                     offset_px: float
+                     ) -> tuple[_CurveFrame, _CurveFrame, float] | None:
+        """The part of ``base`` the label can reach, rounded so that the path
+        it rides, ``base`` shifted by ``offset_px``, has at least the radii in
+        ``ride`` on its left and right bends. Returns the part as sampled, the
+        part as rounded (the same vertices), and the anchor's arc length on
+        the sampled part, or None where the curve needs no rounding.
+
+        The ridden path at distance ``d`` to the left of a curve of radius
+        ``r`` has radius ``r - d`` on a left bend and ``r + d`` on a right
+        bend, so the radii asked of ``base`` are adjusted by the offset. The
+        part reaches ``_ROUND_REACH`` radii beyond the label on each side, and
+        runs past the ends of the curve along their tangents, as the frame does.
+        A curvature test at the scale of the ball skips the sampling where no
+        bend is tight enough to matter."""
+        left = max(0.0, ride[0] + offset_px)
+        right = max(0.0, ride[1] - offset_px)
+        widest = max(left, right)
+        if widest <= 0.0:
+            return None
+        margin = _ROUND_REACH * widest
+        s_lo = s_anchor - lead * length - margin
+        s_hi = s_anchor + (1.0 - lead) * length + margin
+        kappa = base.curvature(np.arange(s_lo, s_hi, widest / 4.0), widest)
+        if np.max(np.maximum(kappa * left, -kappa * right)) < _ROUND_GATE:
+            return None
+        step = max(min(r for r in (left, right) if r > 0.0) * _ROUND_STEP,
+                   _ROUND_MIN_STEP_PX)
+        s = s_lo + step * np.arange(math.ceil((s_hi - s_lo) / step) + 1)
+        x, y, _ = base.points_and_angles(s)
+        work = _CurveFrame(x, y)
+        rounded = work.rounded(left, 1, step).rounded(right, -1, step)
+        if rounded is work:
+            return None
+        anchor = float(np.interp((s_anchor - s_lo) / step,
+                                 np.arange(len(s)), work._arc))
+        return work, rounded, anchor
+
     def _place_on_curve(self, renderer, curve_px: np.ndarray | None) -> bool:
         """Place every segment and the casing along the curve, given in display
         pixels as ``curve_px``, for this renderer: the label's whole layout,
@@ -1850,21 +2026,6 @@ class CurvedText(mtext.Text):
             s_anchor = base.length - s_anchor
             lead = 1.0 - lead
             base = _CurveFrame(points[:, 0], points[:, 1])
-        # Work in display pixels: take the arc-length frame of the stretch,
-        # then shift it perpendicularly to the parallel (offset) curve the
-        # label actually follows. Laying glyphs along the offset curve, rather
-        # than projecting them off the base curve, keeps the clearance from
-        # the curve and the on-screen letter spacing uniform at once, because
-        # the cursor advances along the curve the glyphs sit on. ``pos`` and
-        # ``anchor`` stay defined against the base curve and are carried onto
-        # the offset curve below, so the label lands where the user asked.
-        offset_px = self._offset * renderer.points_to_pixels(1.0)
-        frame = base.offset(offset_px)
-        if not np.isfinite(frame.length) or frame.length <= 0.0:
-            self._unplace()
-            return False
-        inv = axes.transData.inverted()
-
         # The vertical-alignment datum is a font-metric constant, identical for
         # every segment, so derive it once here and hand it to each segment
         # rather than re-deriving it per glyph. Every alignment but the baseline
@@ -1882,17 +2043,46 @@ class CurvedText(mtext.Text):
             datum = _valign_datum(self._valign, lines)
             band = _valign_datum("center", lines) - datum
 
-        # Anchor at ``pos`` of the base curve, carried onto the offset curve, so
-        # the user's placement reads against the curve they passed in. ``lead``
-        # is the fraction of the label that sits before the anchor point.
-        s0 = float(base.remap_arc(frame, s_anchor))
+        # Work in display pixels: take the arc-length frame of the stretch,
+        # round it where a bend is tighter than the label's ink (see
+        # ``_round_curve``), then shift it perpendicularly to the parallel
+        # (offset) curve the label actually follows. Laying glyphs along the
+        # offset curve, rather than projecting them off the base curve, keeps
+        # the clearance from the curve and the on-screen letter spacing
+        # uniform at once, because the cursor advances along the curve the
+        # glyphs sit on. ``pos`` and ``anchor`` stay defined against the base
+        # curve and are carried onto the offset curve below, so the label
+        # lands where the user asked.
+        offset_px = self._offset * renderer.points_to_pixels(1.0)
+        flat_total = float(sum(spans))
+        # The longest the label can be along the frame, with crowding's widest
+        # possible gaps, which sets how much of the curve rounding must cover.
+        reach = flat_total
+        if self._crowding != "none":
+            reach += len(spans) * (_MAX_CROWD - _CROWD_SLACK) * max(heights)
+        rounding = self._round_curve(
+            base, s_anchor, lead, reach, self._ride_radii(renderer, datum),
+            offset_px)
+        # ``work`` and ``rounded`` share their vertices one to one, and so do
+        # ``rounded`` and ``frame``: without rounding all three are the curve.
+        work, rounded, s_work = rounding or (base, base, s_anchor)
+        frame = rounded.offset(offset_px)
+        if not np.isfinite(frame.length) or frame.length <= 0.0:
+            self._unplace()
+            return False
+        inv = axes.transData.inverted()
+
+        # Anchor at ``pos`` of the base curve, carried onto the rounded, offset
+        # curve, so the user's placement reads against the curve they passed
+        # in. ``lead`` is the fraction of the label that sits before the anchor
+        # point.
+        s0 = float(work.remap_arc(frame, s_work))
 
         # Per-glyph advances along the offset curve. In ``"curvature"`` mode
         # these are widened on bends (see ``_advances``); the curve is sampled
         # along the un-widened layout, anchored the same way, which is accurate
         # enough since the widening shifts positions only slightly. The label
         # then spans ``total`` pixels from the re-anchored cursor.
-        flat_total = float(sum(spans))
         advances = self._advances(frame, spans, heights, s0 - lead * flat_total)
         total = float(sum(advances))
         cursor = s0 - lead * total
@@ -1937,6 +2127,7 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
                 pos: float = 0.5, anchor: str = "center", offset: float = 0.0,
                 box: bool | str | dict = False, crowding: str = "none",
                 valign: str = "center", upright: bool = False,
+                min_radius: float | str | None = "auto",
                 **kwargs: Any) -> CurvedText:
     """Draw ``text`` along the curve ``(x, y)`` on ``ax`` and return the artist.
 
@@ -2007,4 +2198,4 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
     """
     return CurvedText(x, y, text, ax, pos=pos, anchor=anchor, offset=offset,
                       box=box, crowding=crowding, valign=valign,
-                      upright=upright, **kwargs)
+                      upright=upright, min_radius=min_radius, **kwargs)

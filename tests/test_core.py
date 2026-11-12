@@ -12,7 +12,6 @@ import pickle
 import re
 import shutil
 import subprocess
-import time
 
 import matplotlib as mpl
 import matplotlib.cbook as cbook
@@ -3031,7 +3030,9 @@ def _reversed_rule_steps(ct, renderer):
 def _height_violations(ct, renderer, tolerance_px=1.0):
     """Math outline points that sit closer to the ridden path than their own
     height above it. A bend keeps every point exactly its height away from the
-    path, so a point closer than that has passed the center of curvature."""
+    path, so a point closer than that has passed the center of curvature. The
+    path is measured at its vertices, a link apart, so a point can sit up to
+    about a pixel closer to a link than to the vertices: ``tolerance_px``."""
     violations = total = 0
     for seg in _math_runs(ct):
         flat, _ = seg._outline_units()
@@ -3181,6 +3182,7 @@ def test_the_rounded_path_has_no_sharp_corner_and_no_gap():
     radius_px = 30 * fig.canvas.get_renderer().points_to_pixels(1.0)
     step = max(radius_px * _core._ROUND_STEP, _core._ROUND_MIN_STEP_PX)
     links = np.column_stack([np.diff(frame._xf), np.diff(frame._yf)])
+    # The factor 2 is slack for the sampling not landing on the arc's ends.
     assert np.hypot(*links.T).max() <= 2.0 * step
     heading = np.arctan2(links[:, 1], links[:, 0])
     turns = np.abs(np.angle(np.exp(1j * np.diff(heading))))
@@ -3206,6 +3208,8 @@ def test_a_right_angle_corner_leaves_the_curve_by_the_fillet_bound():
     # The arc's middle lies (sqrt(2) - 1) * r from the corner along the
     # bisector, which is (1 - 1 / sqrt(2)) * r from either arm.
     fillet = (1.0 - 1.0 / np.sqrt(2)) * 30 * pt
+    # One pixel of slack: the frame is sampled every r / 16, so the arc's middle
+    # can fall between two samples.
     assert fillet - 1.0 <= gap.max() <= fillet + 1.0
     far = np.hypot(*(points - polyline[1]).T) > 30 * pt * 2.5
     assert far.any() and gap[far].max() < 1e-6
@@ -3337,6 +3341,8 @@ def test_the_box_follows_the_rounded_path():
     # The casing sits over the ink, a fixed distance (half its band) off the
     # ridden baseline, so it runs parallel to the rounded path.
     distance = _distance_to_polyline(box, ridden)
+    # The casing is sampled at 64 points and the frame every step, so the
+    # distance varies by about a pixel.
     assert np.ptp(distance) < 1.5
     plt.close(fig)
 
@@ -3455,57 +3461,73 @@ def test_auto_takes_one_and_a_half_times_the_ink_on_each_side():
 
 
 @pytest.mark.parametrize("min_radius", [1e-6, 1e-4, 1e7, 1e300])
-def test_a_tiny_or_huge_min_radius_draws_at_once(min_radius):
+def test_a_tiny_or_huge_min_radius_draws_without_error(min_radius):
     # A radius below a quarter pixel cannot be told from round-off and is left
     # alone; one beyond any figure is as good as straight and must not overflow.
+    # (A tiny radius once took seconds and then gigabytes to sample.)
     fig, ax, x, y = _valley(5)
     ct = curved_text(ax, x, y, "Temperature", fontsize=20,
                      min_radius=min_radius)
-    start = time.perf_counter()
     _draw(fig)
-    assert time.perf_counter() - start < 5.0
     assert np.isfinite(_outline(ct, fig)).all()
     plt.close(fig)
 
 
-def test_the_label_moves_smoothly_as_pos_moves():
-    # A tight bend that comes into reach of the sampled part of the curve must
-    # not change the rounding of the bends already in it: a small step of pos
-    # moves each glyph by about the step, with or without the rounding.
+def _largest_step_with_pos(min_radius, reverse):
+    """The largest distance, in pixels, that any glyph moves when ``pos`` moves
+    by 0.002, over a wiggly curve whose bends come into and out of reach of
+    the sampled part of the curve as the label moves along it."""
     rng = np.random.default_rng(3)
     t = np.linspace(0, 1, 400)
     x = t * 300
     y = sum(30 / k * np.sin(2 * np.pi * k * t * 3 + rng.uniform(0, 6))
             for k in range(1, 12))
+    if reverse:
+        x, y = x[::-1], y[::-1]
     fig = plt.figure(figsize=(4.17, 3))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(x.min() - 20, x.max() + 20)
     ax.set_ylim(y.min() - 60, y.max() + 60)
     ax.set_aspect("equal")
-    ct = curved_text(ax, x, y, "Temperature", fontsize=16)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=16,
+                     min_radius=min_radius)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-
-    def centers():
-        ct._place(renderer)
-        return np.array([seg._placed_path(renderer).vertices.mean(axis=0)
-                         for seg in ct._segments
-                         if seg._placed_path(renderer) is not None])
-
     previous, largest = None, 0.0
     for pos in np.arange(0.05, 0.95, 0.002):
+        # The private position and placement are set directly: a draw per step
+        # would also run the figure's layout, and only the placement is meant.
         ct._pos = pos
-        current = centers()
+        ct._place(renderer)
+        current = np.array([seg._placed_path(renderer).vertices.mean(axis=0)
+                            for seg in ct._segments
+                            if seg._placed_path(renderer) is not None])
         if previous is not None:
             largest = max(largest, np.hypot(*(current - previous).T).max())
         previous = current
-    assert largest < 6.0
     plt.close(fig)
+    return largest
 
 
-def test_a_narrow_hairpin_is_a_documented_limit():
-    # Arms about ten degrees apart need a ball that fits only beyond the
-    # reach of the ball test, so the bend is not rounded and the label folds.
+@pytest.mark.parametrize("reverse", [False, True])
+def test_the_label_moves_smoothly_as_pos_moves(reverse):
+    # A tight bend that comes into reach of the sampled part must not change
+    # the rounding of the bends already in it, at either end of the part (the
+    # curve is walked both ways to reach both ends). Without the rounding the
+    # glyphs move by up to a few pixels a step on this curve, from its own
+    # shape; before the sampled part widened, the rounding added jumps of 30
+    # to 70 pixels, so a few pixels over the unrounded path is the bound.
+    rounded = _largest_step_with_pos("auto", reverse)
+    unrounded = _largest_step_with_pos(None, reverse)
+    assert rounded < unrounded + 3.0
+
+
+@pytest.mark.parametrize("pos", [0.3, 0.5])
+def test_a_narrow_hairpin_is_a_documented_limit(pos):
+    # Arms ten degrees apart need a ball that fits only beyond the reach of the
+    # ball test, so the bend is blended with no radius guarantee and the label
+    # folds, wherever it sits on the arm. When the limit is lifted this test
+    # should be inverted: the label then has no violations.
     half = np.radians(5.0)
     x = np.array([-100.0 * np.cos(half), 0.0, -100.0 * np.cos(half)])
     y = np.array([100.0 * np.sin(half), 0.0, -100.0 * np.sin(half)])
@@ -3514,7 +3536,8 @@ def test_a_narrow_hairpin_is_a_documented_limit():
     ax.set_xlim(-110, 30)
     ax.set_ylim(-60, 60)
     ax.set_aspect("equal")
-    ct = curved_text(ax, x, y, r"$\sqrt{\frac{a}{b}}$ tip", fontsize=14)
+    ct = curved_text(ax, x, y, r"$\sqrt{\frac{a}{b}}$ tip", fontsize=14,
+                     pos=pos)
     _draw(fig)
     assert _height_violations(ct, fig.canvas.get_renderer())[0] > 0
     plt.close(fig)

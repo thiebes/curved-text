@@ -92,6 +92,36 @@ _ROUND_MAX_RADIUS_PX = 1e7
 _ROUND_BLEND_STEPS = 2.0
 _ROUND_BLEND_RADIUS = 0.05
 
+# Smoothing of the path a label rides (``smooth``). A line of measured data
+# wiggles at the width of a glyph, which tilts and steps neighboring glyphs, so
+# the path is smoothed by a Gaussian along its arc length, in display pixels,
+# corrected for the shrinking of bends that a Gaussian alone causes (twice the
+# smoothed path less the smoothed path smoothed again, which leaves the shape
+# of a smooth bend alone to second order). ``"auto"`` takes ``_SMOOTH_AUTO_EM``
+# of the font size as the Gaussian's standard deviation. The curve is
+# resampled every ``_SMOOTH_STEP`` standard deviations (at least
+# ``_SMOOTH_MIN_STEP_PX``, and at most ``_SMOOTH_MAX_SAMPLES`` samples over the
+# stretch) and the kernel reaches ``_SMOOTH_REACH`` standard deviations. A width
+# below ``_SMOOTH_MIN_PX`` is not smoothing.
+#
+# ``"auto"`` smooths only where the path wiggles under the label, so a label on
+# a smooth curve, tight bends included, is drawn exactly as without smoothing; a
+# width given in points always smooths. A path wiggles where the direction of
+# its chords, taken end to end across the label, each ``_SMOOTH_CHORD`` standard
+# deviations long (half an em for ``"auto"``), turns one way and then the other
+# at least ``_SMOOTH_REVERSALS`` times, counting only turns of
+# ``_SMOOTH_DEADBAND`` or more. A bend turns the chords one way all through it,
+# and wiggles are what turns them back and forth.
+_SMOOTH_AUTO_EM = 0.75
+_SMOOTH_STEP = 1 / 8
+_SMOOTH_MIN_STEP_PX = 0.25
+_SMOOTH_MAX_SAMPLES = 20000
+_SMOOTH_REACH = 4.0
+_SMOOTH_MIN_PX = 0.5
+_SMOOTH_CHORD = 2 / 3
+_SMOOTH_DEADBAND = math.radians(2.0)
+_SMOOTH_REVERSALS = 2
+
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
 
@@ -261,24 +291,26 @@ def _split_runs(text: str) -> list[_Run]:
     return runs
 
 
-def _checked_min_radius(min_radius: float | str | None) -> float | str | None:
-    """``min_radius`` as the label stores it: ``None`` (also for 0), ``"auto"``,
-    or a positive radius in points. Anything else raises."""
-    if min_radius is None:
+def _checked_length(name: str, value: float | str | None
+                    ) -> float | str | None:
+    """A length argument as the label stores it: ``None`` (also for 0),
+    ``"auto"``, or a positive length in points. Anything else raises, naming
+    the argument ``name``."""
+    if value is None:
         return None
-    if isinstance(min_radius, str):
-        if min_radius != "auto":
+    if isinstance(value, str):
+        if value != "auto":
             raise ValueError(
-                f"min_radius must be None, 'auto', or a number, got {min_radius!r}")
-        return min_radius
-    if isinstance(min_radius, (bool, np.bool_)) or not isinstance(
-            min_radius, numbers.Real):
+                f"{name} must be None, 'auto', or a number, got {value!r}")
+        return value
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+            value, numbers.Real):
         raise TypeError(
-            f"min_radius must be None, 'auto', or a number, got {min_radius!r}")
-    if not math.isfinite(min_radius) or min_radius < 0:
+            f"{name} must be None, 'auto', or a number, got {value!r}")
+    if not math.isfinite(value) or value < 0:
         raise ValueError(
-            f"min_radius must be finite and at least 0, got {min_radius!r}")
-    return float(min_radius) or None
+            f"{name} must be finite and at least 0, got {value!r}")
+    return float(value) or None
 
 
 def _box_config(box: bool | str | dict) -> dict | None:
@@ -709,6 +741,71 @@ def _stretch_at(curve_px: np.ndarray, pos: float,
     first, last = int(inside[0]), int(inside[-1]) + 1
     before = float(ends[first - 1]) if first else 0.0
     return curve_px[first:last + 1], target - before
+
+
+def _path_reversals(x: np.ndarray, y: np.ndarray, chord: int, first: int,
+                    last: int) -> int:
+    """How many times the direction of the chords of the evenly sampled path
+    ``(x, y)``, laid end to end across the samples ``first`` to ``last``, each
+    ``chord`` samples long, turns back after turning the other way. Turns
+    smaller than ``_SMOOTH_DEADBAND`` are not counted, nor is the sign they
+    would carry."""
+    first, last = max(first, 0), min(last, len(x) - 1)
+    starts = np.arange(first, last - chord + 1, chord)
+    if len(starts) < 3:
+        return 0
+    direction = np.unwrap(np.arctan2(y[starts + chord] - y[starts],
+                                     x[starts + chord] - x[starts]))
+    turns = np.diff(direction)
+    sides = np.sign(turns[np.abs(turns) >= _SMOOTH_DEADBAND])
+    return int(np.count_nonzero(sides[1:] != sides[:-1]))
+
+
+def _smoothed_stretch(points: np.ndarray, s_anchor: float, sigma: float,
+                      covered: tuple[float, float], only_if_wiggly: bool
+                      ) -> tuple[np.ndarray, float]:
+    """The stretch ``points`` (display pixels) smoothed by a Gaussian of
+    standard deviation ``sigma`` pixels along its arc length, with the
+    correction for the shrinking of bends, and the arc length on it of the
+    point at ``s_anchor`` on the stretch.
+
+    ``covered`` is the interval of arc length the label covers. The stretch
+    is resampled evenly by arc length, extended past each end along its end
+    tangent, as the frame extends it, so the ends do not pull in. The smoothed
+    path keeps the samples one to one, which carries the anchor across. The
+    stretch itself comes back, unchanged, where ``sigma`` is too small to
+    matter or, with ``only_if_wiggly``, the stretch does not wiggle where the
+    label covers it (``_path_reversals``).
+    """
+    if sigma < _SMOOTH_MIN_PX:
+        return points, s_anchor
+    frame = _CurveFrame(points[:, 0], points[:, 1])
+    if not np.isfinite(frame.length) or frame.length <= 0.0:
+        return points, s_anchor
+    count = max(1, math.ceil(frame.length / max(
+        _SMOOTH_STEP * sigma, _SMOOTH_MIN_STEP_PX,
+        frame.length / _SMOOTH_MAX_SAMPLES)))
+    step = frame.length / count
+    reach = math.ceil(_SMOOTH_REACH * sigma / step)
+    x, y, _ = frame.points_and_angles(
+        step * np.arange(-2 * reach, count + 2 * reach + 1))
+    # The samples before smoothing are the middle of the padded ones.
+    middle = slice(2 * reach, 2 * reach + count + 1)
+    if only_if_wiggly and _path_reversals(
+            x[middle], y[middle], max(1, round(_SMOOTH_CHORD * sigma / step)),
+            math.floor(covered[0] / step), math.ceil(covered[1] / step)
+    ) < _SMOOTH_REVERSALS:
+        return points, s_anchor
+    kernel = np.exp(-0.5 * (step * np.arange(-reach, reach + 1) / sigma) ** 2)
+    kernel /= kernel.sum()
+    smoothed = np.empty((count + 1, 2))
+    for column, values in enumerate((x, y)):
+        once = np.convolve(values, kernel, "valid")
+        twice = np.convolve(once, kernel, "valid")
+        smoothed[:, column] = 2.0 * once[reach:reach + count + 1] - twice
+    arc = _CurveFrame(smoothed[:, 0], smoothed[:, 1])._arc
+    return smoothed, float(np.interp(s_anchor / step, np.arange(count + 1),
+                                     arc))
 
 
 def _reads_leftward(frame: _CurveFrame, s_anchor: float, lead: float,
@@ -1358,7 +1455,29 @@ class CurvedText(mtext.Text):
         beyond the reach of the ball test (about six radii of arc length), and
         a jagged curve that changes direction at the scale of the label's ink,
         such as noisy data plotted point by point. Pass a smoothed curve for
-        such data.
+        such data, or ask for ``smooth``.
+    smooth : {"auto"}, None, or float, default None
+        The width, in points of arc length, over which the path the label rides
+        is smoothed; the line itself is not changed. A line of measured data
+        wiggles at about the width of a glyph, which tilts neighboring glyphs
+        by different amounts and steps them up and down. The path is smoothed
+        by a Gaussian of this standard deviation, corrected so that a smooth
+        bend keeps its shape, and the label rides the result. The smoothing is
+        worked out on every draw, in display space, and it comes before the
+        rounding of ``min_radius`` and the offset.
+
+        ``None`` or ``0`` turns the smoothing off. A number smooths by that
+        width wherever the label is, so it rounds any bend narrower than the
+        width. ``"auto"`` takes three quarters of an em, the font size, and
+        smooths only where the path wiggles under the label: where the chords
+        across half an em, taken end to end along the label, turn one way and
+        then the other at least twice. A bend turns the chords one way all
+        through it, so a label on a smooth curve, tight bends included, is
+        drawn exactly as without smoothing.
+
+        The label rides the smoothed path, not the line, so a line that wiggles
+        by more than the label's ``offset`` can touch the letters. Use an
+        offset larger than the wiggles.
     **kwargs
         Extra keyword arguments are :class:`~matplotlib.text.Text` properties.
         The font ones, ``fontsize``, ``fontfamily``, ``fontproperties``,
@@ -1402,13 +1521,13 @@ class CurvedText(mtext.Text):
           values.
         - A ``box`` dict has a key other than ``color``, ``pad``, and ``alpha``.
         - ``rotation`` is passed, because the curve sets each glyph's angle.
-        - ``min_radius`` is a string other than ``"auto"``, or is negative,
-          infinite, or NaN.
+        - ``min_radius`` or ``smooth`` is a string other than ``"auto"``, or is
+          negative, infinite, or NaN.
     TypeError
         If ``text`` is not a string, ``pos`` is not a number, ``upright`` is
-        not a bool (``1`` and ``0`` are not accepted), ``min_radius`` is
-        not ``None``, ``"auto"``, or a number (a bool is not accepted), or
-        ``axes`` is a 3D axes.
+        not a bool (``1`` and ``0`` are not accepted), ``min_radius`` or
+        ``smooth`` is not ``None``, ``"auto"``, or a number (a bool is not
+        accepted), or ``axes`` is a 3D axes.
     matplotlib.units.ConversionError
         If the axes cannot convert the data of ``x`` or ``y``.
     AttributeError
@@ -1525,6 +1644,7 @@ class CurvedText(mtext.Text):
                  box: bool | str | dict = False, crowding: str = "none",
                  valign: str = "center", upright: bool = False,
                  min_radius: float | str | None = "auto",
+                 smooth: float | str | None = None,
                  **kwargs: Any) -> None:
         # With the other argument checks, before the label is added, so a
         # non-string raises here and leaves the axes unchanged.
@@ -1541,7 +1661,8 @@ class CurvedText(mtext.Text):
             raise ValueError(f"valign must be one of {_VALIGN}, got {valign!r}")
         if not isinstance(upright, (bool, np.bool_)):
             raise TypeError(f"upright must be a bool, got {upright!r}")
-        min_radius = _checked_min_radius(min_radius)
+        min_radius = _checked_length("min_radius", min_radius)
+        smooth = _checked_length("smooth", smooth)
         # A 3D axes has no single display-space path before its projection,
         # so a label there would draw nothing.
         if getattr(axes, "name", None) == "3d":
@@ -1612,6 +1733,7 @@ class CurvedText(mtext.Text):
         self._valign = valign
         self._upright = bool(upright)
         self._min_radius = min_radius
+        self._smooth = smooth
         axes.add_artist(self)
         # The converted curve is already kept, so the label must hear of a
         # change of units from now on, before its first placement too.
@@ -1999,6 +2121,17 @@ class CurvedText(mtext.Text):
         x, y = self.get_transform().transform(position)
         return Bbox.from_bounds(x, y, 0.0, 0.0)
 
+    def _smooth_px(self, renderer) -> float:
+        """The standard deviation, in display pixels, of the smoothing of the
+        path the label rides; 0 without smoothing."""
+        if self._smooth is None:
+            return 0.0
+        if self._smooth == "auto":
+            size = (self._segments[0].get_fontproperties()
+                    .get_size_in_points())
+            return _SMOOTH_AUTO_EM * renderer.points_to_pixels(size)
+        return self._smooth * renderer.points_to_pixels(1.0)
+
     def _ride_radii(self, renderer, datum: float) -> tuple[float, float]:
         """The least radius, in display pixels, of the path the label rides
         where it bends left and where it bends right; ``(0, 0)`` without
@@ -2121,7 +2254,6 @@ class CurvedText(mtext.Text):
         if stretch is None:
             return None
         points, s_anchor = stretch
-        base = _CurveFrame(points[:, 0], points[:, 1])
         sizes = [t._size_px(renderer) for t in self._segments]
         widths = [width for width, _ in sizes]
         heights = [height for _, height in sizes]
@@ -2130,6 +2262,16 @@ class CurvedText(mtext.Text):
         # glyph itself keeps its own width as the chord it is rotated by.
         spans = [w + k for w, k in zip(widths, self._kerns_px(renderer))]
         lead = {"start": 0.0, "center": 0.5, "end": 1.0}[self._anchor]
+        # The path is smoothed before anything is laid on it, so rounding, the
+        # offset, the casing, and the reading direction all follow what the
+        # label rides. The label covers the arc length from ``covered[0]``.
+        label_span = sum(spans)
+        covered = (s_anchor - lead * label_span,
+                   s_anchor + (1.0 - lead) * label_span)
+        points, s_anchor = _smoothed_stretch(
+            points, s_anchor, self._smooth_px(renderer), covered,
+            self._smooth == "auto")
+        base = _CurveFrame(points[:, 0], points[:, 1])
         # An upright label reads left to right on screen. The chord across the
         # span the label covers decides, in display space on every draw, so an
         # inverted axis or a changed view is followed. The label keeps its
@@ -2241,6 +2383,7 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
                 box: bool | str | dict = False, crowding: str = "none",
                 valign: str = "center", upright: bool = False,
                 min_radius: float | str | None = "auto",
+                smooth: float | str | None = None,
                 **kwargs: Any) -> CurvedText:
     """Draw ``text`` along the curve ``(x, y)`` on ``ax`` and return the artist.
 
@@ -2279,6 +2422,10 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
         The least radius, in points, of the path the label rides.
         ``"auto"`` rounds a bend tighter than the label's ink; ``None`` turns
         the rounding off. :class:`CurvedText` describes the rule.
+    smooth : {"auto"}, None, or float, default None
+        The width, in points, over which the path the label rides is smoothed.
+        ``"auto"`` smooths where the path wiggles under the label; ``None``
+        leaves the path as it is. :class:`CurvedText` describes the rule.
     **kwargs
         :class:`~matplotlib.text.Text` properties applied to every glyph and
         math run, such as ``color``, ``fontsize``, ``alpha``, and
@@ -2315,4 +2462,5 @@ def curved_text(ax: Axes, x: ArrayLike | Sequence[Any],
     """
     return CurvedText(x, y, text, ax, pos=pos, anchor=anchor, offset=offset,
                       box=box, crowding=crowding, valign=valign,
-                      upright=upright, min_radius=min_radius, **kwargs)
+                      upright=upright, min_radius=min_radius, smooth=smooth,
+                      **kwargs)

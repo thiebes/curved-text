@@ -9,6 +9,7 @@ import datetime
 import functools
 import inspect
 import io
+import math
 import os
 import pickle
 import re
@@ -4090,7 +4091,7 @@ def _circle_arc(radius):
 
 def test_smoothing_leaves_a_straight_run_as_it_is():
     points = np.column_stack([np.linspace(0, 300, 40), np.linspace(0, 120, 40)])
-    smoothed, anchor, _ = _core._smoothed_stretch(points, 150.0, 8.0,
+    smoothed, anchor = _core._smoothed_stretch(points, 150.0, 8.0,
                                                (100.0, 200.0), False)
     frame = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1])
     straight = _core._CurveFrame(points[:, 0], points[:, 1])
@@ -4217,12 +4218,12 @@ def test_a_width_in_points_smooths_for_a_label_far_past_an_end():
     points = np.column_stack([along, 4.0 * np.sin(along / 2.3)])
     raw = _core._CurveFrame(points[:, 0], points[:, 1])
     for covered, steps in (((700.0, 800.0), None), ((3000.0, 3100.0), 1)):
-        smoothed, mapped, start = _core._smoothed_stretch(
+        smoothed, mapped = _core._smoothed_stretch(
             points, covered[0], 8.0, covered, False)
         assert smoothed is not points
         # The anchor is as far past the end of the part as it was past the
         # part's end on the stretch.
-        _, step, count = _core._smoothing_window(raw.length, covered, 8.0)
+        start, step, count = _core._smoothing_window(raw.length, covered, 8.0)
         length = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1]).length
         assert mapped == pytest.approx(
             length + covered[0] - start - count * step, abs=1e-6)
@@ -4233,10 +4234,12 @@ def test_a_width_in_points_smooths_for_a_label_far_past_an_end():
 def test_smoothing_carries_an_anchor_off_the_stretch_by_its_distance():
     points = np.column_stack([np.linspace(0, 300, 40), np.zeros(40)])
     for anchor in (-50.0, 350.0):
-        smoothed, mapped, start = _core._smoothed_stretch(
-            points, anchor, 8.0, (anchor - 40.0, anchor + 40.0), False)
-        # The line is straight and the part starts at its start, so the anchor
-        # keeps its distance past the end it is off.
+        covered = (anchor - 40.0, anchor + 40.0)
+        smoothed, mapped = _core._smoothed_stretch(points, anchor, 8.0,
+                                                   covered, False)
+        # The line is straight, so the anchor keeps its distance past the end
+        # it is off, measured from where the part starts.
+        start = _core._smoothing_window(300.0, covered, 8.0)[0]
         assert start + mapped == pytest.approx(anchor, abs=1e-6)
 
 
@@ -4283,11 +4286,116 @@ def test_the_pixel_floor_and_the_step_floor_of_smoothing():
     # A width under half a pixel is not smoothing: the stretch comes back.
     assert _core._smoothed_stretch(points, 500.0, 0.4, (480.0, 520.0),
                                    False)[0] is points
-    # At a width of 2 pixels the samples are a quarter pixel apart over the
-    # part around the label (about 200 pixels), not coarser.
-    smoothed, *_ = _core._smoothed_stretch(points, 500.0, 2.0, (480.0, 520.0),
+    # At a width of 1 pixel an eighth of it is under the floor, so the samples
+    # are a quarter pixel apart, not 0.125 apart.
+    smoothed, _ = _core._smoothed_stretch(points, 500.0, 1.0, (480.0, 520.0),
                                           False)
-    assert len(smoothed) >= 500
+    frame = _core._CurveFrame(points[:, 0], points[:, 1])
+    _, step, count = _core._smoothing_window(frame.length, (480.0, 520.0), 1.0)
+    assert step == 0.25 and len(smoothed) == count + 1
+    steps = np.hypot(*np.diff(smoothed, axis=0).T)
+    assert np.median(steps) == pytest.approx(0.25, abs=0.02)
+
+
+def test_the_smoothing_window_is_on_a_grid_that_the_label_does_not_move():
+    # The samples depend on the width alone, and the part starts and ends on
+    # whole steps along the stretch: moving the label by less than a step
+    # changes the part by at most one step, and never its grid.
+    for width in (1.0, 8.0):
+        step = max(width / 8.0, 0.25)
+        for shift in (0.0, 0.1, 0.37, 0.9):
+            start, got, count = _core._smoothing_window(
+                5000.0, (2000.0 + shift, 2100.0 + shift), width)
+            assert got == step
+            assert start / step == pytest.approx(round(start / step), abs=1e-9)
+            assert (start + count * step) / step == pytest.approx(
+                round((start + count * step) / step), abs=1e-9)
+
+
+def test_the_smoothing_window_reaches_a_margin_either_side_of_the_label():
+    # The margin is the larger of 24 widths and twice the label: 240 pixels at
+    # a width of 10 for a label of 10 pixels, not the 20 of twice the label.
+    start, step, count = _core._smoothing_window(5000.0, (500.0, 510.0), 10.0)
+    stop = start + count * step
+    assert 260.0 - step < start <= 260.0
+    assert 750.0 <= stop < 750.0 + step
+    # And twice the label where that is larger: 400 pixels at a width of 1.
+    start, step, count = _core._smoothing_window(5000.0, (500.0, 700.0), 1.0)
+    stop = start + count * step
+    assert 100.0 - step < start <= 100.0
+    assert 1100.0 <= stop < 1100.0 + step
+
+
+def test_the_smoothing_window_coarsens_by_doublings_over_20000_samples():
+    # A label of 10000 pixels at a width of 1 would need over 100000 samples at
+    # a quarter pixel. The step doubles until it holds 20000 or fewer, so the
+    # grid stays the same for every position of the label.
+    for shift in (0.0, 1234.5):
+        start, step, count = _core._smoothing_window(
+            1.0e6, (50000.0 + shift, 60000.0 + shift), 1.0)
+        assert count <= 20000
+        assert math.log2(step / 0.25) == pytest.approx(
+            round(math.log2(step / 0.25)))
+        assert step > 0.25
+
+
+def test_the_smoothing_window_keeps_one_step_past_either_end():
+    # A label far past the end of the stretch gets the last step of it, and one
+    # far before the start gets the first, so there is always a part to smooth.
+    start, step, count = _core._smoothing_window(400.0, (3000.0, 3100.0), 8.0)
+    assert (start, count) == (399.0, 1) and step == 1.0
+    start, step, count = _core._smoothing_window(400.0, (-3100.0, -3000.0), 8.0)
+    assert (start, count) == (0.0, 1)
+
+
+def test_the_gate_stops_where_the_label_does():
+    # A line smooth up to 900 pixels and wiggling after, with a label that
+    # covers 700 to 800. The part around it runs to about 1016, so it holds
+    # some of the wiggle, which lies past the label and is not looked at.
+    along = np.arange(0.0, 1400.0, 0.5)
+    y = np.where(along < 900.0, 0.0, 6.0 * np.sin(2.0 * np.pi * along / 24.0))
+    points = np.column_stack([along, y])
+    result = _core._smoothed_stretch(points, 750.0, 9.0, (700.0, 800.0), True)
+    assert result[0] is points
+
+
+def test_a_path_that_wiggles_leftward_is_counted_as_one_that_goes_rightward():
+    # Directions near a half turn jump between +pi and -pi, and a turn between
+    # two of them is a small one, not a whole turn the other way.
+    along = np.arange(0.0, 400.0)
+    y = 4.0 * np.sin(along / 3.0)
+    right = _core._path_reversals(along, y, 6, 0, 399)
+    left = _core._path_reversals(-along, y, 6, 0, 399)
+    assert right >= 4 and left == right
+
+
+def test_a_path_that_turns_by_nearly_a_half_turn_the_same_way_never_reverses():
+    # Chords that each turn by 170 degrees, always the same way, wind a tight
+    # curl: only an exact half turn is read as doubling back.
+    angle = np.radians(170.0) * np.arange(30)
+    x = np.concatenate([[0.0], np.cumsum(np.cos(angle))])
+    y = np.concatenate([[0.0], np.cumsum(np.sin(angle))])
+    assert _core._path_reversals(x, y, 1, 0, 30) == 0
+
+
+def test_three_chords_can_reverse_once():
+    # Forward, back, and forward again: two half turns, one reversal.
+    along = np.arange(31.0)
+    forward_and_back = 10.0 - np.abs(((along / 10.0) % 2.0) * 10.0 - 10.0)
+    assert _core._path_reversals(forward_and_back, 0 * along, 10, 0, 30) == 1
+
+
+@pytest.mark.parametrize("wiggle", [
+    # Found by search: each is a wiggle that two of the three starting offsets
+    # of a chord of 60 samples miss, and the third sees.
+    (63.668, 219.102, 17.279, 48.761, 0.876),
+    (33.214, 186.668, 1.504, 47.250, 0.285)])
+def test_each_of_the_three_offsets_sees_a_wiggle_the_others_miss(wiggle):
+    period, phase, amplitude, other_period, other_amplitude = wiggle
+    x = np.arange(1201.0)
+    y = (amplitude * np.sin(2.0 * np.pi * x / period + np.radians(phase))
+         + other_amplitude * np.sin(2.0 * np.pi * x / other_period))
+    assert _core._path_reversals(x, y, 60, 0, 1200) >= 2
 
 
 def test_a_wiggle_of_two_chords_is_seen_at_every_phase():

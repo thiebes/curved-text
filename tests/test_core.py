@@ -4299,9 +4299,24 @@ def test_a_wiggle_of_two_chords_is_seen_at_every_phase():
     assert _core._path_reversals(along, wiggle, 60, 0, 4000) >= 10
 
 
-def test_a_steep_zigzag_wiggles_though_its_turns_are_half_turns():
-    # The chords of a steep zigzag flip by nearly a half turn, which a
-    # difference of unwrapped angles would read as no turn at all.
+def test_a_path_that_doubles_back_on_itself_wiggles():
+    # The chords of a switchback flip by exactly a half turn, which has no side
+    # of its own: every one is a turn back. Here x goes forward and back along
+    # a line, 10 pixels each way.
+    along = np.arange(401.0)
+    forward_and_back = 10.0 - np.abs(((along / 10.0) % 2.0) * 10.0 - 10.0)
+    flat = np.zeros_like(along)
+    assert _core._path_reversals(forward_and_back, flat, 4, 0, 400) >= 20
+    # Straight up and down is the same path turned a quarter.
+    assert _core._path_reversals(flat, forward_and_back, 4, 0, 400) >= 20
+    path = np.column_stack([forward_and_back, flat])
+    assert _core._smoothed_stretch(path, 200.0, 9.0, (0.0, 400.0),
+                                   True)[0] is not path
+
+
+def test_a_steep_zigzag_wiggles():
+    # The chords of a steep zigzag flip by a little under a half turn, each way
+    # in turn.
     along = np.linspace(0, 400, 800)
     zigzag = 30.0 * np.abs(((along / 10.0) % 4.0) - 2.0) - 30.0
     path = np.column_stack([along, zigzag])

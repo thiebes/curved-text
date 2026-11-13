@@ -127,6 +127,7 @@ _SMOOTH_MIN_PX = 0.5           # pixels
 # prices and the gallery's curves.
 _SMOOTH_CHORD = 2 / 3          # sigmas
 _SMOOTH_DEADBAND = math.radians(2.0)
+_SMOOTH_HALF_TURN = math.radians(1.0)    # of a half turn, counted as one
 _SMOOTH_REVERSALS = 2          # turns back
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
@@ -759,21 +760,31 @@ def _path_reversals(x: np.ndarray, y: np.ndarray, chord: int, first: int,
     of ``chord`` samples, end to end. A turn is the change of direction from one
     chord to the next, wrapped to half a turn either way; one smaller than
     ``_SMOOTH_DEADBAND`` is ignored and does not break a run of turns the same
-    way. Chords that start at the same phase of a wiggle as they end see no
-    wiggle, so the path is laid out from three starting offsets, and the most
-    reversals of the three count. Zero where fewer than three chords fit.
+    way. A half turn, where the path doubles back on itself, has no side, so it
+    takes the one opposite to the turn before. Chords that start at the same
+    phase of a wiggle as they end see no wiggle, so the path is laid out from
+    three starting offsets (zero, a third and two thirds of a chord, which
+    collapse to fewer when the chord is short), and the most reversals of the
+    three count. Zero where fewer than three chords fit.
     """
     first, last = max(first, 0), min(last, len(x) - 1)
     most = 0
-    for offset in sorted({0, chord // 3, 2 * chord // 3}):
+    for offset in {0, chord // 3, 2 * chord // 3}:
         starts = np.arange(first + offset, last - chord + 1, chord)
         if len(starts) < 3:
             continue
         direction = np.arctan2(y[starts + chord] - y[starts],
                                x[starts + chord] - x[starts])
+        # Each turn is wrapped into [-pi, pi) by adding pi, taking the
+        # remainder of a whole turn, and taking pi away again.
         turns = (np.diff(direction) + np.pi) % (2.0 * np.pi) - np.pi
-        sides = np.sign(turns[np.abs(turns) >= _SMOOTH_DEADBAND])
-        most = max(most, int(np.count_nonzero(sides[1:] != sides[:-1])))
+        reversals, side = 0, 0.0
+        for turn in turns[np.abs(turns) >= _SMOOTH_DEADBAND]:
+            now = (-side or 1.0 if abs(turn) >= np.pi - _SMOOTH_HALF_TURN
+                   else np.sign(turn))
+            reversals += side != 0.0 and now != side
+            side = now
+        most = max(most, int(reversals))
     return most
 
 

@@ -181,8 +181,11 @@ The `CurvedText` class takes the axes after `x, y, text`, matching
 matplotlib's axes-first helper functions. Passing the axes last to `curved_text`
 raises `AttributeError`.
 
-Extra keyword arguments are `Text` properties applied to every glyph, such as
-`color`, `alpha`, `fontsize`, `fontfamily`, and `path_effects`. Properties that
+Extra keyword arguments are `Text` properties, such as `color`, `alpha`,
+`fontsize`, `fontfamily`, and `path_effects`. The font ones apply to every glyph
+when the label is made. The color, alpha, and path effects belong to the label
+and pass to its glyphs at every draw, so they can change after construction; the
+`box` casing keeps its own color and alpha. Properties that
 describe one text box, such as `ha`, `va`, `bbox`, and `wrap`, have no effect,
 and `transform` is replaced. `rotation` raises `ValueError`, because the curve
 sets each glyph's angle. A `gid` of `"lab"` becomes `"lab-0"`, `"lab-1"`, and

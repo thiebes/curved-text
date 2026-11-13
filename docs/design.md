@@ -560,6 +560,76 @@ does not depend on where the part ends; `test_a_narrow_hairpin_is_a_documented_l
 pins the hairpin limit; and the radius, corner, fillet, anchor, end, zigzag, dpi,
 zoom, crowding, and box tests cover the shape of the rounded path.
 
+## Smoothing
+
+**Problem.** A line of measured data wiggles at about a letter's width, even
+after it is averaged. Each plain glyph is placed rigidly at its own point on the
+curve and tilted by the chord across its own width. That removes wiggles much
+shorter than a glyph, such as the vertices of a coarse polyline, but not wiggles
+at a glyph's width: neighboring glyphs sample different tilts and heights, tilt
+into each other, and step up and down. `crowding="curvature"` does not help, as
+it answers a sustained bend, and these kinks are short and alternate in sign.
+
+**Rejected.** Widening only the tilt window, which fixes half the symptom and
+leaves the heights stepping. Leaving it to the user to smooth a copy of the
+data, which every user of measured data must then find and repeat. Smoothing
+every label by default: a smoothed path is not the line, so it moves labels off
+it, and leaving smooth curves alone needs a test of whether the path wiggles
+that cannot tell wiggles from a tight bend by how far smoothing moves the path
+(the distance, a roughness measure against a cubic fit, and the sideways lean
+were tried, and each overlapped).
+
+**Chosen.** `smooth`, off by default, smooths the path the label rides, in
+display pixels, before anything is laid on it. `_place_on_curve` calls
+`_smoothed_stretch` on the stretch that holds the anchor, so the rounding of
+`min_radius`, the offset, the casing, the reading direction, and every glyph
+follow what the label rides, and the line itself is untouched.
+
+- The width is a standard deviation in points of arc length, or `"auto"`: three
+  quarters of the font size (`_SMOOTH_AUTO_EM`).
+- The stretch is resampled evenly by arc length, every eighth of the width, and
+  extended past each end along its end tangent, as the frame extends it, so the
+  ends do not pull in. The samples stay one to one, which carries the anchor
+  across (`np.interp` of the anchor's sample against the smoothed arc length).
+- The filter is a Gaussian corrected for the shrinking of bends: twice the
+  smoothed path less the smoothed path smoothed again. A Gaussian alone pulls a
+  circle in by sigma squared over twice its radius, and the correction leaves a
+  smooth bend alone to second order. The cost is a small overshoot at a sharp
+  corner, under a degree on a 37 degree corner.
+- `"auto"` smooths only where the path wiggles under the label (`_path_reversals`).
+  The path is laid out as chords each two thirds of the width long (half an em),
+  end to end across the label. A wiggle is a turn of the chords of two degrees or
+  more that follows a turn the other way, and the path wiggles with two or
+  more. A bend turns the chords one way all through it, so it never counts, and
+  a label on a smooth curve, tight bends included, comes back drawn as without
+  smoothing. A number in points always smooths.
+- Real monthly prices from matplotlib's sample data typically turn the chords back two to
+  six times across a label, and the smooth analytic curves of the gallery,
+  tight arcs and valleys among them, zero or one.
+
+**Limits.**
+
+- The label rides the smoothed path, so a line that wiggles by more than the
+  label's offset can touch the letters. The gallery figure gives the label an
+  offset larger than the wiggles.
+- A width in points rounds a bend narrower than the width, and the label leaves
+  the line there, as `min_radius` makes it leave a tight bend.
+- The reversal count is a heuristic tuned on the sample stocks and the gallery's
+  curves. A line with one slow wiggle under the label is not smoothed by
+  `"auto"`.
+
+Pinned by tests: `test_a_label_on_measured_data_tilts_its_neighbors_less_when_smoothed`
+measures the jitter of glyph tilts on real prices;
+`test_a_smooth_curve_is_drawn_as_without_smoothing` pins that `"auto"` leaves
+gentle bends, a sine, and a straight run alone;
+`test_smoothing_does_not_shrink_a_circular_bend` pins the correction;
+`test_the_wiggle_test_tells_jitter_from_a_bend` and
+`test_auto_smooths_only_what_wiggles_where_the_label_covers` pin the test and
+its window; `test_a_width_in_points_scales_with_the_dpi`,
+`test_auto_is_three_quarters_of_an_em`, and
+`test_smoothing_keeps_the_anchor_on_a_symmetric_curve` pin the units and the
+anchor; `test_smoothing_is_off_unless_asked_for` pins the default.
+
 ## LaTeX (`usetex`)
 
 When a segment's usetex setting is on (the `text.usetex` rcParam, or

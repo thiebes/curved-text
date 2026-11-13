@@ -4197,7 +4197,9 @@ def test_the_default_of_the_class_is_no_smoothing_too():
                                          ("end", -0.2), ("center", 1.5)])
 def test_a_pos_beyond_the_ends_keeps_its_distance_when_smoothed(anchor, pos):
     # Past an end the label rides the straight extension, as without
-    # smoothing, so a straight line gives the same label either way.
+    # smoothing, so a straight line gives the same label either way. The part
+    # ends on a whole step past the stretch, so the outlines agree to the
+    # rounding of that step: a twentieth of a pixel.
     outlines = []
     for smooth in (None, 5.0):
         fig, ax = plt.subplots()
@@ -4277,6 +4279,8 @@ def test_a_long_stretch_is_smoothed_as_accurately_as_a_short_one():
                    arc, along)
     long_y = np.interp(xs, long_path[:, 0], long_path[:, 1])
     short_y = np.interp(xs, short_path[:, 0], short_path[:, 1])
+    # The two parts sit on different grids of the same stretch, so they agree to
+    # a twentieth of a pixel, not to the last digit.
     assert np.abs(long_y - short_y).max() < 0.05
 
 

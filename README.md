@@ -379,7 +379,7 @@ where the chords across half an em, laid end to end along the label, turn one
 way and then the other at least twice. A curve that turns the same way all
 through the label, a tight bend included, is left as it is. The test is a
 heuristic that switches on and off as the label or the view moves, so give a
-number for a steady result. The smoothing comes before the rounding of
+number for a steadier result. The smoothing comes before the rounding of
 `min_radius`.
 
 The label rides the smoothed path, not the line. Where the line wiggles by more
@@ -445,8 +445,8 @@ setters act on what is drawn: `set_visible`, `set_zorder`, `set_animated`,
 (`set_clip_on`, `set_clip_box`, `set_clip_path`). The text, the font, the
 curve, and the placement arguments (`pos`, `anchor`, `offset`, `valign`,
 `box`, `crowding`, `upright`, `min_radius`, and `smooth`) are fixed when the
-label is
-made. To change one, remove the label (`remove()`) and make a new one.
+label is made. To change one, remove the label (`remove()`) and make a new
+one.
 `get_text()` does not return the label's string.
 
 - **Vector output:** In Portable Document Format (PDF), Scalable Vector Graphics (SVG), PostScript, and Encapsulated PostScript (EPS) output, each character is

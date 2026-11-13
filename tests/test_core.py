@@ -3899,12 +3899,12 @@ def test_an_agg_filter_runs_once_for_the_label_however_it_is_set(how):
 
 
 # Smoothing of the path a label rides (``smooth``).
-def _stocks(symbol="MSFT"):
-    """(Tests do not import the gallery's ``read_stocks``, so this reads the
-    file again.) Real monthly closing prices of ``symbol`` from matplotlib's sample data
+def _stocks(symbol="MSFT", window=12):
+    """Real monthly closing prices of ``symbol`` from matplotlib's sample data
     (``Stocks.csv``, not in matplotlib 3.5), as dates and prices smoothed by a
-    12-month rolling mean, as in a figure of a trend; None where the sample
-    data is missing."""
+    rolling mean over ``window`` months, as in a figure of a trend (one month
+    is the raw prices); None where the sample data is missing. Tests do not
+    import the gallery's ``read_stocks``, so this reads the file again."""
     path = cbook.get_sample_data("Stocks.csv", asfileobj=False)
     if not os.path.exists(path):
         return None
@@ -3914,14 +3914,15 @@ def _stocks(symbol="MSFT"):
     header, rows = rows[0], [row for row in rows[1:] if any(row[1:])]
     dates = np.array([row[0] for row in rows], dtype="datetime64[D]")
     prices = np.array([float(row[header.index(symbol)]) for row in rows])
-    smoothed = np.convolve(prices, np.ones(12) / 12, mode="valid")
-    return dates[6:][:len(smoothed)], smoothed
+    smoothed = np.convolve(prices, np.ones(window) / window, mode="valid")
+    return dates[window // 2:][:len(smoothed)], smoothed
 
 
-def _stocks_label(text="Microsoft", **kwargs):
+def _stocks_label(text="Microsoft", symbol="MSFT", window=12, **kwargs):
     """The figure and label of the issue's "Microsoft" on real data, or
-    ``text`` instead; ``kwargs`` go to the label."""
-    data = _stocks()
+    ``text`` instead, on the prices of ``symbol`` averaged over ``window``
+    months; ``kwargs`` go to the label."""
+    data = _stocks(symbol, window)
     if data is None:
         pytest.skip("matplotlib has no Stocks.csv sample data")
     dates, prices = data
@@ -3954,6 +3955,34 @@ def test_a_label_on_measured_data_tilts_its_neighbors_less_when_smoothed():
         jitter[name] = np.sqrt(np.mean(np.diff(_glyph_tilts(ct), 2) ** 2))
         plt.close(fig)
     assert jitter["smoothed"] < 0.8 * jitter["rough"]
+
+
+def _glyph_steps(**kwargs):
+    """How far the first glyph's anchor moves, in pixels, for each of 40 steps
+    of 2e-4 in ``pos`` of a label on the raw prices of IBM."""
+    fig, ct = _stocks_label(symbol="IBM", window=1, **kwargs)
+    first = ct._segments[0]
+    anchors = []
+    for pos in 0.5 + 2e-4 * np.arange(40):
+        ct._pos = pos
+        _draw(fig)
+        anchors.append(_anchor_px(ct, first))
+    plt.close(fig)
+    return np.hypot(*np.diff(anchors, axis=0).T)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"offset": 14.0}, {"offset": 14.0, "min_radius": None},
+    {"offset": 14.0, "upright": True}])
+def test_a_smoothed_label_moves_only_as_far_as_its_pos_does(kwargs):
+    # The smoothed part follows the label along the line, and the vertices that
+    # rounding and the offset work on must not move with it. A step of 2e-4 in
+    # ``pos`` moves the label by about 0.03 pixel, and the median step is about
+    # that; with the part starting where the label does, it was a pixel. Single
+    # steps can still jump where the offset is larger than the radius of the
+    # smoothed path, so the median is the measure.
+    steps = _glyph_steps(smooth=3.0, **kwargs)
+    assert np.median(steps) < 0.2
 
 
 @pytest.mark.parametrize("make", [
@@ -4061,24 +4090,24 @@ def _circle_arc(radius):
 
 def test_smoothing_leaves_a_straight_run_as_it_is():
     points = np.column_stack([np.linspace(0, 300, 40), np.linspace(0, 120, 40)])
-    smoothed, anchor = _core._smoothed_stretch(points, 150.0, 8.0,
+    smoothed, anchor, _ = _core._smoothed_stretch(points, 150.0, 8.0,
                                                (100.0, 200.0), False)
     frame = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1])
     straight = _core._CurveFrame(points[:, 0], points[:, 1])
-    assert frame.length == pytest.approx(straight.length, rel=1e-9)
+    # The part ends on the next whole step past the stretch, along its line.
+    assert straight.length <= frame.length < straight.length + 1.0
     assert anchor == pytest.approx(150.0, rel=1e-9)
-    x, y, _ = straight.points_and_angles(np.linspace(0, straight.length, 50))
+    along = np.linspace(0, straight.length, 50)
     np.testing.assert_allclose(
-        np.column_stack(frame.points_and_angles(
-            np.linspace(0, frame.length, 50))[:2]),
-        np.column_stack([x, y]), atol=1e-6)
+        np.column_stack(frame.points_and_angles(along)[:2]),
+        np.column_stack(straight.points_and_angles(along)[:2]), atol=1e-6)
 
 
 def test_smoothing_does_not_shrink_a_circular_bend():
     # A Gaussian alone pulls a circle in by sigma ** 2 / (2 * radius), here
     # 0.32 pixel; the correction leaves a tenth of that.
     points = _circle_arc(100.0)
-    smoothed, _ = _core._smoothed_stretch(points, 50.0, 8.0, (20.0, 80.0),
+    smoothed, *_ = _core._smoothed_stretch(points, 50.0, 8.0, (20.0, 80.0),
                                           False)
     middle = smoothed[len(smoothed) // 4: -len(smoothed) // 4]
     shrink = 100.0 - np.hypot(middle[:, 0], middle[:, 1])
@@ -4088,7 +4117,7 @@ def test_smoothing_does_not_shrink_a_circular_bend():
 def test_smoothing_keeps_the_ends_of_the_stretch_in_place():
     points = np.column_stack([np.linspace(0, 400, 200),
                               5 * np.sin(np.linspace(0, 60, 200))])
-    smoothed, _ = _core._smoothed_stretch(points, 200.0, 8.0, (150.0, 250.0),
+    smoothed, *_ = _core._smoothed_stretch(points, 200.0, 8.0, (150.0, 250.0),
                                           False)
     assert np.hypot(*(smoothed[0] - points[0])) < 2.0
     assert np.hypot(*(smoothed[-1] - points[-1])) < 2.0
@@ -4180,15 +4209,35 @@ def test_a_pos_beyond_the_ends_keeps_its_distance_when_smoothed(anchor, pos):
     np.testing.assert_allclose(outlines[0], outlines[1], atol=0.05)
 
 
+def test_a_width_in_points_smooths_for_a_label_far_past_an_end():
+    # A label past the margin beyond an end still rides the smoothed path, not
+    # the raw one, so a width in points always smooths: the part is then the
+    # last step of the stretch, and the anchor keeps its distance.
+    along = np.linspace(0, 400, 800)
+    points = np.column_stack([along, 4.0 * np.sin(along / 2.3)])
+    raw = _core._CurveFrame(points[:, 0], points[:, 1])
+    for covered, steps in (((700.0, 800.0), None), ((3000.0, 3100.0), 1)):
+        smoothed, mapped, start = _core._smoothed_stretch(
+            points, covered[0], 8.0, covered, False)
+        assert smoothed is not points
+        # The anchor is as far past the end of the part as it was past the
+        # part's end on the stretch.
+        _, step, count = _core._smoothing_window(raw.length, covered, 8.0)
+        length = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1]).length
+        assert mapped == pytest.approx(
+            length + covered[0] - start - count * step, abs=1e-6)
+        if steps:
+            assert len(smoothed) == steps + 1
+
+
 def test_smoothing_carries_an_anchor_off_the_stretch_by_its_distance():
     points = np.column_stack([np.linspace(0, 300, 40), np.zeros(40)])
     for anchor in (-50.0, 350.0):
-        smoothed, mapped = _core._smoothed_stretch(
+        smoothed, mapped, start = _core._smoothed_stretch(
             points, anchor, 8.0, (anchor - 40.0, anchor + 40.0), False)
-        length = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1]).length
-        # The anchor keeps its distance past the end it is off.
-        expected = anchor if anchor < 0 else length + (anchor - 300.0)
-        assert mapped == pytest.approx(expected, abs=1e-6)
+        # The line is straight and the part starts at its start, so the anchor
+        # keeps its distance past the end it is off.
+        assert start + mapped == pytest.approx(anchor, abs=1e-6)
 
 
 @pytest.mark.parametrize("smooth", [1e6, 1e7, 1e300])
@@ -4214,10 +4263,10 @@ def test_a_long_stretch_is_smoothed_as_accurately_as_a_short_one():
     near = (arc > 499_000.0) & (arc < 501_000.0)
     short_stretch = long_stretch[near]
     anchor, covered = 500_050.0, (500_000.0, 500_100.0)
-    long_path, _ = _core._smoothed_stretch(long_stretch, anchor, 14.0,
+    long_path, *_ = _core._smoothed_stretch(long_stretch, anchor, 14.0,
                                            covered, False)
     shift = arc[near][0]
-    short_path, _ = _core._smoothed_stretch(
+    short_path, *_ = _core._smoothed_stretch(
         short_stretch, anchor - shift, 14.0,
         (covered[0] - shift, covered[1] - shift), False)
     # The smoothed y at the same x, across the label's span.
@@ -4236,7 +4285,7 @@ def test_the_pixel_floor_and_the_step_floor_of_smoothing():
                                    False)[0] is points
     # At a width of 2 pixels the samples are a quarter pixel apart over the
     # part around the label (about 200 pixels), not coarser.
-    smoothed, _ = _core._smoothed_stretch(points, 500.0, 2.0, (480.0, 520.0),
+    smoothed, *_ = _core._smoothed_stretch(points, 500.0, 2.0, (480.0, 520.0),
                                           False)
     assert len(smoothed) >= 500
 

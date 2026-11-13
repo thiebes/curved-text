@@ -694,6 +694,7 @@ def test_math_run_straight_line_reduces_to_affine():
     expected = np.column_stack([
         first_px + _place_of(ct, run).s_left + verts[:, 0] * per_unit,
         cy + (verts[:, 1] - datum) * per_unit])
+    # A millionth of a pixel: both sides are the same arithmetic in float64.
     assert np.allclose(_path(ct, run, renderer).vertices, expected, atol=1e-6)
     plt.close(fig)
 
@@ -1357,6 +1358,7 @@ def _assert_same_placement(fig, ct, ref_fig, ref_ct):
         if ref_path is None:
             assert path is None
             continue
+        # A millionth of a pixel: the same curve in two types, to float64.
         np.testing.assert_allclose(path.vertices, ref_path.vertices, atol=1e-6)
     np.testing.assert_allclose(
         ct._box.get_transform().transform(ct._box.get_xydata()),
@@ -3741,15 +3743,15 @@ def test_measuring_with_another_renderer_leaves_what_is_drawn_alone():
     np.testing.assert_array_equal(drawn_after(True), drawn_after(False))
 
 
-def test_the_segments_keep_no_placement():
-    # What a segment draws is what the label hands it at that draw, so a
-    # segment holds no frame, arc length, width, or datum of its own, and a
-    # measurement has none to change.
-    fig, ax, ct = _composite_label()
-    _draw(fig)
-    for segment in ct._segments:
-        assert not any(hasattr(segment, name) for name in
-                       ("_frame", "_s_left", "_width_px", "_datum"))
+def test_the_casing_takes_no_path_effect():
+    # A blank label has no glyph for a path effect to outline, so any blue
+    # stroke is on the casing, which is red. The stroke is wider than the
+    # casing (about 30 points), or it would hide behind it.
+    fig, ax, ct = _composite_label(" ")
+    ct.set_path_effects([pe.withStroke(linewidth=200, foreground="blue")])
+    image = _drawn_image(fig)
+    assert _strongly_red(image) > 100
+    assert _strongly_blue(image) == 0
     plt.close(fig)
 
 
@@ -3806,15 +3808,19 @@ def test_animated_set_after_construction_hides_the_label_from_a_full_draw():
 
 def test_the_glyphs_follow_the_label_clipping():
     # A label that starts left of the view loses its first glyphs to the
-    # clipping, and keeps them unclipped.
+    # clipping, and keeps them unclipped. The label is made the other way and
+    # then set, so the setter is what the glyphs follow. The first glyph is
+    # about a tenth of the label's ink, in the hundreds of pixels.
     def red(clip_on):
         fig, ax = plt.subplots(figsize=(4, 3))
         ax.set_axis_off()
         ax.set_xlim(2, 10)
         ax.set_ylim(0, 10)
         x = np.linspace(0, 10, 50)
-        curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.0,
-                    anchor="start", fontsize=30, color="red", clip_on=clip_on)
+        ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.0,
+                         anchor="start", fontsize=30, color="red",
+                         clip_on=not clip_on)
+        ct.set_clip_on(clip_on)
         count = _red_pixels(fig)
         plt.close(fig)
         return count
@@ -3854,6 +3860,9 @@ def test_rasterized_set_off_after_construction_stops_rasterizing():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         fig, ax, ct = _composite_label(rasterized=True)
+    rasterized = io.StringIO()
+    fig.savefig(rasterized, format="svg")
+    assert "<image" in rasterized.getvalue()
     ct.set_rasterized(False)
     buffer = io.StringIO()
     fig.savefig(buffer, format="svg")

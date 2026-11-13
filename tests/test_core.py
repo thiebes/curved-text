@@ -4137,6 +4137,20 @@ def test_auto_smooths_only_what_wiggles_where_the_label_covers():
     assert right[0] is not points and len(right[0]) != len(points)
 
 
+def test_auto_needs_two_reversals_to_smooth():
+    # A single wave turns the chords back once, between its crest and its
+    # trough, which is a bend and an inflection, not a wiggle. Several waves
+    # turn them back and forth. The chords are 6 pixels long at a width of 9.
+    along = np.linspace(0, 400, 800)
+    one = np.column_stack([along, 40.0 * np.sin(2 * np.pi * along / 400.0)])
+    many = np.column_stack([along, 10.0 * np.sin(2 * np.pi * along / 80.0)])
+    assert _core._path_reversals(along, one[:, 1], 12, 0, 800) == 1
+    kept = _core._smoothed_stretch(one, 200.0, 9.0, (50.0, 350.0), True)
+    smoothed = _core._smoothed_stretch(many, 200.0, 9.0, (50.0, 350.0), True)
+    assert kept[0] is one
+    assert smoothed[0] is not many
+
+
 @pytest.mark.parametrize("kwargs", [
     {"box": True}, {"crowding": "curvature"}, {"valign": "baseline"},
     {"upright": True}, {"offset": 10}, {"min_radius": 12}])

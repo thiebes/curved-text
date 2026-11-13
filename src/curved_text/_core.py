@@ -92,35 +92,42 @@ _ROUND_MAX_RADIUS_PX = 1e7
 _ROUND_BLEND_STEPS = 2.0
 _ROUND_BLEND_RADIUS = 0.05
 
-# Smoothing of the path a label rides (``smooth``). A line of measured data
-# wiggles at the width of a glyph, which tilts and steps neighboring glyphs, so
-# the path is smoothed by a Gaussian along its arc length, in display pixels,
+# Smoothing of the path a label rides (``smooth``). A line of measured data has
+# wiggles at the width of a glyph, which tilt and step neighboring glyphs, so the
+# path is smoothed by a Gaussian along its arc length, in display pixels,
 # corrected for the shrinking of bends that a Gaussian alone causes (twice the
-# smoothed path less the smoothed path smoothed again, which leaves the shape
-# of a smooth bend alone to second order). ``"auto"`` takes ``_SMOOTH_AUTO_EM``
-# of the font size as the Gaussian's standard deviation. The curve is
-# resampled every ``_SMOOTH_STEP`` standard deviations (at least
-# ``_SMOOTH_MIN_STEP_PX``, and at most ``_SMOOTH_MAX_SAMPLES`` samples over the
-# stretch) and the kernel reaches ``_SMOOTH_REACH`` standard deviations. A width
-# below ``_SMOOTH_MIN_PX`` is not smoothing.
+# smoothed path less the smoothed path smoothed again, which leaves the shape of
+# a smooth bend alone to second order).
 #
-# ``"auto"`` smooths only where the path wiggles under the label, so a label on
-# a smooth curve, tight bends included, is drawn exactly as without smoothing; a
-# width given in points always smooths. A path wiggles where the direction of
-# its chords, taken end to end across the label, each ``_SMOOTH_CHORD`` standard
-# deviations long (half an em for ``"auto"``), turns one way and then the other
-# at least ``_SMOOTH_REVERSALS`` times, counting only turns of
+# The filter. ``"auto"`` takes ``_SMOOTH_AUTO_EM`` of the font size as the
+# Gaussian's standard deviation (sigma). Only the part of the stretch the label
+# covers, with a margin of ``_SMOOTH_MARGIN`` sigmas or twice the label either
+# side, is smoothed, for the rounding and the offset to reach. It is resampled
+# every ``_SMOOTH_STEP`` sigmas (at least ``_SMOOTH_MIN_STEP_PX`` pixels, and at
+# most ``_SMOOTH_MAX_SAMPLES`` samples over the part), and the kernel reaches
+# ``_SMOOTH_REACH`` sigmas, in at most ``_SMOOTH_MAX_REACH`` samples. A sigma
+# below ``_SMOOTH_MIN_PX`` pixels is not smoothing.
+_SMOOTH_AUTO_EM = 0.75         # ems of font size
+_SMOOTH_MARGIN = 24.0          # sigmas
+_SMOOTH_STEP = 1 / 8           # sigmas
+_SMOOTH_MIN_STEP_PX = 0.25     # pixels
+_SMOOTH_MAX_SAMPLES = 20000    # samples
+_SMOOTH_REACH = 4.0            # sigmas
+_SMOOTH_MAX_REACH = 256        # samples
+_SMOOTH_MIN_PX = 0.5           # pixels
+
+# The gate. ``"auto"`` smooths only where the path wiggles under the label, so a
+# label on a curve with fewer than ``_SMOOTH_REVERSALS`` wiggles, a bend however
+# tight included, is drawn exactly as without smoothing; a width given in points
+# always smooths. A path wiggles where the direction of its chords, laid end to
+# end across the label, each ``_SMOOTH_CHORD`` sigmas long (half an em for
+# ``"auto"``), turns one way and then the other, counting only turns of
 # ``_SMOOTH_DEADBAND`` or more. A bend turns the chords one way all through it,
-# and wiggles are what turns them back and forth.
-_SMOOTH_AUTO_EM = 0.75
-_SMOOTH_STEP = 1 / 8
-_SMOOTH_MIN_STEP_PX = 0.25
-_SMOOTH_MAX_SAMPLES = 20000
-_SMOOTH_REACH = 4.0
-_SMOOTH_MIN_PX = 0.5
-_SMOOTH_CHORD = 2 / 3
+# and a wiggle is a turn back. The test is a heuristic, tuned on real monthly
+# prices and the gallery's curves.
+_SMOOTH_CHORD = 2 / 3          # sigmas
 _SMOOTH_DEADBAND = math.radians(2.0)
-_SMOOTH_REVERSALS = 2
+_SMOOTH_REVERSALS = 2          # turns back
 
 # Unescaped mathtext delimiter, mirroring matplotlib's own escape rule.
 _MATH_DELIMITER = re.compile(r"(?<!\\)\$")
@@ -745,56 +752,74 @@ def _stretch_at(curve_px: np.ndarray, pos: float,
 
 def _path_reversals(x: np.ndarray, y: np.ndarray, chord: int, first: int,
                     last: int) -> int:
-    """How many times the direction of the chords of the evenly sampled path
-    ``(x, y)``, laid end to end across the samples ``first`` to ``last``, each
-    ``chord`` samples long, turns back after turning the other way. Turns
-    smaller than ``_SMOOTH_DEADBAND`` are not counted, nor is the sign they
-    would carry."""
+    """The number of times the turn of the path's direction changes sign.
+
+    ``(x, y)`` is an evenly sampled path, and ``first`` and ``last`` are the
+    indices of the samples it is judged between. The path is laid out as chords
+    of ``chord`` samples, end to end. A turn is the change of direction from one
+    chord to the next, wrapped to half a turn either way; one smaller than
+    ``_SMOOTH_DEADBAND`` is ignored and does not break a run of turns the same
+    way. Chords that start at the same phase of a wiggle as they end see no
+    wiggle, so the path is laid out from three starting offsets, and the most
+    reversals of the three count. Zero where fewer than three chords fit.
+    """
     first, last = max(first, 0), min(last, len(x) - 1)
-    starts = np.arange(first, last - chord + 1, chord)
-    if len(starts) < 3:
-        return 0
-    direction = np.unwrap(np.arctan2(y[starts + chord] - y[starts],
-                                     x[starts + chord] - x[starts]))
-    turns = np.diff(direction)
-    sides = np.sign(turns[np.abs(turns) >= _SMOOTH_DEADBAND])
-    return int(np.count_nonzero(sides[1:] != sides[:-1]))
+    most = 0
+    for offset in sorted({0, chord // 3, 2 * chord // 3}):
+        starts = np.arange(first + offset, last - chord + 1, chord)
+        if len(starts) < 3:
+            continue
+        direction = np.arctan2(y[starts + chord] - y[starts],
+                               x[starts + chord] - x[starts])
+        turns = (np.diff(direction) + np.pi) % (2.0 * np.pi) - np.pi
+        sides = np.sign(turns[np.abs(turns) >= _SMOOTH_DEADBAND])
+        most = max(most, int(np.count_nonzero(sides[1:] != sides[:-1])))
+    return most
 
 
 def _smoothed_stretch(points: np.ndarray, s_anchor: float, sigma: float,
                       covered: tuple[float, float], only_if_wiggly: bool
                       ) -> tuple[np.ndarray, float]:
-    """The stretch ``points`` (display pixels) smoothed by a Gaussian of
-    standard deviation ``sigma`` pixels along its arc length, with the
-    correction for the shrinking of bends, and the arc length on it of the
-    point at ``s_anchor`` on the stretch.
+    """The part of the stretch ``points`` (display pixels) around the label,
+    smoothed by a Gaussian of standard deviation ``sigma`` pixels along its arc
+    length, with the correction for the shrinking of bends, and the arc length
+    on it of the point at ``s_anchor`` on the stretch.
 
-    ``covered`` is the interval of arc length the label covers. The stretch
-    is resampled evenly by arc length, extended past each end along its end
-    tangent, as the frame extends it, so the ends do not pull in. The smoothed
-    path keeps the samples one to one, which carries the anchor across. The
-    stretch itself comes back, unchanged, where ``sigma`` is too small to
-    matter or, with ``only_if_wiggly``, the stretch does not wiggle where the
-    label covers it (``_path_reversals``).
+    ``covered`` is the interval of arc length, in pixels along the stretch, that
+    the label covers. The part runs from a margin before it to a margin after it
+    (``_SMOOTH_MARGIN``), within the stretch. It is resampled evenly by arc
+    length from the stretch itself, which a frame extends past each end along
+    its end tangent, so an end does not pull in. The samples stay one to one
+    after smoothing, which carries the anchor across; an anchor off the part,
+    as ``pos`` outside 0 to 1 puts it, keeps its distance from the end.
+
+    The stretch itself comes back, unchanged, where ``sigma`` is too small to
+    matter or, with ``only_if_wiggly``, the path does not wiggle where the label
+    covers it (``_path_reversals``).
     """
     if sigma < _SMOOTH_MIN_PX:
         return points, s_anchor
     frame = _CurveFrame(points[:, 0], points[:, 1])
     if not np.isfinite(frame.length) or frame.length <= 0.0:
         return points, s_anchor
-    count = max(1, math.ceil(frame.length / max(
+    margin = max(_SMOOTH_MARGIN * sigma, 2.0 * (covered[1] - covered[0]))
+    start = max(0.0, covered[0] - margin)
+    stop = min(frame.length, covered[1] + margin)
+    if not stop > start:
+        return points, s_anchor
+    count = max(1, math.ceil((stop - start) / max(
         _SMOOTH_STEP * sigma, _SMOOTH_MIN_STEP_PX,
-        frame.length / _SMOOTH_MAX_SAMPLES)))
-    step = frame.length / count
-    reach = math.ceil(_SMOOTH_REACH * sigma / step)
+        (stop - start) / _SMOOTH_MAX_SAMPLES)))
+    step = (stop - start) / count
+    reach = min(math.ceil(_SMOOTH_REACH * sigma / step), _SMOOTH_MAX_REACH)
     x, y, _ = frame.points_and_angles(
-        step * np.arange(-2 * reach, count + 2 * reach + 1))
+        start + step * np.arange(-2 * reach, count + 2 * reach + 1))
     # The samples before smoothing are the middle of the padded ones.
     middle = slice(2 * reach, 2 * reach + count + 1)
     if only_if_wiggly and _path_reversals(
             x[middle], y[middle], max(1, round(_SMOOTH_CHORD * sigma / step)),
-            math.floor(covered[0] / step), math.ceil(covered[1] / step)
-    ) < _SMOOTH_REVERSALS:
+            math.floor((covered[0] - start) / step),
+            math.ceil((covered[1] - start) / step)) < _SMOOTH_REVERSALS:
         return points, s_anchor
     kernel = np.exp(-0.5 * (step * np.arange(-reach, reach + 1) / sigma) ** 2)
     kernel /= kernel.sum()
@@ -804,8 +829,10 @@ def _smoothed_stretch(points: np.ndarray, s_anchor: float, sigma: float,
         twice = np.convolve(once, kernel, "valid")
         smoothed[:, column] = 2.0 * once[reach:reach + count + 1] - twice
     arc = _CurveFrame(smoothed[:, 0], smoothed[:, 1])._arc
-    return smoothed, float(np.interp(s_anchor / step, np.arange(count + 1),
-                                     arc))
+    index = (s_anchor - start) / step
+    beyond = index - min(max(index, 0.0), float(count))
+    return smoothed, float(np.interp(index, np.arange(count + 1), arc)
+                           + beyond * step)
 
 
 def _reads_leftward(frame: _CurveFrame, s_anchor: float, lead: float,
@@ -1468,12 +1495,15 @@ class CurvedText(mtext.Text):
 
         ``None`` or ``0`` turns the smoothing off. A number smooths by that
         width wherever the label is, so it rounds any bend narrower than the
-        width. ``"auto"`` takes three quarters of an em, the font size, and
-        smooths only where the path wiggles under the label: where the chords
-        across half an em, taken end to end along the label, turn one way and
-        then the other at least twice. A bend turns the chords one way all
-        through it, so a label on a smooth curve, tight bends included, is
-        drawn exactly as without smoothing.
+        width, and it is the choice for raw, unaveraged data. ``"auto"`` takes
+        three quarters of an em, the font size, and smooths only where the path
+        wiggles under the label: where the chords across half an em, laid end
+        to end along the label, turn one way and then the other at least twice.
+        A curve that turns the same way all through the label, a tight bend
+        included, is drawn as without smoothing; a serpentine that alternates
+        twice or more under the label is smoothed. The test is a heuristic,
+        tuned on real monthly prices, and it switches on and off as ``pos`` or
+        the view changes: give a number for a steady result.
 
         The label rides the smoothed path, not the line, so a line that wiggles
         by more than the label's ``offset`` can touch the letters. Use an
@@ -2264,7 +2294,7 @@ class CurvedText(mtext.Text):
         lead = {"start": 0.0, "center": 0.5, "end": 1.0}[self._anchor]
         # The path is smoothed before anything is laid on it, so rounding, the
         # offset, the casing, and the reading direction all follow what the
-        # label rides. The label covers the arc length from ``covered[0]``.
+        # label rides. ``covered`` is the interval of arc length it covers.
         label_span = sum(spans)
         covered = (s_anchor - lead * label_span,
                    s_anchor + (1.0 - lead) * label_span)
@@ -2278,7 +2308,7 @@ class CurvedText(mtext.Text):
         # interval of the curve and only turns over: the curve is read from the
         # other end, and ``lead`` counts from there, so ``pos`` and ``anchor``
         # still refer to the curve as it was given.
-        if self._upright and _reads_leftward(base, s_anchor, lead, sum(spans)):
+        if self._upright and _reads_leftward(base, s_anchor, lead, label_span):
             points = points[::-1]
             s_anchor = base.length - s_anchor
             lead = 1.0 - lead
@@ -2311,7 +2341,7 @@ class CurvedText(mtext.Text):
         # curve and are carried onto the offset curve below, so the label
         # lands where the user asked.
         offset_px = self._offset * renderer.points_to_pixels(1.0)
-        flat_total = float(sum(spans))
+        flat_total = float(label_span)
         # The longest the label can be along the frame, with crowding's widest
         # possible gaps, which sets how much of the curve rounding must cover.
         reach = flat_total

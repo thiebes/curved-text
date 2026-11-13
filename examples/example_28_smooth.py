@@ -1,7 +1,7 @@
 """The ``smooth`` control: a label on a line of measured data.
 
 Monthly closing prices of Microsoft from the ``Stocks.csv`` sample data,
-smoothed with a rolling mean over twelve months, on a log axis. The line still
+smoothed with a rolling mean over six months, on a log axis. The line still
 wiggles at about the width of a letter. In (a) the label rides the line as it
 is, so neighboring letters tilt and step with each wiggle. In (b),
 ``smooth="auto"`` smooths the path the label rides, by about three quarters of

@@ -373,10 +373,14 @@ curved_text(ax, dates, prices, "Microsoft", offset=14, smooth="auto")
 `smooth` is `None` by default. A number is the width in points of arc length: a
 Gaussian of that standard deviation, corrected so that a smooth bend keeps its
 shape, and it smooths wherever the label is, so it rounds any bend narrower
-than the width. `"auto"` takes three quarters of an em and smooths only where
-the path wiggles under the label, so a label on a smooth curve, tight bends
-included, is drawn as it is without `smooth`. The smoothing comes before the
-rounding of `min_radius`.
+than the width. It is the choice for raw, unaveraged data. `"auto"` takes three
+quarters of an em and smooths only where the path wiggles under the label:
+where the chords across half an em, laid end to end along the label, turn one
+way and then the other at least twice. A curve that turns the same way all
+through the label, a tight bend included, is left as it is. The test is a
+heuristic that switches on and off as the label or the view moves, so give a
+number for a steady result. The smoothing comes before the rounding of
+`min_radius`.
 
 The label rides the smoothed path, not the line. Where the line wiggles by more
 than the label's `offset`, it can touch the letters, so give the label an offset
@@ -440,7 +444,8 @@ setters act on what is drawn: `set_visible`, `set_zorder`, `set_animated`,
 `set_rasterized`, `set_snap`, `set_sketch_params`, and the clipping setters
 (`set_clip_on`, `set_clip_box`, `set_clip_path`). The text, the font, the
 curve, and the placement arguments (`pos`, `anchor`, `offset`, `valign`,
-`box`, `crowding`, `upright`, and `min_radius`) are fixed when the label is
+`box`, `crowding`, `upright`, `min_radius`, and `smooth`) are fixed when the
+label is
 made. To change one, remove the label (`remove()`) and make a new one.
 `get_text()` does not return the label's string.
 

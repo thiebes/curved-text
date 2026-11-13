@@ -30,8 +30,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   default. A number is the width in points of arc length, a Gaussian corrected
   so that a smooth bend keeps its shape, and it smooths wherever the label is.
   `"auto"` takes three quarters of an em and smooths only where the path
-  wiggles under the label, so a label on a smooth curve, tight bends included,
-  is drawn as without it. The smoothing comes before the rounding of
+  wiggles under the label, turning the chords across half an em back and forth
+  at least twice. A curve that turns one way all through the label, a tight
+  bend included, is left as it is, and the test switches on and off as the
+  label or the view moves. The smoothing comes before the rounding of
   `min_radius`. The label rides the smoothed path, so a line that wiggles by
   more than the label's `offset` can touch the letters. A `smooth` that is not
   `None`, `"auto"`, or a real number raises `TypeError` or `ValueError`, as

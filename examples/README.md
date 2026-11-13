@@ -305,7 +305,7 @@ curved_text(ax, dates, prices, "Microsoft", offset=14, fontsize=16,
             smooth=smooth)
 ```
 
-![Two panels of a label on a rising line of monthly Microsoft prices, 2013 to 2017, on a log axis. In (a), with smooth None, the letters of 'Microsoft' tilt and step with the line's small wiggles. In (b), with 'auto', the letters sit evenly along a smoothed path.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/28_smooth.png)
+![Two panels of a label on a rising line of monthly Microsoft prices, 2012 to 2017, on a log axis. In (a), with smooth None, the letters of 'Microsoft' tilt and step with the line's small wiggles. In (b), with 'auto', the letters sit evenly along a smoothed path.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/28_smooth.png)
 
 [example_28_smooth.py](https://github.com/thiebes/curved-text/blob/main/examples/example_28_smooth.py)
 

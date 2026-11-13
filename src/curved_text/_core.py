@@ -40,6 +40,8 @@ __all__ = ["CurvedText", "curved_text"]
 _ANCHORS = ("start", "center", "end")
 _VALIGN = ("baseline", "center", "ascender", "descender")
 _BOX_KEYS = ("color", "pad", "alpha")
+# Keywords the label keeps to itself and does not forward to its segments
+# (see ``CurvedText.__init__``).
 _LABEL_ONLY_KEYWORDS = frozenset({"visible", "rasterized"})
 _CROWDING = ("none", "curvature")
 

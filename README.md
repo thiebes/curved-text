@@ -58,8 +58,8 @@ it:
 
 More figures: [Gallery](https://thiebes.github.io/curved-text/gallery.html).
 Every parameter: [application programming interface (API) reference](https://thiebes.github.io/curved-text/api.html).
-Known limits (3D axes, blitting, text in vector files, and removing a label)
-are listed under [Limits](#limits).
+Known limits (3D axes, text in vector files, and what cannot change after
+creation) are listed under [Limits](#limits).
 
 ### Choosing a curve
 
@@ -181,8 +181,11 @@ The `CurvedText` class takes the axes after `x, y, text`, matching
 matplotlib's axes-first helper functions. Passing the axes last to `curved_text`
 raises `AttributeError`.
 
-Extra keyword arguments are `Text` properties applied to every glyph, such as
-`color`, `alpha`, `fontsize`, `fontfamily`, and `path_effects`. Properties that
+Extra keyword arguments are `Text` properties, such as `color`, `alpha`,
+`fontsize`, `fontfamily`, and `path_effects`. The font ones apply to every glyph
+when the label is made. The color, alpha, and path effects belong to the label
+and pass to its glyphs at every draw, so they can change after construction; the
+`box` casing keeps its own color and alpha. Properties that
 describe one text box, such as `ha`, `va`, `bbox`, and `wrap`, have no effect,
 and `transform` is replaced. `rotation` raises `ValueError`, because the curve
 sets each glyph's angle. A `gid` of `"lab"` becomes `"lab-0"`, `"lab-1"`, and
@@ -403,10 +406,15 @@ on monthly data from tilting into each other.
 ## Limits
 
 `curved_text` and `CurvedText` take the same arguments and make the same
-artist. Keep the returned object to hide it (`set_visible`), restack it
-(`set_zorder`), change its clipping, or remove it (`remove()`). To change the
-text, color, size, or curve, remove the label and make a new one. `get_text()`
-does not return the label's string.
+artist. Keep the returned object to change the label after it is made. These
+setters act on what is drawn: `set_visible`, `set_zorder`, `set_animated`,
+`set_alpha`, `set_color`, `set_path_effects`, `set_gid`, `set_url`,
+`set_rasterized`, `set_snap`, `set_sketch_params`, and the clipping setters
+(`set_clip_on`, `set_clip_box`, `set_clip_path`). The text, the font, the
+curve, and the placement arguments (`pos`, `anchor`, `offset`, `valign`,
+`box`, `crowding`, `upright`, and `min_radius`) are fixed when the label is
+made. To change one, remove the label (`remove()`) and make a new one.
+`get_text()` does not return the label's string.
 
 - **Vector output:** In Portable Document Format (PDF), Scalable Vector Graphics (SVG), PostScript, and Encapsulated PostScript (EPS) output, each character is
   drawn as an outline path, not as text. The label cannot be selected, searched,
@@ -416,17 +424,15 @@ does not return the label's string.
   counterclockwise, so a curve from angle 0 to π runs right to left over the top
   and its label reads upside down unless `upright=True`. A 3D axes raises
   `TypeError`.
-- **Animation:** Blitting is not supported: `ax.draw_artist(label)` draws
-  nothing. Redraw the whole figure (a `FuncAnimation` without blitting works),
-  or leave the label out of the blit.
-- **Child artists:** Each character and each math run is a separate artist on
-  the axes, so `ax.texts` lists them as well as the label. Do not remove or
-  restyle them one at a time: removing one glyph breaks the next draw, and a
-  loop that removes every item of `ax.texts` raises `ValueError`. Call
-  `label.remove()` on the object that `curved_text` returns: it removes every
-  part. To tell a label from other text, test `isinstance(t, CurvedText)`.
-- **Lifecycle:** `label.remove()` removes every part of the label. `ax.clear()`
-  removes it with the other artists. A figure that holds a label can be pickled.
+- **Animation:** `animated=True` and `ax.draw_artist(label)` work, so a label
+  can be blitted. The label draws its casing and its glyphs itself, so a
+  blitting loop that draws the label draws all of it.
+- **One artist:** The label is the only artist the axes holds: `ax.texts` lists
+  the label, not its characters. Its parts have no zorder of their own. The
+  casing and then the glyphs draw at the label's zorder, so an artist between
+  the label's zorder and the next one covers the whole label.
+- **Lifecycle:** `label.remove()` removes the label. `ax.clear()` removes it
+  with the other artists. A figure that holds a label can be pickled.
   `legend(loc="best")` avoids the label from matplotlib 3.9.
 - **Axis limits:** The label does not change the data limits. Plot the curve
   first, or set the limits yourself.
@@ -443,8 +449,8 @@ does not return the label's string.
 
 ## How it works
 
-Each character (and each `$...$` run) is a child artist drawn from its glyph
-outline and placed so that one shared text baseline follows the curve. A plain
+Each character (and each `$...$` run) is a part of the label, drawn from its
+glyph outline and placed so that one shared text baseline follows the curve. A plain
 glyph is turned rigidly: the package draws a straight line across the width of
 that one glyph and turns the glyph to match. Averaging over the width keeps
 neighboring glyphs smooth even when the curve has only a few points.

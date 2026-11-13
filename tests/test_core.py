@@ -12,11 +12,13 @@ import pickle
 import re
 import shutil
 import subprocess
+import warnings
 
 import matplotlib as mpl
 import matplotlib.cbook as cbook
 import matplotlib.dates as mdates
 import matplotlib.font_manager as font_manager
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.units as munits
@@ -24,6 +26,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from matplotlib.backend_bases import MouseEvent
+from matplotlib.backends.backend_agg import RendererAgg
 from matplotlib.backends.backend_pdf import FigureCanvasPdf
 from matplotlib.path import Path
 from matplotlib.testing import jpl_units
@@ -56,6 +59,12 @@ def _strongly_red(image):
     return int(((red > 200) & (green < 80) & (blue < 80)).sum())
 
 
+def _strongly_blue(image):
+    """How many pixels of an RGBA ``image`` are strongly blue."""
+    red, green, blue = image[..., :3].astype(int).transpose(2, 0, 1)
+    return int(((blue > 200) & (red < 80) & (green < 80)).sum())
+
+
 def _red_pixels(fig):
     """Draw the figure and count its strongly red pixels."""
     _draw(fig)
@@ -71,23 +80,38 @@ def _math_runs(ct):
     return [t for t in ct._segments if isinstance(t, _MathRun)]
 
 
-def _anchor_px(seg):
+def _place_of(ct, seg):
+    """The place the label gave ``seg`` at its last placement: a draw, or a
+    measurement, which replaces it. Read it right after a draw."""
+    return ct._placement.segments[ct._segments.index(seg)]
+
+
+def _path(ct, seg, renderer):
+    """``seg``'s outline mapped onto the curve at its last placement, in
+    display pixels; None for a blank segment."""
+    return seg._placed_path(renderer, _place_of(ct, seg))
+
+
+def _anchor_px(ct, seg):
     """The point on the (offset) curve a segment is centered on -- its baseline
     datum at mid-advance -- in display pixels. This is the placement analog of the
     superseded per-character ``Text.get_position`` and is valid after a draw."""
-    x, y, _ = seg._frame.points_and_angles(seg._s_left + seg._width_px / 2.0)
+    place = _place_of(ct, seg)
+    x, y, _ = place.frame.points_and_angles(place.s_left + place.width_px / 2.0)
     return np.array([float(x), float(y)])
 
 
 def _anchor_xy(ct):
     """Per-segment curve anchors in data coordinates."""
     inv = ct.axes.transData.inverted()
-    return np.array([inv.transform(_anchor_px(s)) for s in ct._segments])
+    return np.array([inv.transform(_anchor_px(ct, s)) for s in ct._segments])
 
 
-def _rotation_deg(seg):
+def _rotation_deg(ct, seg):
     """The rigid rotation a plain glyph takes: the chord across its advance."""
-    return float(np.degrees(seg._frame.chord_angles(seg._s_left, seg._width_px)))
+    place = _place_of(ct, seg)
+    return float(np.degrees(place.frame.chord_angles(place.s_left,
+                                                     place.width_px)))
 
 
 def test_places_one_artist_per_character():
@@ -219,7 +243,7 @@ def _clearance_px(ax, ct, gx, gy):
     seg2 = np.einsum("ij,ij->i", seg, seg)
     out = []
     for s in ct._segments:
-        p = _anchor_px(s)
+        p = _anchor_px(ct, s)
         t = np.clip(np.einsum("ij,ij->i", p - pts[:-1], seg) / seg2, 0.0, 1.0)
         proj = pts[:-1] + t[:, None] * seg
         out.append(np.hypot(*(p - proj).T).min())
@@ -303,7 +327,7 @@ def test_offset_anchor_is_measured_on_base_curve():
     ct = curved_text(ax, x, y, "o", pos=pos, anchor="center", offset=14.0,
                      fontsize=14)
     _draw(fig)
-    center = _anchor_px(ct._segments[0])
+    center = _anchor_px(ct, ct._segments[0])
     # Foot of the perpendicular from the glyph center onto the base curve, as an
     # arc-length fraction; it must land at pos.
     base = ax.transData.transform(np.column_stack([x, y]))
@@ -360,7 +384,7 @@ def test_math_run_offset_rides_offset_curve():
     def centroid(off):
         ct = curved_text(ax, gx, gy, "$x^2+y^2$", offset=off, fontsize=18)
         _draw(fig)
-        return _math_runs(ct)[0]._placed_path(renderer).vertices.mean(axis=0)
+        return _path(ct, _math_runs(ct)[0], renderer).vertices.mean(axis=0)
 
     c0, cup, cdn = centroid(0.0), centroid(40.0), centroid(-40.0)
     expected = 40.0 * fig.dpi / 72.0
@@ -413,7 +437,7 @@ def test_glyph_rotation_smooths_across_vertices():
     _draw(fig)
     pts = ax.transData.transform(np.column_stack([x, y]))
     rising = np.degrees(np.arctan2(pts[2, 1] - pts[1, 1], pts[2, 0] - pts[1, 0]))
-    rots = [_rotation_deg(t) for t in ct._segments]
+    rots = [_rotation_deg(ct, t) for t in ct._segments]
     # The flat segment's tangent is 0; every rotation stays within the two
     # segment tangents, and the straddling glyph lands strictly between them.
     assert all(-0.1 <= r <= rising + 0.1 for r in rots)
@@ -449,25 +473,63 @@ def test_wrapper_matches_class():
     plt.close(fig)
 
 
-def test_set_zorder_lifts_glyphs_above_container():
+def _line_over_label(line_zorder, label_zorder=None):
+    """The strongly red pixels left when a wide white line, at ``line_zorder``,
+    runs through a red label with a red casing, at its default zorder or at
+    ``label_zorder`` set after it is made."""
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(0, 10, 100)
+    y = np.full_like(x, 5.0)
+    ax.plot(x, y, color="white", linewidth=60, zorder=line_zorder)
+    ct = curved_text(ax, x, y, "label", fontsize=30, color="red", box="red")
+    if label_zorder is not None:
+        ct.set_zorder(label_zorder)
+    count = _red_pixels(fig)
+    plt.close(fig)
+    return count
+
+
+def test_the_label_draws_its_casing_and_glyphs_at_one_zorder():
+    # The label draws as one artist, casing then glyphs, at its own zorder, so
+    # a line above it covers both and a line below it covers neither.
+    fig, ax = plt.subplots()
+    default = curved_text(ax, [0, 1], [0, 1], "a").get_zorder()
+    plt.close(fig)
+    # The line is wide enough to cover the label wherever it is above it, so a
+    # count of red pixels left over is the label's own, in the hundreds.
+    assert _line_over_label(default - 1) > 1000
+    assert _line_over_label(default + 0.25) == 0
+    assert _line_over_label(default + 0.75) == 0
+
+
+def test_set_zorder_sets_the_zorder_of_the_whole_label():
+    assert _line_over_label(4, label_zorder=5) > 1000
+    assert _line_over_label(6, label_zorder=5) == 0
+
+
+def test_the_axes_holds_only_the_label_not_its_parts():
+    # The glyphs and the casing belong to the label, so the axes lists one
+    # text, which is the label, and no artist or line for a part.
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)
-    ct = curved_text(ax, x, np.zeros_like(x), "ab", pos=0.5, anchor="center")
-    ct.set_zorder(5)
-    assert ct.get_zorder() == 5
-    assert all(t.get_zorder() == 6 for t in ct._segments)
+    ct = curved_text(ax, x, np.zeros_like(x), r"ab $x$", box=True)
+    assert list(ax.texts) == [ct]
+    assert ax.get_children().count(ct) == 1
+    assert not ax.get_lines()
+    assert not any(part in ax.get_children() for part in ct._parts())
     plt.close(fig)
 
 
-def test_remove_drops_child_glyphs():
+def test_remove_drops_the_label():
     fig, ax = plt.subplots()
     x = np.linspace(0, 1, 10)
     ct = curved_text(ax, x, np.zeros_like(x), "ab", pos=0.5, anchor="center")
-    chars = list(ct._segments)
     ct.remove()
-    children = ax.get_children()
-    assert ct not in children
-    assert all(t not in children for t in chars)
+    assert ct not in ax.get_children()
+    assert not ax.texts
     plt.close(fig)
 
 
@@ -626,13 +688,14 @@ def test_math_run_straight_line_reduces_to_affine():
     datum = _valign_datum(ct._valign, lines)
     per_unit = renderer.points_to_pixels(14.0) / 100.0
     # A horizontal curve maps data x to pixels linearly, so arc length s lands
-    # at first_px + s; the run's left edge is at arc length run._s_left.
+    # at first_px + s; the run's left edge is at arc length ``s_left``.
     first_px = ax.transData.transform((0.0, 5.0))[0]
     cy = ax.transData.transform((5.0, 5.0))[1]
     expected = np.column_stack([
-        first_px + run._s_left + verts[:, 0] * per_unit,
+        first_px + _place_of(ct, run).s_left + verts[:, 0] * per_unit,
         cy + (verts[:, 1] - datum) * per_unit])
-    assert np.allclose(run._placed_path(renderer).vertices, expected, atol=1e-6)
+    # A millionth of a pixel: both sides are the same arithmetic in float64.
+    assert np.allclose(_path(ct, run, renderer).vertices, expected, atol=1e-6)
     plt.close(fig)
 
 
@@ -655,8 +718,8 @@ def test_math_run_aligns_to_plain_baseline(usetex):
                           usetex=usetex)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    mb = math_x._segments[0]._placed_path(renderer).get_extents()
-    pb = plain_x._segments[0]._placed_path(renderer).get_extents()
+    mb = _path(math_x, math_x._segments[0], renderer).get_extents()
+    pb = _path(plain_x, plain_x._segments[0], renderer).get_extents()
     # Baselines (ink bottoms) coincide.
     assert mb.y0 == pytest.approx(pb.y0, abs=1.0)
     plt.close(fig)
@@ -675,8 +738,8 @@ def test_superscript_does_not_drop_math_body():
     raised = curved_text(ax, x, y, "$x^2$", pos=0.5, fontsize=20)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    body = plain._segments[0]._placed_path(renderer).get_extents()
-    with_exp = raised._segments[0]._placed_path(renderer).get_extents()
+    body = _path(plain, plain._segments[0], renderer).get_extents()
+    with_exp = _path(raised, raised._segments[0], renderer).get_extents()
     assert with_exp.y0 == pytest.approx(body.y0, abs=1.5)
     assert with_exp.y1 > body.y1 + 2.0
     plt.close(fig)
@@ -698,7 +761,7 @@ def test_math_run_follows_tight_arc():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
-    bent = run._placed_path(renderer)
+    bent = _path(ct, run, renderer)
     center = ax.transData.transform((0.0, 0.0))
     radius = ax.transData.transform((1.0, 0.0))[0] - center[0]
     width, _ = run._size_px(renderer)
@@ -735,8 +798,8 @@ def test_math_run_offset_moves_perpendicular_in_points():
                          offset=10.0)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    fy = flat._segments[0]._placed_path(renderer).get_extents()
-    ly = lifted._segments[0]._placed_path(renderer).get_extents()
+    fy = _path(flat, flat._segments[0], renderer).get_extents()
+    ly = _path(lifted, lifted._segments[0], renderer).get_extents()
     expected = 10.0 * fig.dpi / 72.0
     assert ly.y0 - fy.y0 == pytest.approx(expected, abs=0.05)
     assert ly.x0 == pytest.approx(fy.x0, abs=0.05)
@@ -754,7 +817,7 @@ def test_math_run_geometry_is_dpi_invariant():
         ct = curved_text(ax, x, np.sin(x) + 5.0, r"$\sqrt{x^2}$", pos=0.5,
                          anchor="center")
         _draw(fig)
-        bent = ct._segments[0]._placed_path(fig.canvas.get_renderer())
+        bent = _path(ct, ct._segments[0], fig.canvas.get_renderer())
         data = ax.transData.inverted().transform(bent.vertices)
         box = (data[:, 0].min(), data[:, 0].max(),
                data[:, 1].min(), data[:, 1].max())
@@ -776,9 +839,9 @@ def test_math_run_orders_with_plain_characters():
     ct = curved_text(ax, x, y, r"ab$x^2$cd", pos=0.5, anchor="center")
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    bent = ct._segments[2]._placed_path(renderer).get_extents()
-    b_x = _anchor_px(ct._segments[1])[0]
-    c_x = _anchor_px(ct._segments[3])[0]
+    bent = _path(ct, ct._segments[2], renderer).get_extents()
+    b_x = _anchor_px(ct, ct._segments[1])[0]
+    c_x = _anchor_px(ct, ct._segments[3])[0]
     assert b_x < (bent.x0 + bent.x1) / 2.0 < c_x
     plt.close(fig)
 
@@ -793,8 +856,8 @@ def test_math_run_fontsize_scales_path():
     large = curved_text(ax, x, y, "$x^2$", pos=0.5, fontsize=24)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    hs = small._segments[0]._placed_path(renderer).get_extents().height
-    hl = large._segments[0]._placed_path(renderer).get_extents().height
+    hs = _path(small, small._segments[0], renderer).get_extents().height
+    hl = _path(large, large._segments[0], renderer).get_extents().height
     assert hl / hs == pytest.approx(2.0, rel=0.1)
     plt.close(fig)
 
@@ -813,8 +876,7 @@ def test_math_run_overrun_rides_tangent_extension():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     run, = ct._segments
-    assert run.get_visible()
-    bent = run._placed_path(renderer).get_extents()
+    bent = _path(ct, run, renderer).get_extents()
     end_x, end_y = ax.transData.transform((1.0, 5.0))
     assert bent.x0 >= end_x - 1.0
     assert (bent.y0 + bent.y1) / 2.0 == pytest.approx(end_y, abs=3.0)
@@ -830,9 +892,9 @@ def test_math_run_redraw_is_idempotent():
                      offset=6.0)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    first = _math_runs(ct)[0]._placed_path(renderer).vertices.copy()
+    first = _path(ct, _math_runs(ct)[0], renderer).vertices.copy()
     _draw(fig)
-    second = _math_runs(ct)[0]._placed_path(renderer).vertices
+    second = _path(ct, _math_runs(ct)[0], renderer).vertices
     assert np.allclose(first, second)
     plt.close(fig)
 
@@ -853,7 +915,6 @@ def test_math_run_path_effects_clears_line_behind_it():
     # glyphs (the run draws its own path and would otherwise skip path effects).
     # Draw a thick black line through a math run with and without the white
     # halo; the halo must whiten pixels along the line where the glyphs sit.
-    import matplotlib.patheffects as pe
 
     def dark_pixels_under_label(use_halo):
         fig, ax = plt.subplots()
@@ -864,10 +925,10 @@ def test_math_run_path_effects_clears_line_behind_it():
         ax.plot(x, y, color="black", linewidth=10)
         halo = [pe.withStroke(linewidth=10, foreground="white")]
         kw = {"path_effects": halo} if use_halo else {}
-        run = curved_text(ax, x, y, r"$\sqrt{xy}$", pos=0.5, anchor="center",
-                          fontsize=22, color="red", **kw)._segments[0]
+        ct = curved_text(ax, x, y, r"$\sqrt{xy}$", pos=0.5, anchor="center",
+                         fontsize=22, color="red", **kw)
         fig.canvas.draw()
-        bbox = run._placed_path(fig.canvas.get_renderer()).get_extents()
+        bbox = _path(ct, ct._segments[0], fig.canvas.get_renderer()).get_extents()
         buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]
         height = buf.shape[0]
         # Buffer rows run top-down; the path extent is bottom-up, so flip y.
@@ -888,10 +949,9 @@ def test_box_creates_and_removes_casing():
     plain = curved_text(ax, x, np.zeros_like(x), "ab")
     assert plain._box is None
     boxed = curved_text(ax, x, np.zeros_like(x), "ab", box=True)
-    assert boxed._box is not None and boxed._box in ax.get_lines()
-    casing = boxed._box
+    assert boxed._box is not None and boxed._box not in ax.get_lines()
     boxed.remove()
-    assert casing not in ax.get_lines()
+    assert boxed not in ax.get_children()
     plt.close(fig)
 
 
@@ -925,26 +985,31 @@ def test_box_hidden_on_degenerate_redraw():
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     x = np.linspace(0, 10, 50)
-    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.5, box=True)
-    _draw(fig)
-    assert ct._box.get_visible()
+    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.5,
+                     box="red")
+    assert _red_pixels(fig) > 0
     # Collapse the curve to a single point, then redraw. There is no public
     # setter for the curve, so drop its converted copy too.
     ct._cx = np.full_like(ct._cx, 5.0)
     ct._cy = np.full_like(ct._cy, 5.0)
     ct._forget_curve_floats()
-    _draw(fig)
-    assert not ct._box.get_visible()
+    assert _red_pixels(fig) == 0
     plt.close(fig)
 
 
-def test_box_sits_below_glyphs_in_zorder():
-    fig, ax = plt.subplots()
+def test_box_is_drawn_before_the_glyphs():
+    # A blue label on a red casing shows blue where the glyphs are, which it
+    # could not if the casing drew over them.
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
     x = np.linspace(0, 1, 10)
-    ct = curved_text(ax, x, np.zeros_like(x), "ab", box=True)
-    ct.set_zorder(5)
-    assert all(t.get_zorder() == 6 for t in ct._segments)
-    assert ct._box.get_zorder() < min(t.get_zorder() for t in ct._segments)
+    curved_text(ax, x, np.full_like(x, 0.5), "label", fontsize=30,
+                color="blue", box="red")
+    _draw(fig)
+    image = np.asarray(fig.canvas.buffer_rgba())
+    # Blue ink in the hundreds of pixels, and more red casing than blue ink.
+    assert _strongly_blue(image) > 100
+    assert _strongly_red(image) > _strongly_blue(image)
     plt.close(fig)
 
 
@@ -967,7 +1032,7 @@ def test_box_covers_line_behind_label():
         # Footprint of the actually-drawn outlines (the segments render their own
         # paths, and their own window extents are empty).
         verts = np.vstack([p.vertices for p in
-                           (s._placed_path(renderer) for s in ct._segments)
+                           (_path(ct, s, renderer) for s in ct._segments)
                            if p is not None])
         x0 = int(verts[:, 0].min())
         x1 = int(np.ceil(verts[:, 0].max()))
@@ -984,17 +1049,16 @@ def test_box_covers_line_behind_label():
         dark_pixels_under_label(use_box=False) / 4
 
 
-def test_set_zorder_and_remove_cover_math_runs():
-    fig, ax = plt.subplots()
+def test_a_math_run_is_drawn_and_removed_with_its_label():
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
     x = np.linspace(0, 1, 10)
-    ct = curved_text(ax, x, np.zeros_like(x), r"a$b$c", pos=0.5)
-    ct.set_zorder(5)
-    assert all(t.get_zorder() == 6 for t in ct._segments)
-    segments = list(ct._segments)
+    ct = curved_text(ax, x, np.full_like(x, 0.5), r"$\sqrt{x}$", fontsize=40,
+                     color="red")
+    assert _red_pixels(fig) > 100
     ct.remove()
-    children = ax.get_children()
-    assert ct not in children
-    assert all(t not in children for t in segments)
+    assert ct not in ax.get_children()
+    assert _red_pixels(fig) == 0
     plt.close(fig)
 
 
@@ -1029,8 +1093,8 @@ def test_valign_shifts_label_perpendicular_uniformly(family, ascender_em):
     _draw(fig)
     r = fig.canvas.get_renderer()
     shifts = np.array([
-        sa._placed_path(r).vertices.mean(axis=0)[1]
-        - sb._placed_path(r).vertices.mean(axis=0)[1]
+        _path(asc, sa, r).vertices.mean(axis=0)[1]
+        - _path(base, sb, r).vertices.mean(axis=0)[1]
         for sb, sa in zip(base._segments, asc._segments)])
     assert shifts.std() < 0.5          # identical shift per glyph: no step
     em_px = r.points_to_pixels(20)
@@ -1086,7 +1150,8 @@ def test_plain_glyphs_are_kerned_as_matplotlib_lays_out_text(family, pair,
         glyphs = _text_to_path.get_glyphs_with_font(font, text)[0]
         px_per_unit = _px_per_unit(renderer, fontsize)
         plt.close(fig)
-        return second._s_left - first._s_left, glyphs[1][1] * px_per_unit
+        return (_place_of(ct, second).s_left - _place_of(ct, first).s_left,
+                glyphs[1][1] * px_per_unit)
 
     ours, matplotlibs = second_glyph_offsets(pair)
     ours_ref, matplotlibs_ref = second_glyph_offsets(reference)
@@ -1228,6 +1293,7 @@ def test_gid_numbers_the_parts_in_order_not_by_character_offset():
     fig, ax = plt.subplots()
     x = np.linspace(0, 10, 50)
     ct = curved_text(ax, x, np.sin(x), "$x^2$ab", gid="lab")
+    _draw(fig)
     assert [seg.get_gid() for seg in ct._segments] == [
         "lab-0", "lab-1", "lab-2"]
     plt.close(fig)
@@ -1287,11 +1353,12 @@ def _assert_same_placement(fig, ct, ref_fig, ref_ct):
     ref_renderer = ref_fig.canvas.get_renderer()
     assert len(ct._segments) == len(ref_ct._segments)
     for seg, ref_seg in zip(ct._segments, ref_ct._segments):
-        path = seg._placed_path(renderer)
-        ref_path = ref_seg._placed_path(ref_renderer)
+        path = _path(ct, seg, renderer)
+        ref_path = _path(ref_ct, ref_seg, ref_renderer)
         if ref_path is None:
             assert path is None
             continue
+        # A millionth of a pixel: the same curve in two types, to float64.
         np.testing.assert_allclose(path.vertices, ref_path.vertices, atol=1e-6)
     np.testing.assert_allclose(
         ct._box.get_transform().transform(ct._box.get_xydata()),
@@ -1618,7 +1685,7 @@ def test_label_overrunning_its_stretch_follows_its_tangent_across_the_gap():
                                  pos=anchor_x / stretch_end, anchor="start")
     _assert_same_placement(fig, ct, ref_fig, ref_ct)
     end_px = ct.axes.transData.transform((stretch_end, 5.0))
-    last_glyph = _anchor_px(ct._segments[-1])
+    last_glyph = _anchor_px(ct, ct._segments[-1])
     assert last_glyph[0] > end_px[0]
     assert last_glyph[1] == pytest.approx(end_px[1])
     plt.close(fig)
@@ -1840,7 +1907,7 @@ def test_symlog_axis_keeps_every_value():
     fig, ct = _scaled_label(x, 5 + np.sin(x), "x", "symlog", (-11, 11))
     _draw(fig)
     assert np.isfinite(ct._curve_px()).all()
-    assert ct._placed
+    assert ct._placement is not None
     plt.close(fig)
 
 
@@ -1853,13 +1920,12 @@ def test_label_with_no_stretch_left_to_draw_is_hidden():
     ax.set_xlim(-5, 5)
     ax.set_ylim(0, 10)
     x = np.linspace(-4, -1, 30)
-    ct = curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
-                     color="red", box="red")
+    curved_text(ax, x, np.full_like(x, 5.0), "label", fontsize=20,
+                color="red", box="red")
     assert _red_pixels(fig) > 0
     ax.set_xscale("log", nonpositive="mask")
     ax.set_xlim(0.1, 10)
     assert _red_pixels(fig) == 0
-    assert not ct._box.get_visible()
     assert np.isfinite(fig.get_tightbbox(fig.canvas.get_renderer()).bounds).all()
     plt.close(fig)
 
@@ -1941,7 +2007,7 @@ def test_unclipped_label_outside_the_axes_is_in_the_tight_bounding_box():
     fig, ct = _rising_label(clip_on=False)
     _draw(fig)
     renderer = fig.canvas.get_renderer()
-    ink = Bbox.union([seg._placed_path(renderer).get_extents()
+    ink = Bbox.union([_path(ct, seg, renderer).get_extents()
                       for seg in ct._segments if not seg._char.isspace()])
     top = _tight_top_px(fig)
     assert ink.y1 <= top + 0.01
@@ -2118,8 +2184,8 @@ def test_hidden_label_hides_its_glyphs_and_takes_no_room():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     shown = ct.get_window_extent(renderer)
+    assert _red_pixels_above_axes(fig, ct.axes) == 0 and shown.width > 0
     ct.set_visible(False)
-    assert not any(seg.get_visible() for seg in ct._segments)
     hidden = ct.get_window_extent(renderer)
     assert hidden.width == hidden.height == 0
     ct.set_visible(True)
@@ -2138,9 +2204,9 @@ def test_hidden_label_hides_its_casing(hide_at_construction):
     fig, ct = _flat_label("label", box="red", **kwargs)
     if not hide_at_construction:
         ct.set_visible(False)
-    _draw(fig)
-    assert not ct._box.get_visible()
-    assert not any(seg.get_visible() for seg in ct._segments)
+    assert _red_pixels(fig) == 0
+    ct.set_visible(True)
+    assert _red_pixels(fig) > 0
     plt.close(fig)
 
 
@@ -2158,19 +2224,39 @@ def test_unclipped_label_keeps_its_casing_outside_the_axes():
     assert red_above(clip_on=True) == 0
 
 
-def test_clipping_set_after_construction_reaches_every_part():
-    fig, ct = _flat_label("label $x$", box=True)
-    parts = [*ct._segments, ct._box]
+def test_clipping_set_after_construction_reaches_what_is_drawn():
+    # The label's clipping applies to its glyphs and its casing as set now, so
+    # a label made clipped and then unclipped draws outside the axes, and
+    # clipped again, does not.
+    fig, ct = _rising_label(clip_on=True, box="red")
+    ax = ct.axes
+    assert _red_pixels_above_axes(fig, ax) == 0
     ct.set_clip_on(False)
-    assert not any(part.get_clip_on() for part in parts)
+    assert _red_pixels_above_axes(fig, ax) > 1000
     ct.set_clip_on(True)
-    assert all(part.get_clip_on() for part in parts)
-    circle = plt.Circle((5, 5), 2, transform=ct.axes.transData)
-    ct.set_clip_path(circle)
-    assert all(part.get_clip_path() is not None for part in parts)
-    clip_box = ct.axes.bbox
-    ct.set_clip_box(clip_box)
-    assert all(part.get_clip_box() is clip_box for part in parts)
+    assert _red_pixels_above_axes(fig, ax) == 0
+    plt.close(fig)
+
+
+def test_a_clip_box_and_a_clip_path_set_after_construction_cut_the_label():
+    # Red glyphs, no casing: matplotlib 3.5 does not cut a line by a clip path
+    # when the line is as wide as a casing, whoever sets it.
+    fig, ct = _flat_label("label $x$", color="red")
+    ax = ct.axes
+    whole = _red_pixels(fig)
+    right_half = int(ax.bbox.x0 + ax.bbox.width / 2)
+    ct.set_clip_box(Bbox([[ax.bbox.x0, ax.bbox.y0], [right_half, ax.bbox.y1]]))
+    _draw(fig)
+    image = np.asarray(fig.canvas.buffer_rgba())
+    assert 0 < _strongly_red(image) < whole
+    # Two pixels of margin for the antialiased edge at the cut.
+    assert _strongly_red(image[:, right_half + 2:]) == 0
+    ct.set_clip_box(None)
+    # A circle over the middle of the label, which is centered on the data
+    # point (5, 5), keeps some of it and cuts the rest.
+    ct.set_clip_path(plt.Circle((5, 5), 0.4, transform=ax.transData))
+    inside = _red_pixels(fig)
+    assert 0 < inside < whole
     plt.close(fig)
 
 
@@ -2225,17 +2311,15 @@ def _click(fig, x_px, y_px):
 def _first_glyph_centre(ct):
     """The display-pixel centre of the label's first placed glyph."""
     renderer = ct.figure.canvas.get_renderer()
-    return ct._segments[0]._placed_path(renderer).get_extents().get_points().mean(
+    return _path(ct, ct._segments[0], renderer).get_extents().get_points().mean(
         axis=0)
 
 
 def test_label_is_picked_on_its_glyphs():
     # Picking and hover test a point against the label's placed glyphs, so a
     # click on a glyph hits the label and a click in empty space does not. The
-    # glyph segments take the forwarded picker too, but never answer a pick
-    # themselves, so a click just inside their unused Text box at the display
-    # origin, outside every axes, where matplotlib still asks the axes'
-    # children, picks nothing, and no segment contains it for hover.
+    # glyph segments are not artists of the axes, so a click at the display
+    # origin, outside every axes, picks nothing.
     fig, ct, picked = _picking_label(picker=True)
     ax = ct.axes
     on_glyph = _click(fig, *_first_glyph_centre(ct))
@@ -2247,7 +2331,6 @@ def test_label_is_picked_on_its_glyphs():
     assert picked == [ct]
     fig.canvas.callbacks.process("button_press_event", inside_segment_text_box)
     assert picked == [ct]
-    assert not any(seg.contains(inside_segment_text_box)[0] for seg in ct._segments)
     ct.set_visible(False)
     assert not ct.contains(on_glyph)[0]
     plt.close(fig)
@@ -2345,7 +2428,8 @@ def test_crowding_none_leaves_glyph_positions_unchanged():
     for a, b in zip(_anchor_xy(default), _anchor_xy(explicit)):
         assert a == pytest.approx(b)
     for a, b in zip(default._segments, explicit._segments):
-        assert _rotation_deg(a) == pytest.approx(_rotation_deg(b))
+        assert (_rotation_deg(default, a)
+                == pytest.approx(_rotation_deg(explicit, b)))
     plt.close(fig)
 
 
@@ -2428,7 +2512,7 @@ def _ink(ct, renderer, char):
     """Extents of the drawn outline of the plain glyph for ``char``."""
     seg = next(s for s in ct._segments
                if isinstance(s, _PlainGlyph) and s._char == char)
-    return seg._placed_path(renderer).get_extents()
+    return _path(ct, seg, renderer).get_extents()
 
 
 @needs_latex
@@ -2442,8 +2526,8 @@ def test_usetex_outline_matches_measured_design_at_any_size():
     for fontsize in (8, 30):
         fig, ct = _flat_label("m", fontsize=fontsize, usetex=True)
         seg = ct._segments[0]
-        ink = seg._placed_path(fig.canvas.get_renderer()).get_extents()
-        ratios.append(ink.width / seg._width_px)
+        ink = _path(ct, seg, fig.canvas.get_renderer()).get_extents()
+        ratios.append(ink.width / _place_of(ct, seg).width_px)
         plt.close(fig)
     assert ratios[0] == pytest.approx(ratios[1], rel=0.02)
 
@@ -2474,7 +2558,7 @@ def test_usetex_whitespace_advances_by_interword_space(ws):
     # reads a tab as a space, and its interword space is about a third of an em.
     fig, ct = _flat_label(f"a{ws}b", usetex=True)
     em_px = fig.canvas.get_renderer().points_to_pixels(16)
-    assert ct._segments[1]._width_px == pytest.approx(em_px / 3, rel=0.1)
+    assert _place_of(ct, ct._segments[1]).width_px == pytest.approx(em_px / 3, rel=0.1)
     plt.close(fig)
 
 
@@ -2485,7 +2569,7 @@ def test_usetex_keyword_matches_rcparam():
     # read inside each label's own rcParam context, as a draw would.
     def placed(fig, ct):
         renderer = fig.canvas.get_renderer()
-        paths = [seg._placed_path(renderer) for seg in ct._segments]
+        paths = [_path(ct, seg, renderer) for seg in ct._segments]
         return [p.vertices for p in paths if p is not None]
 
     fig_kw, by_kwarg = _flat_label("ab $x$", usetex=True)
@@ -2509,10 +2593,10 @@ def test_container_set_usetex_does_not_move_the_label():
     # would shift while its glyphs stayed in the matplotlib font.
     fig, ct = _flat_label("nnnn", fontsize=30, valign="ascender")
     renderer = fig.canvas.get_renderer()
-    before = [seg._placed_path(renderer).vertices for seg in ct._segments]
+    before = [_path(ct, seg, renderer).vertices for seg in ct._segments]
     ct.set_usetex(True)
     _draw(fig)
-    after = [seg._placed_path(renderer).vertices for seg in ct._segments]
+    after = [_path(ct, seg, renderer).vertices for seg in ct._segments]
     for b, a in zip(before, after):
         np.testing.assert_allclose(a, b)
     plt.close(fig)
@@ -2527,7 +2611,7 @@ def test_usetex_plain_text_is_literal():
     # height, so its ink is also checked against a plain "S".
     fig, ct = _flat_label("S" + _TEX_MARKUP, usetex=True)
     for seg in ct._segments:
-        assert seg._width_px > 0, seg._char
+        assert _place_of(ct, seg).width_px > 0, seg._char
         assert len(seg._outline_units()[0]) > 0, seg._char
     renderer = fig.canvas.get_renderer()
     dollar, s = _ink(ct, renderer, "$"), _ink(ct, renderer, "S")
@@ -2542,7 +2626,8 @@ def test_usetex_relation_sign_is_not_ot1_punctuation(char, ot1_twin):
     # "?", as narrow as their twins; escaped, they are full-width relation signs.
     fig, ct = _flat_label(char + ot1_twin, usetex=True)
     sign, twin = ct._segments
-    assert sign._width_px > 1.3 * twin._width_px
+    assert (_place_of(ct, sign).width_px
+            > 1.3 * _place_of(ct, twin).width_px)
     plt.close(fig)
 
 
@@ -2601,7 +2686,7 @@ def test_usetex_plain_glyphs_are_kerned_as_tex_sets_them(pair, reference):
         px_per_unit = (_px_per_unit(fig.canvas.get_renderer(), fontsize)
                        * _layout_units(converter))
         plt.close(fig)
-        return (second._s_left - first._s_left,
+        return (_place_of(ct, second).s_left - _place_of(ct, first).s_left,
                 (glyphs[1][1] - glyphs[0][1]) * px_per_unit)
 
     ours, tex = second_glyph_offsets(pair)
@@ -2624,9 +2709,10 @@ def test_usetex_run_sets_one_item_per_character(text):
     em_px = fig.canvas.get_renderer().points_to_pixels(16)
     for seg in ct._segments:
         assert seg._run_layout() is not None
-        assert seg._width_px > 0, seg._char
+        width = _place_of(ct, seg).width_px
+        assert width > 0, seg._char
         if seg._char.isspace():
-            assert seg._width_px == pytest.approx(em_px / 3, rel=0.1)
+            assert width == pytest.approx(em_px / 3, rel=0.1)
         else:
             assert len(seg._outline_units()[0]) > 0, seg._char
     plt.close(fig)
@@ -2638,7 +2724,7 @@ def test_usetex_long_run_stays_on_one_line():
     # break onto a second line and its items would interleave along the run.
     # Kept on one line, every character starts after the one before it.
     fig, ct = _flat_label("wavy line " * 30, fontsize=72, usetex=True)
-    lefts = [seg._s_left for seg in ct._segments]
+    lefts = [_place_of(ct, seg).s_left for seg in ct._segments]
     assert ct._segments[0]._run_layout() is not None
     assert all(a < b for a, b in zip(lefts, lefts[1:]))
     plt.close(fig)
@@ -2657,9 +2743,10 @@ def test_usetex_run_that_cannot_be_paired_is_typeset_per_character(text):
     # A run whose items cannot be paired with its characters is typeset one
     # character at a time, and its characters still advance in order.
     fig, ct = _flat_label(text, usetex=True)
-    lefts = [seg._s_left for seg in ct._segments]
+    lefts = [_place_of(ct, seg).s_left for seg in ct._segments]
     assert all(seg._run_layout() is None for seg in ct._segments)
-    assert all(seg._width_px > 0 for seg in ct._segments if seg._char.isalpha())
+    assert all(_place_of(ct, seg).width_px > 0 for seg in ct._segments
+               if seg._char.isalpha())
     assert lefts == sorted(lefts)
     assert len(_ink(ct, fig.canvas.get_renderer(), "\u00e9").bounds) == 4
     plt.close(fig)
@@ -2707,7 +2794,8 @@ def test_usetex_run_follows_the_font_when_rcparams_change(after, tex_files):
         expected = alone.get_window_extent(fig.canvas.get_renderer()).width
         for label in (drawn_before, drawn_after):
             seg = label._segments[0]
-            assert seg._width_px == pytest.approx(expected, abs=0.5)
+            assert (_place_of(label, seg).width_px
+                    == pytest.approx(expected, abs=0.5))
         np.testing.assert_allclose(drawn_before._segments[0]._outline_units()[0],
                                    drawn_after._segments[0]._outline_units()[0])
     plt.close(fig_before)
@@ -2758,7 +2846,7 @@ def test_usetex_valign_follows_the_drawn_font(valign, rc, tex_files):
     with mpl.rc_context(rc):
         fig, ct = _flat_label("()gy", fontsize=30, usetex=True, valign=valign)
         renderer = fig.canvas.get_renderer()
-        ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
+        ink = [_path(ct, seg, renderer).get_extents() for seg in ct._segments]
     top = max(e.y1 for e in ink)
     bottom = min(e.y0 for e in ink)
     edge = {"center": (top + bottom) / 2.0, "ascender": top,
@@ -2779,7 +2867,7 @@ def test_usetex_box_centres_on_the_ink_under_every_valign(valign):
     fig, ct = _flat_label("()gy", fontsize=30, usetex=True, valign=valign,
                           box=True)
     renderer = fig.canvas.get_renderer()
-    ink = [seg._placed_path(renderer).get_extents() for seg in ct._segments]
+    ink = [_path(ct, seg, renderer).get_extents() for seg in ct._segments]
     ink_mid = (max(e.y1 for e in ink) + min(e.y0 for e in ink)) / 2.0
     casing = np.column_stack([ct._box.get_xdata(), ct._box.get_ydata()])
     casing_y = ct.axes.transData.transform(casing)[:, 1]
@@ -2792,7 +2880,7 @@ def test_usetex_box_centres_on_the_ink_under_every_valign(valign):
 def _outline(ct, fig):
     """Every placed glyph outline of a drawn label, stacked, in display pixels."""
     renderer = fig.canvas.get_renderer()
-    paths = [s._placed_path(renderer) for s in ct._segments]
+    paths = [_path(ct, s, renderer) for s in ct._segments]
     return np.vstack([path.vertices for path in paths if path is not None])
 
 
@@ -2821,7 +2909,7 @@ def test_default_leaves_a_leftward_label_upside_down():
                       upright=False)
     _draw(fig)
     assert np.array_equal(_outline(plain, fig), _outline(off, fig))
-    angle = _rotation_deg(plain._segments[0])
+    angle = _rotation_deg(plain, plain._segments[0])
     assert abs(angle) > 90
     plt.close(fig)
 
@@ -2833,7 +2921,7 @@ def test_upright_follows_an_inverted_axis_and_back():
 
     def angles():
         _draw(fig)
-        return [_rotation_deg(s) for s in ct._segments]
+        return [_rotation_deg(ct, s) for s in ct._segments]
 
     assert all(abs(a) < 90 for a in angles())
     ax.invert_xaxis()
@@ -2849,7 +2937,7 @@ def test_upright_false_still_flips_with_an_inverted_axis():
     ct = curved_text(ax, x, y, "reads left")
     ax.invert_xaxis()
     _draw(fig)
-    assert all(abs(_rotation_deg(s)) > 90 for s in ct._segments)
+    assert all(abs(_rotation_deg(ct, s)) > 90 for s in ct._segments)
     plt.close(fig)
 
 
@@ -2917,7 +3005,7 @@ def test_upright_reads_a_vertical_curve_from_bottom_to_top(direction, flips):
     up = curved_text(ax, x, y, "vertical", upright=True)
     _draw(fig)
     assert np.allclose(_outline(plain, fig), _outline(up, fig)) == (not flips)
-    assert all(_rotation_deg(s) == pytest.approx(90) for s in up._segments)
+    assert all(_rotation_deg(up, s) == pytest.approx(90) for s in up._segments)
     plt.close(fig)
 
 
@@ -2943,7 +3031,7 @@ def test_upright_flips_the_stretch_that_holds_the_anchor():
     fig, ax = plt.subplots()
     ct = curved_text(ax, x, y, "gap", pos=0.25, upright=True)
     _draw(fig)
-    assert all(abs(_rotation_deg(s)) < 90 for s in ct._segments)
+    assert all(abs(_rotation_deg(ct, s)) < 90 for s in ct._segments)
     plt.close(fig)
 
 
@@ -2977,7 +3065,7 @@ def test_upright_accepts_a_numpy_bool():
     fig, ax = plt.subplots()
     ct = curved_text(ax, x[::-1], y[::-1], "np", upright=np.bool_(True))
     _draw(fig)
-    assert all(abs(_rotation_deg(s)) < 90 for s in ct._segments)
+    assert all(abs(_rotation_deg(ct, s)) < 90 for s in ct._segments)
     plt.close(fig)
 
 
@@ -3009,7 +3097,8 @@ def _reversed_rule_steps(ct, renderer):
     reversed_steps = rule_steps = 0
     for seg in _math_runs(ct):
         flat, codes = seg._outline_units()
-        placed = seg._placed_path(renderer)
+        place = _place_of(ct, seg)
+        placed = seg._placed_path(renderer, place)
         ppu = _px_per_unit(renderer, seg.get_fontsize())
         for i in range(1, len(codes)):
             if codes[i] != Path.LINETO:
@@ -3018,8 +3107,8 @@ def _reversed_rule_steps(ct, renderer):
             if abs(flat[i, 1] - flat[i - 1, 1]) > 1e-9 or abs(du) < 1e-9:
                 continue
             rule_steps += 1
-            s = seg._s_left + 0.5 * (flat[i, 0] + flat[i - 1, 0]) * ppu
-            _, _, angle = seg._frame.points_and_angles(s)
+            s = place.s_left + 0.5 * (flat[i, 0] + flat[i - 1, 0]) * ppu
+            _, _, angle = place.frame.points_and_angles(s)
             d = placed.vertices[i] - placed.vertices[i - 1]
             if np.sign(du) * (d[0] * np.cos(angle) + d[1] * np.sin(angle)) < 0:
                 reversed_steps += 1
@@ -3036,10 +3125,11 @@ def _height_violations(ct, renderer, tolerance_px=1.0):
     violations = total = 0
     for seg in _math_runs(ct):
         flat, _ = seg._outline_units()
-        placed = seg._placed_path(renderer).vertices
+        place = _place_of(ct, seg)
+        placed = seg._placed_path(renderer, place).vertices
         ppu = _px_per_unit(renderer, seg.get_fontsize())
-        height = np.abs(flat[:, 1] - seg._datum) * ppu
-        fx, fy = seg._frame._xf, seg._frame._yf
+        height = np.abs(flat[:, 1] - place.datum) * ppu
+        fx, fy = place.frame._xf, place.frame._yf
         for chunk in np.array_split(np.arange(len(placed)),
                                     max(1, len(placed) // 500)):
             gap = np.sqrt(np.min((placed[chunk, 0, None] - fx) ** 2
@@ -3054,7 +3144,7 @@ def _glyph_centers_x(ct, renderer):
     """The mean x of each drawn plain glyph's placed outline, in order."""
     xs = []
     for seg in ct._segments:
-        path = seg._placed_path(renderer)
+        path = _path(ct, seg, renderer)
         if path is not None:
             xs.append(float(path.vertices[:, 0].mean()))
     return np.array(xs)
@@ -3093,7 +3183,7 @@ def test_offset_path_never_runs_backwards(R):
     fig, ax, x, y = _valley(R)
     ct = curved_text(ax, x, y, "Temperature", fontsize=20, offset=20)
     _draw(fig)
-    frame = ct._segments[0]._frame
+    frame = _place_of(ct, ct._segments[0]).frame
     assert np.all(np.diff(frame._xf) >= -1e-6)
     plt.close(fig)
 
@@ -3101,9 +3191,10 @@ def test_offset_path_never_runs_backwards(R):
 def _chord_curvature(ct, renderer, span_px=8.0):
     """The largest chord-scale curvature, in radians per pixel, of the path
     the label rides across the span it covers."""
-    first, last = ct._segments[0], ct._segments[-1]
-    frame = first._frame
-    s = np.linspace(first._s_left, last._s_left + last._width_px, 200)
+    first = _place_of(ct, ct._segments[0])
+    last = _place_of(ct, ct._segments[-1])
+    frame = first.frame
+    s = np.linspace(first.s_left, last.s_left + last.width_px, 200)
     return float(np.max(np.abs(frame.curvature(s, span_px))))
 
 
@@ -3178,7 +3269,7 @@ def test_the_rounded_path_has_no_sharp_corner_and_no_gap():
     fig, ax, x, y = _corner_axes()
     ct = curved_text(ax, x, y, "corner label here", fontsize=12, min_radius=30)
     _draw(fig)
-    frame = ct._segments[0]._frame
+    frame = _place_of(ct, ct._segments[0]).frame
     radius_px = 30 * fig.canvas.get_renderer().points_to_pixels(1.0)
     step = max(radius_px * _core._ROUND_STEP, _core._ROUND_MIN_STEP_PX)
     links = np.column_stack([np.diff(frame._xf), np.diff(frame._yf)])
@@ -3198,7 +3289,7 @@ def test_a_right_angle_corner_leaves_the_curve_by_the_fillet_bound():
     ct = curved_text(ax, x, y, "corner label here", fontsize=12, min_radius=30)
     _draw(fig)
     pt = fig.canvas.get_renderer().points_to_pixels(1.0)
-    frame = ct._segments[0]._frame
+    frame = _place_of(ct, ct._segments[0]).frame
     polyline = ax.transData.transform(np.column_stack([x, y]))
     # The frame runs on past the ends of the curve along their tangents.
     points = np.column_stack([frame._xf, frame._yf])
@@ -3250,9 +3341,10 @@ def test_the_anchor_follows_the_rounded_path():
     fig, ax, x, y = _valley(5)
     ct = curved_text(ax, x, y, "Temperature", fontsize=20, min_radius=30)
     _draw(fig)
-    first, last = ct._segments[0], ct._segments[-1]
-    middle = (first._s_left + last._s_left + last._width_px) / 2.0
-    cx, _, _ = first._frame.points_and_angles(middle)
+    first = _place_of(ct, ct._segments[0])
+    last = _place_of(ct, ct._segments[-1])
+    middle = (first.s_left + last.s_left + last.width_px) / 2.0
+    cx, _, _ = first.frame.points_and_angles(middle)
     assert abs(float(cx) - ax.transData.transform((0.0, 0.0))[0]) < 0.5
     plt.close(fig)
 
@@ -3277,7 +3369,7 @@ def test_a_zigzag_shorter_than_the_rounding_stays_continuous():
     y = np.where(np.arange(41) % 2 == 0, 0.0, 6.0)
     ct = curved_text(ax, x, y, "zigzag", fontsize=12, min_radius=20)
     _draw(fig)
-    frame = ct._segments[0]._frame
+    frame = _place_of(ct, ct._segments[0]).frame
     assert np.isfinite(frame._xf).all() and np.isfinite(frame._yf).all()
     radius_px = 20 * fig.canvas.get_renderer().points_to_pixels(1.0)
     step = max(radius_px * _core._ROUND_STEP, _core._ROUND_MIN_STEP_PX)
@@ -3307,15 +3399,15 @@ def test_rounding_follows_the_zoom():
     fig, ax, x, y = _valley(5)
     ct = curved_text(ax, x, y, "Temperature", fontsize=20)
     _draw(fig)
-    assert len(ct._segments[0]._frame._xf) != len(x)
+    assert len(_place_of(ct, ct._segments[0]).frame._xf) != len(x)
     ax.set_xlim(-12.24, 12.24)
     ax.set_ylim(5 - 4.32, 5 + 12.96)
     _draw(fig)
-    assert len(ct._segments[0]._frame._xf) == len(x)
+    assert len(_place_of(ct, ct._segments[0]).frame._xf) == len(x)
     ax.set_xlim(-122.4, 122.4)
     ax.set_ylim(5 - 43.2, 5 + 129.6)
     _draw(fig)
-    assert len(ct._segments[0]._frame._xf) != len(x)
+    assert len(_place_of(ct, ct._segments[0]).frame._xf) != len(x)
     plt.close(fig)
 
 
@@ -3334,7 +3426,7 @@ def test_the_box_follows_the_rounded_path():
     ct = curved_text(ax, x, y, "Temperature", fontsize=20, box=True,
                      valign="baseline")
     _draw(fig)
-    frame = ct._segments[0]._frame
+    frame = _place_of(ct, ct._segments[0]).frame
     assert len(frame._xf) != len(x)
     box = ax.transData.transform(np.column_stack(ct._box.get_data()))
     ridden = np.column_stack([frame._xf, frame._yf])
@@ -3395,11 +3487,10 @@ def test_the_ink_band_matches_the_placed_ink():
     _, line_y = ax.transData.transform((0.0, 0.0))
     for seg in ct._segments:
         highest, lowest = seg._ink_band()
-        placed = seg._placed_path(renderer).vertices[:, 1] - line_y
-        assert placed.max() == pytest.approx((highest - seg._datum) * ppu,
-                                             abs=0.01)
-        assert placed.min() == pytest.approx((lowest - seg._datum) * ppu,
-                                             abs=0.01)
+        datum = _place_of(ct, seg).datum
+        placed = _path(ct, seg, renderer).vertices[:, 1] - line_y
+        assert placed.max() == pytest.approx((highest - datum) * ppu, abs=0.01)
+        assert placed.min() == pytest.approx((lowest - datum) * ppu, abs=0.01)
     plt.close(fig)
 
 
@@ -3451,7 +3542,7 @@ def test_auto_takes_one_and_a_half_times_the_ink_on_each_side():
     _draw(fig)
     renderer = fig.canvas.get_renderer()
     ppu = _px_per_unit(renderer, 24)
-    datum = ct._segments[0]._datum
+    datum = _place_of(ct, ct._segments[0]).datum
     top = max((seg._ink_band()[0] - datum) * ppu for seg in ct._segments)
     bottom = max((datum - seg._ink_band()[1]) * ppu for seg in ct._segments)
     assert top > bottom > 0
@@ -3499,9 +3590,9 @@ def _largest_step_with_pos(min_radius, reverse):
         # would also run the figure's layout, and only the placement is meant.
         ct._pos = pos
         ct._place(renderer)
-        current = np.array([seg._placed_path(renderer).vertices.mean(axis=0)
+        current = np.array([_path(ct, seg, renderer).vertices.mean(axis=0)
                             for seg in ct._segments
-                            if seg._placed_path(renderer) is not None])
+                            if _path(ct, seg, renderer) is not None])
         if previous is not None:
             largest = max(largest, np.hypot(*(current - previous).T).max())
         previous = current
@@ -3540,4 +3631,258 @@ def test_a_narrow_hairpin_is_a_documented_limit(pos):
                      pos=pos)
     _draw(fig)
     assert _height_violations(ct, fig.canvas.get_renderer())[0] > 0
+    plt.close(fig)
+
+
+def _composite_label(text="label", **kwargs):
+    """A figure with a red label and a red casing on a flat curve; return the
+    figure, the axes, and the label. ``kwargs`` go to the label."""
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.set_axis_off()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    x = np.linspace(1, 9, 50)
+    kwargs.setdefault("box", "red")
+    ct = curved_text(ax, x, np.full_like(x, 5.3), text, fontsize=24,
+                     color="red", **kwargs)
+    return fig, ax, ct
+
+
+def test_draw_artist_draws_the_glyphs_and_the_casing():
+    # A blitting loop draws each animated artist with ``ax.draw_artist``. The
+    # figure's own draw skips an animated label, and ``draw_artist`` draws all
+    # of it: the casing as well as the glyphs.
+    fig, ax, ct = _composite_label(animated=True)
+    assert _red_pixels(fig) == 0
+    ax.draw_artist(ct)
+    drawn = _strongly_red(np.asarray(fig.canvas.buffer_rgba()))
+    fig2, _, _ = _composite_label()
+    assert drawn == _red_pixels(fig2) > 0
+    plt.close(fig)
+    plt.close(fig2)
+
+
+def test_animated_casing_does_not_stay_in_the_background():
+    # The casing is drawn only by the label, so once the label has been drawn
+    # with ``draw_artist``, a figure draw that skips it still leaves no casing
+    # in the background a blit loop saves and restores.
+    fig, ax, ct = _composite_label(animated=True)
+    _draw(fig)
+    ax.draw_artist(ct)
+    assert _red_pixels(fig) == 0
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("setter, value", [
+    ("set_color", "blue"), ("set_alpha", 0.2), ("set_visible", False)])
+def test_a_setter_called_after_construction_changes_what_is_drawn(setter,
+                                                                   value):
+    fig, ax, ct = _composite_label(box=False)
+    before = _red_pixels(fig)
+    getattr(ct, setter)(value)
+    if setter == "set_color":
+        # The glyphs turn blue.
+        _draw(fig)
+        image = np.asarray(fig.canvas.buffer_rgba())
+        assert _strongly_blue(image) > 100 and _strongly_red(image) < before
+    else:
+        assert _red_pixels(fig) < before
+    plt.close(fig)
+
+
+def test_gid_and_url_set_after_construction_reach_the_svg():
+    fig, ax, ct = _composite_label()
+    ct.set_gid("lab")
+    ct.set_url("https://example.org/label")
+    buffer = io.StringIO()
+    fig.savefig(buffer, format="svg")
+    svg = buffer.getvalue()
+    assert re.findall(r'id="(lab-\d+)"', svg)
+    assert "https://example.org/label" in svg
+    plt.close(fig)
+
+
+def test_rasterized_set_after_construction_rasterizes_the_label():
+    fig, ax, ct = _composite_label()
+    vector, raster = io.StringIO(), io.StringIO()
+    fig.savefig(vector, format="svg")
+    ct.set_rasterized(True)
+    fig.savefig(raster, format="svg")
+    assert "<image" not in vector.getvalue()
+    assert "<image" in raster.getvalue()
+    plt.close(fig)
+
+
+def test_sketch_params_set_after_construction_change_the_glyphs():
+    fig, ax, ct = _composite_label(box=False)
+    _draw(fig)
+    plain = np.asarray(fig.canvas.buffer_rgba()).copy()
+    ct.set_sketch_params(scale=4, length=20, randomness=3)
+    _draw(fig)
+    assert (np.asarray(fig.canvas.buffer_rgba()) != plain).any()
+    plt.close(fig)
+
+
+def test_measuring_with_another_renderer_leaves_what_is_drawn_alone():
+    # A measurement with a renderer of another resolution between a draw and
+    # the next ``draw_artist`` must not move the glyphs the label draws. The
+    # segments keep no placement, and a draw places the label for its own
+    # renderer, so what is drawn does not depend on what was measured.
+    def drawn_after(measure):
+        fig, ax, ct = _composite_label()
+        _draw(fig)
+        renderer = fig.canvas.get_renderer()
+        if measure:
+            assert ct.get_window_extent(RendererAgg(1200, 900, 300)).width > 0
+        renderer.clear()
+        ax.draw_artist(ct)
+        image = np.asarray(fig.canvas.buffer_rgba()).copy()
+        plt.close(fig)
+        return image
+
+    np.testing.assert_array_equal(drawn_after(True), drawn_after(False))
+
+
+def test_the_casing_takes_no_path_effect():
+    # A blank label has no glyph for a path effect to outline, so any blue
+    # stroke is on the casing, which is red. The stroke is wider than the
+    # casing (about 30 points), or it would hide behind it.
+    fig, ax, ct = _composite_label(" ")
+    ct.set_path_effects([pe.withStroke(linewidth=200, foreground="blue")])
+    image = _drawn_image(fig)
+    assert _strongly_red(image) > 100
+    assert _strongly_blue(image) == 0
+    plt.close(fig)
+
+
+def _drawn_image(fig):
+    _draw(fig)
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+def test_sketch_params_set_after_construction_change_the_casing():
+    # Glyphs with no ink (alpha 0) leave only the casing to change.
+    fig, ax, ct = _composite_label(alpha=0.0)
+    plain = _drawn_image(fig)
+    assert _strongly_red(plain) > 100
+    ct.set_sketch_params(scale=6, length=30, randomness=3)
+    assert (_drawn_image(fig) != plain).any()
+    plt.close(fig)
+
+
+def test_snap_set_after_construction_changes_the_glyphs():
+    fig, ax, ct = _composite_label("llll", box=False)
+    ct.set_snap(True)
+    snapped = _drawn_image(fig)
+    ct.set_snap(False)
+    assert (_drawn_image(fig) != snapped).any()
+    plt.close(fig)
+
+
+def test_snap_set_after_construction_changes_the_casing():
+    fig, ax, ct = _composite_label(alpha=0.0)
+    ct.set_snap(True)
+    snapped = _drawn_image(fig)
+    ct.set_snap(False)
+    assert (_drawn_image(fig) != snapped).any()
+    plt.close(fig)
+
+
+def test_path_effects_set_after_construction_reach_the_glyphs():
+    fig, ax, ct = _composite_label(box=False)
+    assert _strongly_blue(_drawn_image(fig)) == 0
+    ct.set_path_effects([pe.withStroke(linewidth=8, foreground="blue")])
+    assert _strongly_blue(_drawn_image(fig)) > 100
+    plt.close(fig)
+
+
+def test_animated_set_after_construction_hides_the_label_from_a_full_draw():
+    fig, ax, ct = _composite_label()
+    assert _red_pixels(fig) > 0
+    ct.set_animated(True)
+    assert _red_pixels(fig) == 0
+    ax.draw_artist(ct)
+    assert _strongly_red(np.asarray(fig.canvas.buffer_rgba())) > 0
+    plt.close(fig)
+
+
+def test_the_glyphs_follow_the_label_clipping():
+    # A label that starts left of the view loses its first glyphs to the
+    # clipping, and keeps them unclipped. The label is made the other way and
+    # then set, so the setter is what the glyphs follow. The first glyph is
+    # about a tenth of the label's ink, in the hundreds of pixels.
+    def red(clip_on):
+        fig, ax = plt.subplots(figsize=(4, 3))
+        ax.set_axis_off()
+        ax.set_xlim(2, 10)
+        ax.set_ylim(0, 10)
+        x = np.linspace(0, 10, 50)
+        ct = curved_text(ax, x, np.full_like(x, 5.0), "label", pos=0.0,
+                         anchor="start", fontsize=30, color="red",
+                         clip_on=not clip_on)
+        ct.set_clip_on(clip_on)
+        count = _red_pixels(fig)
+        plt.close(fig)
+        return count
+
+    assert red(True) < red(False) - 100
+
+
+def test_the_url_reaches_every_glyph_and_the_casing():
+    fig, ax, ct = _composite_label()
+    ct.set_url("https://example.org/label")
+    buffer = io.StringIO()
+    fig.savefig(buffer, format="svg")
+    # Five glyphs and the casing, each in its own link.
+    assert buffer.getvalue().count('xlink:href="https://example.org/label"') == 6
+    plt.close(fig)
+
+
+def test_a_label_made_hidden_is_sized_as_any_label_once_shown():
+    # A segment measured while hidden measures as an empty box.
+    def made(hidden):
+        fig, ax, ct = _composite_label(**({"visible": False} if hidden else {}))
+        if hidden:
+            ct.set_visible(True)
+        width = ct.get_window_extent(fig.canvas.get_renderer()).width
+        drawn = _red_pixels(fig)
+        plt.close(fig)
+        return width, drawn
+
+    hidden, shown = made(True), made(False)
+    assert hidden[0] == pytest.approx(shown[0])
+    assert hidden[1] == shown[1] > 0
+
+
+def test_rasterized_set_off_after_construction_stops_rasterizing():
+    # Also, a rasterized label raises no warning: matplotlib warns for a text
+    # made rasterized that does not rasterize itself, as a segment does not.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fig, ax, ct = _composite_label(rasterized=True)
+    rasterized = io.StringIO()
+    fig.savefig(rasterized, format="svg")
+    assert "<image" in rasterized.getvalue()
+    ct.set_rasterized(False)
+    buffer = io.StringIO()
+    fig.savefig(buffer, format="svg")
+    assert "<image" not in buffer.getvalue()
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("how", ["keyword", "setter"])
+def test_an_agg_filter_runs_once_for_the_label_however_it_is_set(how):
+    calls = []
+
+    def count(image, dpi):
+        calls.append(1)
+        return image, 0, 0
+
+    fig, ax, ct = _composite_label(
+        **({"agg_filter": count} if how == "keyword" else {}))
+    if how == "setter":
+        ct.set_agg_filter(count)
+    calls.clear()
+    _draw(fig)
+    assert len(calls) == 1
     plt.close(fig)

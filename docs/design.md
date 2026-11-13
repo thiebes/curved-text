@@ -15,8 +15,9 @@ Under LaTeX typesetting (usetex), LaTeX (a typesetting system) lays out the same
 segments; the LaTeX section below covers what changes.
 
 Two design invariants hold: all geometry is computed per draw in display space,
-and children are independent artists that the parent positions before they
-render (the zorder + 1 ordering).
+and the label is a composite artist: its parts are not children of the axes, and
+`CurvedText.draw` places them and then draws them itself, the casing first and
+the glyphs after it, with its own properties applied to each.
 
 ## Rules for changes
 
@@ -51,25 +52,38 @@ Each rule states a constraint and the reason for it.
   and `lead` are mirrored with the curve, so `pos` and `anchor` still refer to
   the curve as given and the label never overruns an end it did not overrun
   before.
-- **Keep segments out of figure layout.** Measuring them would run LaTeX once per
-  character under usetex, and an unclipped label would stretch a tight bounding
-  box to the segments' unused position at the display origin. The container's
-  `get_window_extent` reports the label instead.
-- **Keep the zorder layering: container at `z`, casing at `z + 0.5`, glyphs at
-  `z + 1`.** The casing must sit above the container, because the container's
-  `draw` is what positions the casing, and a lower zorder would draw it before
-  its geometry is set.
-- **Forward display properties to `_parts()`.** The container draws nothing
-  itself, so `set_visible` and the clipping setters (`set_clip_on`,
-  `set_clip_box`, `set_clip_path`) pass to the segments and the casing. A new
-  display property that should reach the drawn label is forwarded the same way,
-  or the property changes the container and leaves the label as it was.
-- **Pass extra keyword arguments to every glyph and math run.** The one exception
-  is `transform`, which each segment replaces with `IdentityTransform()`, because
-  segments draw in display pixels and a data transform would move them.
+- **Keep the parts out of the axes.** The axes holds only the label, so it
+  never draws or measures a segment or the casing on its own. Measuring a
+  segment would run LaTeX once per character under usetex, and an unclipped
+  label would stretch a tight bounding box to the segments' unused position at
+  the display origin. The container's `get_window_extent` reports the label.
+- **Keep one zorder for the whole label.** The label draws its casing and then
+  its glyphs inside its own `draw`, at its own zorder. The parts have none.
+- **Take display properties from the label at draw time.** `draw` gives each
+  glyph the label's color, alpha, path effects, and, with the casing, its URL,
+  snap, sketch parameters, and clipping (`_pass_properties`, `_pass_common`),
+  and the glyph the label's gid with its number, so a setter called after
+  construction reaches what is drawn. The casing keeps its own color, alpha,
+  and width, and takes no path effect. The font stays with each segment, which
+  builds its outline from it. A new display property that should reach the
+  drawn label is passed the same way. The `visible` and `rasterized` keywords
+  are not forwarded to the segments: matplotlib measures a hidden text as an
+  empty box, and warns for a rasterized text that does not draw itself through
+  `allow_rasterization`.
+- **Keep placement apart from drawing.** `_place_on_curve` returns a
+  `_Placement` value and writes nothing to a segment, and a segment keeps no
+  placement: `draw` places the label and draws each segment at the place it
+  just made (`_draw_at`). A measurement with another renderer, for
+  `get_window_extent` or picking, keeps a placement of its own and cannot
+  change where the segments draw.
+- **Pass extra keyword arguments to every glyph and math run.** They set the
+  font and the usetex setting each segment builds its outline from. The one
+  exception is `transform`, which each segment replaces with `IdentityTransform()`,
+  because segments draw in display pixels and a data transform would move them.
 - **Test with the Agg backend and measure the drawn outline.** Tests force a
-  draw and read placement from `seg._placed_path(renderer)`, or from the helpers
-  `_anchor_xy` and `_rotation_deg` in `tests/test_core.py`, not from
+  draw and read placement from `seg._placed_path(renderer, place)` with the
+  place the label gave the segment, through the helpers `_place_of`, `_path`,
+  `_anchor_xy`, and `_rotation_deg` in `tests/test_core.py`, not from
   `get_position` or `get_rotation`. Segments render outlines, so those getters
   do not describe where a glyph is drawn.
 
@@ -179,24 +193,26 @@ All code lives in `src/curved_text/_core.py`.
     usetex, see below), subdividing rule boxes (fraction bars, radical
     overlines) with `_densify` so the long straight runs follow the curve. Glyph
     units are resolution independent; only the per-draw pixel scale varies.
-  - `_placed_path(renderer)` builds the placed compound path in display pixels.
+  - `_placed_path(renderer, place)` builds the placed compound path in display
+    pixels, for a place made for that renderer.
     For a math run (`_bend = True`) every outline point is bent through the
     frame, with Bezier curve control points mapped directly (the approximation
     vector editors use for path bending). For a plain glyph (`_bend = False`) the whole
     outline takes one rigid rotation about its center on the curve, so its shape
     is preserved.
-  - `draw(renderer)` fills the compound path with one `renderer.draw_path` call
-    using the artist's color and alpha, clipping set through public
-    `GraphicsContext` methods, wrapping the renderer in a `PathEffectRenderer`
-    when effects are set. With no frame assigned it draws nothing.
-  - `_set_placement(frame, s_left, width_px, datum)` is the per-draw handoff the
-    parent calls. Any perpendicular offset is already baked into `frame` (it is
-    the parallel curve), so a segment needs no offset of its own.
-- `CurvedText` builds children from `_split_runs` (honoring `parse_math`), and
-  its draw walks one cursor over the segments, handing each its placement. The
-  child list is named `_segments`, since elements are characters and runs alike.
-  The container draws nothing itself, so its draw places the segments and
-  the casing (`_place_on_curve`).
+  - `_draw_at(renderer, place)` fills the compound path with one
+    `renderer.draw_path` call using the segment's color and alpha, clipping set
+    through public `GraphicsContext` methods, wrapping the renderer in a
+    `PathEffectRenderer` when effects are set. `draw` itself draws nothing, so
+    nothing but the label draws a segment.
+  - A `_SegmentPlace` (frame, `s_left`, `width_px`, `datum`) is what the label
+    hands it for one draw. Any perpendicular offset is already baked into
+    `frame` (it is the parallel curve), so a segment needs no offset of its own.
+- `CurvedText` builds its parts from `_split_runs` (honoring `parse_math`). They
+  are not axes children. Its `_place_on_curve` walks one cursor over the
+  segments and returns a `_Placement`, and its `draw` draws the casing and then
+  each segment at its place. The list is named `_segments`, since elements are
+  characters and runs alike.
 - Units: the container keeps its own copy of the curve as the caller gave it
   (floats pass through conversion as they are, so converting the caller's
   array would share it) and converts it with the axes' unit converters in
@@ -668,8 +684,8 @@ modes place `"ascender"` at different heights against the letters. The page
 
 ## Path effects
 
-Keyword arguments reach every child, so `path_effects` flow to every segment.
-`_OutlineSegment.draw` draws its own placed path, so it wraps the renderer in a
+The label's `path_effects` pass to every segment at each draw.
+`_OutlineSegment._draw_at` draws the placed path, so it wraps the renderer in a
 `PathEffectRenderer` when effects are set. The effect strokes the placed outline,
 so a white `withStroke` halo follows the curved text and clears the lines the
 label crosses. It is the standard matplotlib way to draw a light halo close
@@ -687,35 +703,38 @@ no glyph's stroke overwrites another's fill. Its centerline is shifted off the
 curve by the glyph band's offset (the text lies on its `valign` datum, so the
 ink band is centered off the bare curve) so the band covers the ink. The band's
 center line comes from
-the same font lines as the label, under usetex the TeX ones. It is a child
-artist positioned per draw in `CurvedText._place_on_curve`, like the glyphs.
-When placement fails early (no segments, detached axes, no stretch of
-the curve with a span, or a degenerate offset curve) it hides the casing and
-clears every glyph's frame, so neither a stale band nor stale glyphs are left
-painted.
+the same font lines as the label, under usetex the TeX ones. It is a part of the
+label, placed per draw in `CurvedText._place_on_curve` and drawn by
+`CurvedText.draw` before the glyphs. When placement fails early (no segments,
+detached axes, no stretch of the curve with a span, or a degenerate offset
+curve) `draw` clears every glyph's placement and draws nothing, so neither a
+stale band nor stale glyphs are left painted.
 
-The container draws nothing itself, so the properties that decide whether and
-where the label shows reach the parts it draws. `set_visible` passes to every
-segment and the casing; a hidden label is not placed and has an empty extent,
-as matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
-clip path pass to them as well, at construction and through the setters, so an
-unclipped label keeps its casing outside the axes. Picking tests the mouse
-against the box of each placed glyph (`contains`), as matplotlib's own text
-tests its box; a click on the casing's band between glyphs is not a hit. The
-segments take the forwarded `picker` but are never pickable themselves
-(`pickable` is false), since matplotlib asks a picker function without calling
-`contains`, and their `contains` is false for hover, since matplotlib's
-`Text.contains` tests the base `Text` box at their unused position, the display
-origin, not the empty extent they report. A click there picks nothing. The
-label measures its casing, so the casing, like the segments, stays out of
-figure layout itself.
+The label draws its parts itself, so its own properties decide what is drawn.
+A hidden label is not placed, draws nothing, and has an empty extent, as
+matplotlib's own hidden text takes no room. `clip_on`, the clip box, and the
+clip path apply to the glyphs and the casing as they are at each draw, so an
+unclipped label keeps its casing outside the axes. Color, alpha, URL, snap,
+sketch parameters, and path effects reach the glyphs the same way; `set_gid`
+gives the glyphs `gid-0`, `gid-1`, and so on. A rasterized label rasterizes as
+one piece, because the parts draw inside the label's own `draw`. Picking tests
+the mouse against the box of each placed glyph (`contains`), as matplotlib's
+own text tests its box; a click on the casing's band between glyphs is not a
+hit. The parts are not artists of the axes, so they take no part in picking,
+hover, `ax.texts`, legend placement, or figure layout. The label measures its
+glyphs and its casing for them.
 
-Layering is by zorder, applied once in `__init__` and maintained by
-`set_zorder`: the container at `z`, the casing at `z + 0.5`, the glyphs at
-`z + 1`. The casing must sit above the container because the container's `draw`
-is what positions it: a lower zorder would draw the casing before its geometry
-is set, leaving it stale or empty. It must sit below the glyphs so the text
-reads on top.
+Layering is by the label's zorder alone: the casing draws first and the glyphs
+after it, inside `CurvedText.draw`, so the text reads on top of its casing and
+an artist at any zorder above the label covers both.
+
+Measuring is kept apart from drawing. `_place_on_curve` returns a `_Placement`
+(a place for each segment and for the casing) and writes nothing to a segment.
+`get_window_extent` and `contains` keep the placement for the renderer they
+were given, with the key it was made for, and `draw` places the label afresh
+and draws each segment at the place it just made. The segments keep no
+placement, so a measurement with a renderer of another resolution, between a
+draw and the glyphs' next draw, has none of theirs to change.
 
 ## Behavior rules
 
@@ -796,6 +815,39 @@ Each bullet states an invariant that tests pin and names one or two of them in
   anchor, and again on every draw, so an inverted axis is followed:
   `test_upright_decides_by_the_chord_across_the_label_not_the_anchor_tangent`,
   `test_upright_follows_an_inverted_axis_and_back`.
+
+- The label is one artist. `ax.draw_artist(label)` draws the glyphs and the
+  casing, an animated label leaves no casing in the background of a blit, the
+  axes lists only the label, the label has one zorder, and the casing draws
+  under the glyphs:
+  `test_draw_artist_draws_the_glyphs_and_the_casing`,
+  `test_animated_casing_does_not_stay_in_the_background`,
+  `test_the_axes_holds_only_the_label_not_its_parts`,
+  `test_the_label_draws_its_casing_and_glyphs_at_one_zorder`,
+  `test_box_is_drawn_before_the_glyphs`.
+- The label's properties reach what is drawn after construction, for the
+  glyphs and the casing alike: `test_a_setter_called_after_construction_changes_what_is_drawn`,
+  `test_the_glyphs_follow_the_label_clipping`,
+  `test_a_clip_box_and_a_clip_path_set_after_construction_cut_the_label`,
+  `test_gid_and_url_set_after_construction_reach_the_svg`,
+  `test_the_url_reaches_every_glyph_and_the_casing`,
+  `test_snap_set_after_construction_changes_the_glyphs`,
+  `test_snap_set_after_construction_changes_the_casing`,
+  `test_sketch_params_set_after_construction_change_the_glyphs`,
+  `test_sketch_params_set_after_construction_change_the_casing`,
+  `test_path_effects_set_after_construction_reach_the_glyphs`.
+- A label made hidden is sized as any label once shown, a rasterized label
+  raises no warning, and a label's filter runs once:
+  `test_a_label_made_hidden_is_sized_as_any_label_once_shown`,
+  `test_rasterized_set_off_after_construction_stops_rasterizing`,
+  `test_an_agg_filter_runs_once_for_the_label_however_it_is_set`.
+- A measurement with another renderer leaves what is drawn alone:
+  `test_measuring_with_another_renderer_leaves_what_is_drawn_alone`.
+- The casing takes the label's clipping, URL, snap, and sketch parameters but no
+  path effect, and a math run is drawn and removed with its label:
+  `test_the_casing_takes_no_path_effect`,
+  `test_a_math_run_is_drawn_and_removed_with_its_label`,
+  `test_animated_set_after_construction_hides_the_label_from_a_full_draw`.
 
 ## Deferred
 

@@ -114,7 +114,8 @@ def test_contour_figures_label_every_contour_upright(name, label_count,
         pytest.skip(message)
     assert len(labels) == label_count
     for label in labels:
-        first, last = label._segments[0], label._segments[-1]
-        span = last._s_left + last._width_px - first._s_left
-        angle = first._frame.chord_angles(first._s_left, span)
+        first = label._placement.segments[0]
+        last = label._placement.segments[-1]
+        span = last.s_left + last.width_px - first.s_left
+        angle = first.frame.chord_angles(first.s_left, span)
         assert abs(np.degrees(angle)) <= 90, label._segments[0].get_text()

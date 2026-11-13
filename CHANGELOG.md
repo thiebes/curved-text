@@ -29,8 +29,36 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   past a cylinder, and a label on a bend tighter than the text, with and
   without the rounding of `min_radius`.
 
+### Changed
+
+- A label draws its own casing and glyphs, as matplotlib's composite artists
+  do, and the axes holds only the label
+  ([#49](https://github.com/thiebes/curved-text/issues/49)). `ax.texts` lists
+  the label, not each character and math run, and the casing is no longer in
+  `ax.lines`. The parts have no zorder of their own: the casing and then the
+  glyphs draw at the label's zorder, where the casing sat half a level above
+  it and the glyphs a level above, so an artist between the label's zorder and
+  the next now covers the whole label. Code that walked `ax.texts` to reach the
+  glyphs finds the label instead.
+
 ### Fixed
 
+- `ax.draw_artist(label)` draws the label and its casing, so a label can be
+  blitted; before, it drew nothing. An animated label's casing no longer stays
+  in the background a blitting loop saves
+  ([#49](https://github.com/thiebes/curved-text/issues/49)).
+- `set_color`, `set_alpha`, `set_gid`, `set_url`, `set_rasterized`, `set_snap`,
+  `set_sketch_params`, and `set_path_effects` change what the label draws after
+  it is made; before, they changed only the label's own properties
+  ([#49](https://github.com/thiebes/curved-text/issues/49)). The text, the font,
+  the curve, and the placement arguments are still fixed when the label is
+  made. The `box` casing keeps its own color and alpha, takes the label's
+  URL, snap, sketch parameters, and clipping, and takes no path effect.
+- Measuring a label with a renderer of another resolution no longer leaves its
+  glyphs placed for that renderer. The glyphs keep no placement of their own:
+  the label places itself at each draw and draws them at the places it just
+  made, so what it draws does not depend on a measurement
+  ([#46](https://github.com/thiebes/curved-text/issues/46)).
 - A label does not fold over itself on the inside of a bend tighter than the
   label is tall. A fraction bar or a radical's overline no longer runs
   backward, and ink no longer comes out mirrored past the center of curvature.

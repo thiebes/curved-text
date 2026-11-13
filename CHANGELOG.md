@@ -52,11 +52,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   it is made; before, they changed only the label's own properties
   ([#49](https://github.com/thiebes/curved-text/issues/49)). The text, the font,
   the curve, and the placement arguments are still fixed when the label is
-  made.
+  made. The `box` casing keeps its own color and alpha, takes the label's
+  URL, snap, sketch parameters, and clipping, and takes no path effect.
 - Measuring a label with a renderer of another resolution no longer leaves its
-  glyphs placed for that renderer. The label places itself apart from what it
-  draws, so a glyph drawn on its own after such a measurement is where the
-  last draw put it
+  glyphs placed for that renderer. The glyphs keep no placement of their own:
+  the label places itself at each draw and draws them at the places it just
+  made, so what it draws does not depend on a measurement
   ([#46](https://github.com/thiebes/curved-text/issues/46)).
 - A label does not fold over itself on the inside of a bend tighter than the
   label is tall. A fraction bar or a radical's overline no longer runs

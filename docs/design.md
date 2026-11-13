@@ -81,8 +81,9 @@ Each rule states a constraint and the reason for it.
   exception is `transform`, which each segment replaces with `IdentityTransform()`,
   because segments draw in display pixels and a data transform would move them.
 - **Test with the Agg backend and measure the drawn outline.** Tests force a
-  draw and read placement from `seg._placed_path(renderer)`, or from the helpers
-  `_anchor_xy` and `_rotation_deg` in `tests/test_core.py`, not from
+  draw and read placement from `seg._placed_path(renderer, place)` with the
+  place the label gave the segment, through the helpers `_place_of`, `_path`,
+  `_anchor_xy`, and `_rotation_deg` in `tests/test_core.py`, not from
   `get_position` or `get_rotation`. Segments render outlines, so those getters
   do not describe where a glyph is drawn.
 
@@ -192,7 +193,8 @@ All code lives in `src/curved_text/_core.py`.
     usetex, see below), subdividing rule boxes (fraction bars, radical
     overlines) with `_densify` so the long straight runs follow the curve. Glyph
     units are resolution independent; only the per-draw pixel scale varies.
-  - `_placed_path(renderer)` builds the placed compound path in display pixels.
+  - `_placed_path(renderer, place)` builds the placed compound path in display
+    pixels, for a place made for that renderer.
     For a math run (`_bend = True`) every outline point is bent through the
     frame, with Bezier curve control points mapped directly (the approximation
     vector editors use for path bending). For a plain glyph (`_bend = False`) the whole
@@ -839,10 +841,13 @@ Each bullet states an invariant that tests pin and names one or two of them in
   `test_a_label_made_hidden_is_sized_as_any_label_once_shown`,
   `test_rasterized_set_off_after_construction_stops_rasterizing`,
   `test_an_agg_filter_runs_once_for_the_label_however_it_is_set`.
-- A measurement with another renderer leaves what is drawn alone, and the
-  segments keep no placement:
-  `test_measuring_with_another_renderer_leaves_what_is_drawn_alone`,
-  `test_the_segments_keep_no_placement`.
+- A measurement with another renderer leaves what is drawn alone:
+  `test_measuring_with_another_renderer_leaves_what_is_drawn_alone`.
+- The casing takes the label's clipping, URL, snap, and sketch parameters but no
+  path effect, and a math run is drawn and removed with its label:
+  `test_the_casing_takes_no_path_effect`,
+  `test_a_math_run_is_drawn_and_removed_with_its_label`,
+  `test_animated_set_after_construction_hides_the_label_from_a_full_draw`.
 
 ## Deferred
 

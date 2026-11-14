@@ -52,6 +52,8 @@ MIN_LABEL_SEPARATION = 0.02
 # across that stretch, measured at TURN_SAMPLES points, is too curved for its
 # label.
 LABEL_LENGTH = 0.028
+# The label size LABEL_LENGTH was measured for.
+LABEL_FONTSIZE = 8
 MAX_TURN_DEGREES = 40
 TURN_SAMPLES = 10
 # The factor that darkens the hillshading, so white labels can be read on it.
@@ -61,6 +63,8 @@ SHADE_DARKENING = 0.45
 # WCAG 2 minimum for text, so a label is placed only where the shading sampled
 # along the contour under it is that dark.
 MAX_BACKGROUND_LUMINANCE = 0.18
+# Meters in one degree of latitude, to turn the model's cell size into meters.
+METERS_PER_DEGREE = 111200
 
 
 def _gaussian_blur(grid, sigma):
@@ -87,8 +91,8 @@ def _point_at(path, pos):
 
 
 def _luminance(rgb):
-    """The WCAG 2 relative luminance of each color in the (n, 3) array
-    ``rgb``."""
+    """The WCAG 2 relative luminance of each color in ``rgb``, an array whose
+    last axis holds the red, green, and blue values."""
     linear = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
     return linear @ np.array([0.2126, 0.7152, 0.0722])
 
@@ -128,16 +132,17 @@ def _straightest_pos(path, others, dark_enough):
 
 
 def make(images_dir):
-    path = sample_data("jacksboro_fault_dem.npz")
-    if path is None:
+    dem_path = sample_data("jacksboro_fault_dem.npz")
+    if dem_path is None:
         print("  (skipped 20_topographic_map: no jacksboro_fault_dem.npz)")
         return None
-    dem = np.load(path)
     # The model's rows run from north to south. The grid has one elevation
     # per cell, and the corners are in degrees of longitude and latitude.
-    elevation = dem["elevation"].astype(float)
-    south, north = dem["ymin"], dem["ymax"]
-    west, east = dem["xmin"], dem["xmax"]
+    with np.load(dem_path) as dem:
+        elevation = dem["elevation"].astype(float)
+        south, north = dem["ymin"], dem["ymax"]
+        west, east = dem["xmin"], dem["xmax"]
+        cell_deg = np.array([dem["dx"], dem["dy"]])
     if north < south:
         elevation = elevation[::-1]
         south, north = north, south
@@ -153,14 +158,12 @@ def make(images_dir):
     # Hillshading: a light from the northwest. The cell sizes are in meters,
     # so slopes are those of the ground, and the relief is exaggerated only by
     # the factor ``vert_exag``.
-    cell_m = 111200 * np.array([dem["dx"] * np.cos(np.radians(south)),
-                                dem["dy"]])
+    cell_m = METERS_PER_DEGREE * cell_deg * [np.cos(np.radians(south)), 1]
     shade = LightSource(azdeg=315, altdeg=40).shade(
         smoothed, cmap=plt.cm.gist_earth, blend_mode="soft", vert_exag=2.0,
         dx=cell_m[0], dy=cell_m[1], fraction=0.9)
     shade[..., :3] *= SHADE_DARKENING
-    luminance = _luminance(shade[..., :3].reshape(-1, 3)).reshape(
-        shade.shape[:2])
+    luminance = _luminance(shade[..., :3])
 
     def dark_enough(path, pos):
         """Whether the shading is dark enough for white text at each of the
@@ -207,12 +210,12 @@ def make(images_dir):
         placed.append(point)
         labeled_levels.add(level)
         curved_text(ax, seg[:, 0], seg[:, 1], f"{level:.0f} m", pos=pos,
-                    upright=True, fontsize=8, color="white")
+                    upright=True, fontsize=LABEL_FONTSIZE, color="white")
     ax.set_xlabel("longitude (degrees)")
     ax.set_ylabel("latitude (degrees)")
 
-    path = os.path.join(images_dir, "20_topographic_map.png")
-    return save(fig, path)
+    out_path = os.path.join(images_dir, "20_topographic_map.png")
+    return save(fig, out_path)
 
 
 if __name__ == "__main__":

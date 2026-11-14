@@ -4341,6 +4341,37 @@ def test_the_smoothing_window_coarsens_by_doublings_over_20000_samples():
         assert math.log2(step / 0.25) == pytest.approx(
             round(math.log2(step / 0.25)))
         assert step > 0.25
+        # The step is the smallest such power of two: half of it would hold
+        # more than 20000 samples.
+        assert count > 10000
+
+
+@pytest.mark.parametrize("sigma, chord", [(8.0, 5), (1.0, 3)])
+def test_the_gate_lays_chords_two_thirds_of_a_width_long_to_the_nearest_sample(
+        monkeypatch, sigma, chord):
+    # 2/3 of a width is 5.33 samples at a width of 8 (step 1) and 2.67 at a
+    # width of 1 (step 0.25): rounded, not floored or ceiled.
+    seen = []
+
+    def record(x, y, chord, first, last):
+        seen.append(chord)
+        return 0
+
+    monkeypatch.setattr(_core, "_path_reversals", record)
+    along = np.arange(0.0, 400.0, 0.5)
+    points = np.column_stack([along, 0 * along])
+    _core._smoothed_stretch(points, 200.0, sigma, (180.0, 220.0), True)
+    assert seen == [chord]
+
+
+def test_a_turn_within_a_degree_of_a_half_turn_is_a_half_turn():
+    # Two turns of 179.5 degrees the same way double back each time, so they
+    # reverse once; at 178 degrees they are the same-way turns of a tight curl.
+    for degrees, expected in ((179.5, 1), (178.0, 0)):
+        angle = np.radians(degrees) * np.arange(3)
+        x = np.concatenate([[0.0], np.cumsum(np.cos(angle))])
+        y = np.concatenate([[0.0], np.cumsum(np.sin(angle))])
+        assert _core._path_reversals(x, y, 1, 0, 3) == expected
 
 
 def test_the_smoothing_window_keeps_one_step_past_either_end():

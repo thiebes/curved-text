@@ -644,7 +644,9 @@ follow what the label rides, and the line itself is untouched.
   it does. A number gives a steadier result, and is the choice for raw data. It
   is not perfectly steady: where the offset is larger than the radius of the
   smoothed path, a small change in the width or the view can move the label by
-  the size of the wiggles.
+  the size of the wiggles. A label far past an end rides the last step of the
+  part, so a bend tighter than the offset at that end can move it by a jump
+  as the label crosses from one step to a few.
 - A path that turns by a steep angle each way, such as a sine whose amplitude is
   several times its wavelength, has chords that flip by nearly a half turn, and
   `"auto"` can miss it. Give a number there.

@@ -560,6 +560,136 @@ does not depend on where the part ends; `test_a_narrow_hairpin_is_a_documented_l
 pins the hairpin limit; and the radius, corner, fillet, anchor, end, zigzag, dpi,
 zoom, crowding, and box tests cover the shape of the rounded path.
 
+## Smoothing
+
+**Problem.** A line of measured data wiggles at about a letter's width, even
+after it is averaged. Each plain glyph is placed rigidly at its own point on the
+curve and tilted by the chord across its own width. That removes wiggles much
+shorter than a glyph, such as the vertices of a coarse polyline, but not wiggles
+at a glyph's width: neighboring glyphs sample different tilts and heights, tilt
+into each other, and step up and down. `crowding="curvature"` does not help, as
+it answers a sustained bend, and these kinks are short and alternate in sign.
+
+**Rejected.** Widening only the tilt window, which fixes half the symptom and
+leaves the heights stepping. Leaving it to the user to smooth a copy of the
+data, which every user of measured data must then find and repeat. Smoothing
+every label by default: a smoothed path is not the line, so it moves labels off
+it, and leaving smooth curves alone needs a test of whether the path wiggles
+that cannot tell wiggles from a tight bend by how far smoothing moves the path
+(the distance, a roughness measure against a cubic fit, and the sideways lean
+were tried, and each overlapped).
+
+**Chosen.** `smooth`, off by default, smooths the path the label rides, in
+display pixels, before anything is laid on it. `_place_on_curve` calls
+`_smoothed_stretch` on the stretch that holds the anchor, so the rounding of
+`min_radius`, the offset, the casing, the reading direction, and every glyph
+follow what the label rides, and the line itself is untouched.
+
+- The width is a standard deviation in points of arc length, or `"auto"`: three
+  quarters of the font size (`_SMOOTH_AUTO_EM`).
+- Only the part of the stretch around the label is smoothed
+  (`_smoothing_window`): the interval the label covers, with a margin either
+  side of 24 widths or twice the label, whichever is larger, within the
+  stretch. A long stretch, as a zoomed view of a long series gives, is then
+  sampled as finely as a short one, and the cost does not grow with it. The
+  margin gives the rounding and the offset smoothed path to work on near the
+  label; where they reach further, as the rounding of a tight bend can, they
+  find the end tangent of the part.
+- The part is resampled evenly by arc length, every eighth of the width, from
+  the stretch, which a frame extends past each end along its end tangent, so an
+  end does not pull in. The samples stay one to one, which carries the anchor
+  across (`np.interp` of the anchor's sample against the smoothed arc length). An
+  anchor off the part, as `pos` outside 0 to 1 puts it, keeps its distance from
+  the end.
+- The step between samples depends on the width alone, and the part starts and
+  ends on whole steps of arc length along the stretch, so the samples are the
+  same wherever the label moves, and a label that moves a little moves only by
+  that little. A part whose start followed the label put the samples on a new
+  grid at every position, and a label with an offset or rounding on noisy data
+  moved by about a pixel for a move of a few hundredths. Where the part would
+  hold more than 20000 samples the step doubles until it does not, which keeps
+  the grid. A label past the end of the stretch, even far past it, rides the
+  last step of the part, so a width in points always smooths.
+- The filter is a Gaussian corrected for the shrinking of bends: twice the
+  smoothed path less the smoothed path smoothed again. A Gaussian alone pulls a
+  circle in by sigma squared over twice its radius, and the correction leaves a
+  smooth bend alone to second order. The cost is a small overshoot at a sharp
+  corner, under a degree on a 37 degree corner.
+- `"auto"` smooths only where the path wiggles under the label
+  (`_path_reversals`). The path is laid out as chords each two thirds of the
+  width long (half an em), end to end across the label. A turn is the change of
+  direction from one chord to the next, of two degrees or more, and a wiggle is
+  a turn the other way from the one before. The path wiggles with two or more.
+  A bend turns the chords one way all through it, so it never counts. A half
+  turn, where the path doubles back on itself, has no side, so it counts as a
+  turn the other way from the one before. Chords that start at the same phase
+  of a wiggle as they end see none, so the path is laid out from three starting
+  offsets and the most reversals count. A number in points always smooths.
+- Real monthly prices from matplotlib's sample data typically turn the chords
+  back two to six times across a label, and the smooth analytic curves of the
+  gallery, tight arcs and valleys among them, zero or one.
+
+**Limits.**
+
+- The label rides the smoothed path, so a line that wiggles by more than the
+  label's offset can touch the letters. The gallery figure gives the label an
+  offset larger than the wiggles.
+- A width in points rounds a bend narrower than the width, and the label leaves
+  the line there, as `min_radius` makes it leave a tight bend.
+- The reversal count is a heuristic tuned on the sample stocks and the gallery's
+  curves. A line with one slow wiggle under the label is not smoothed by
+  `"auto"`, and a serpentine that alternates twice or more is, tight bends
+  among them. Whether it smooths is a count, so it switches on and off as `pos`
+  or the view moves, and the label moves by up to the size of the wiggles when
+  it does. A number gives a steadier result, and is the choice for raw data. It
+  is not perfectly steady: where the offset is larger than the radius of the
+  smoothed path, a small change in the width or the view can move the label by
+  the size of the wiggles.
+- A path that turns by a steep angle each way, such as a sine whose amplitude is
+  several times its wavelength, has chords that flip by nearly a half turn, and
+  `"auto"` can miss it. Give a number there.
+- The filter passes more at the scale of a letter than a plain Gaussian does, so
+  on wiggles much larger than a letter a label keeps some of its jitter.
+
+Pinned by tests:
+
+- `test_a_label_on_measured_data_tilts_its_neighbors_less_when_smoothed`
+  measures the jitter of glyph tilts on real prices.
+- `test_a_smooth_curve_is_drawn_as_without_smoothing` pins that `"auto"` leaves
+  gentle bends, a sine, and a straight run alone.
+- `test_smoothing_does_not_shrink_a_circular_bend` pins the correction.
+- The gate: `test_the_wiggle_test_tells_jitter_from_a_bend`,
+  `test_auto_needs_two_reversals_to_smooth`,
+  `test_auto_smooths_at_exactly_two_reversals_and_not_at_one`,
+  `test_a_wiggle_of_two_chords_is_seen_at_every_phase`,
+  `test_each_of_the_three_offsets_sees_a_wiggle_the_others_miss`,
+  `test_a_path_that_doubles_back_on_itself_wiggles`,
+  `test_a_steep_zigzag_wiggles`,
+  `test_three_chords_can_reverse_once`,
+  `test_a_path_that_wiggles_leftward_is_counted_as_one_that_goes_rightward`,
+  and `test_a_path_that_turns_by_nearly_a_half_turn_the_same_way_never_reverses`.
+- Where the gate looks:
+  `test_auto_smooths_only_what_wiggles_where_the_label_covers`,
+  `test_the_gate_stops_where_the_label_does`, and
+  `test_the_gate_looks_where_the_label_is_for_each_anchor`.
+- The part: `test_the_smoothing_window_is_on_a_grid_that_the_label_does_not_move`,
+  `test_the_smoothing_window_reaches_a_margin_either_side_of_the_label`,
+  `test_the_smoothing_window_coarsens_by_doublings_over_20000_samples`,
+  `test_the_smoothing_window_keeps_one_step_past_either_end`,
+  `test_a_smoothed_label_moves_only_as_far_as_its_pos_does`,
+  `test_a_long_stretch_is_smoothed_as_accurately_as_a_short_one`,
+  `test_a_very_wide_smooth_draws_without_error`, and
+  `test_the_pixel_floor_and_the_step_floor_of_smoothing`.
+- An anchor off the stretch:
+  `test_a_pos_beyond_the_ends_keeps_its_distance_when_smoothed`,
+  `test_smoothing_carries_an_anchor_off_the_stretch_by_its_distance`, and
+  `test_a_width_in_points_smooths_for_a_label_far_past_an_end`.
+- Units and defaults: `test_a_width_in_points_scales_with_the_dpi`,
+  `test_auto_is_three_quarters_of_an_em`,
+  `test_smoothing_keeps_the_anchor_on_a_symmetric_curve`,
+  `test_smoothing_is_off_unless_asked_for`, and
+  `test_the_default_of_the_class_is_no_smoothing_too`.
+
 ## LaTeX (`usetex`)
 
 When a segment's usetex setting is on (the `text.usetex` rcParam, or

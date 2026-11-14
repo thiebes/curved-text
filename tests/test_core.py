@@ -4,10 +4,13 @@ The Agg backend is selected in conftest.py before pyplot is imported.
 """
 # Developed with AI assistance under maintainer review; see the
 # "Development and AI use" section of the README.
+import csv
 import datetime
 import functools
 import inspect
 import io
+import math
+import os
 import pickle
 import re
 import shutil
@@ -3443,13 +3446,18 @@ def _make_class(ax, x, y, text, **kwargs):
     return CurvedText(x, y, text, ax, **kwargs)
 
 
+_LENGTH_KEYWORDS = ["min_radius", "smooth"]
+
+
+@pytest.mark.parametrize("keyword", _LENGTH_KEYWORDS)
 @pytest.mark.parametrize("make", [curved_text, _make_class])
 @pytest.mark.parametrize("bad", ["fast", "", float("nan"), float("inf"), -1.0])
-def test_min_radius_must_be_none_auto_or_a_non_negative_number(make, bad):
+def test_a_length_keyword_must_be_none_auto_or_a_non_negative_number(
+        keyword, make, bad):
     x, y = _sine()
     fig, ax = plt.subplots()
-    with pytest.raises(ValueError, match="min_radius"):
-        make(ax, x, y, "text", min_radius=bad)
+    with pytest.raises(ValueError, match=keyword):
+        make(ax, x, y, "text", **{keyword: bad})
     assert not ax.artists and not ax.texts
     plt.close(fig)
 
@@ -3514,23 +3522,26 @@ def test_a_usetex_math_run_does_not_fold_in_a_tight_valley(R):
     plt.close(fig)
 
 
+@pytest.mark.parametrize("keyword", _LENGTH_KEYWORDS)
 @pytest.mark.parametrize("make", [curved_text, _make_class])
 @pytest.mark.parametrize("bad", [True, False, np.True_, [5.0], b"auto", 2j])
-def test_min_radius_that_is_not_a_number_raises_a_type_error(make, bad):
+def test_a_length_keyword_that_is_not_a_number_raises_a_type_error(
+        keyword, make, bad):
     x, y = _sine()
     fig, ax = plt.subplots()
-    with pytest.raises(TypeError, match="min_radius"):
-        make(ax, x, y, "text", min_radius=bad)
+    with pytest.raises(TypeError, match=keyword):
+        make(ax, x, y, "text", **{keyword: bad})
     assert not ax.artists and not ax.texts
     plt.close(fig)
 
 
+@pytest.mark.parametrize("keyword", _LENGTH_KEYWORDS)
 @pytest.mark.parametrize("good", [5, 5.0, np.float32(5.0), np.int64(5)])
-def test_min_radius_takes_any_real_number(good):
+def test_a_length_keyword_takes_any_real_number(keyword, good):
     x, y = _sine()
     fig, ax = plt.subplots()
-    ct = curved_text(ax, x, y, "text", min_radius=good)
-    assert ct._min_radius == 5.0
+    ct = curved_text(ax, x, y, "text", **{keyword: good})
+    assert getattr(ct, "_" + keyword) == 5.0
     plt.close(fig)
 
 
@@ -3885,4 +3896,581 @@ def test_an_agg_filter_runs_once_for_the_label_however_it_is_set(how):
     calls.clear()
     _draw(fig)
     assert len(calls) == 1
+    plt.close(fig)
+
+
+# Smoothing of the path a label rides (``smooth``).
+def _stocks(symbol="MSFT", window=12):
+    """Real monthly closing prices of ``symbol`` from matplotlib's sample data
+    (``Stocks.csv``, not in matplotlib 3.5), as dates and prices smoothed by a
+    rolling mean over ``window`` months, as in a figure of a trend (one month
+    is the raw prices); None where the sample data is missing. Tests do not
+    import the gallery's ``read_stocks``, so this reads the file again."""
+    path = cbook.get_sample_data("Stocks.csv", asfileobj=False)
+    if not os.path.exists(path):
+        return None
+    with open(path) as handle:
+        rows = [row for row in csv.reader(handle)
+                if row and not row[0].startswith("#")]
+    header, rows = rows[0], [row for row in rows[1:] if any(row[1:])]
+    dates = np.array([row[0] for row in rows], dtype="datetime64[D]")
+    prices = np.array([float(row[header.index(symbol)]) for row in rows])
+    smoothed = np.convolve(prices, np.ones(window) / window, mode="valid")
+    return dates[window // 2:][:len(smoothed)], smoothed
+
+
+def _stocks_label(text="Microsoft", symbol="MSFT", window=12, **kwargs):
+    """The figure and label of the issue's "Microsoft" on real data, or
+    ``text`` instead, on the prices of ``symbol`` averaged over ``window``
+    months; ``kwargs`` go to the label."""
+    data = _stocks(symbol, window)
+    if data is None:
+        pytest.skip("matplotlib has no Stocks.csv sample data")
+    dates, prices = data
+    fig, ax = plt.subplots(figsize=(6.7, 3.9), dpi=150)
+    ax.plot(dates, prices)
+    ax.set_yscale("log")
+    span = ((dates >= np.datetime64("2013-01-01"))
+            & (dates <= np.datetime64("2019-01-01")))
+    kwargs = {"pos": 0.5, "anchor": "center", "offset": 8.0, "fontsize": 9,
+              "smooth": "auto", **kwargs}
+    ct = curved_text(ax, dates[span], prices[span], text, **kwargs)
+    _draw(fig)
+    return fig, ct
+
+
+def _glyph_tilts(ct):
+    """The rotation, in degrees, of each placed glyph of a drawn label."""
+    return np.array([_rotation_deg(ct, seg) for seg in ct._segments])
+
+
+def test_a_label_on_measured_data_tilts_its_neighbors_less_when_smoothed():
+    # Real monthly prices wiggle at about a letter's width, which tilts
+    # neighboring letters by different amounts. The jitter of the tilt is the
+    # rms of the change of the step between neighbors. Smoothing takes it from
+    # about 6.4 degrees to about 4.0 (37 percent), so the bound of 0.8 leaves
+    # a margin of a fifth over the measured ratio of 0.63.
+    jitter = {}
+    for name, smooth in (("rough", 0), ("smoothed", "auto")):
+        fig, ct = _stocks_label(smooth=smooth)
+        jitter[name] = np.sqrt(np.mean(np.diff(_glyph_tilts(ct), 2) ** 2))
+        plt.close(fig)
+    assert jitter["smoothed"] < 0.8 * jitter["rough"]
+
+
+def _glyph_steps(**kwargs):
+    """How far the first glyph's anchor moves, in pixels, for each of 40 steps
+    of 2e-4 in ``pos`` of a label on the raw prices of IBM."""
+    fig, ct = _stocks_label(symbol="IBM", window=1, **kwargs)
+    first = ct._segments[0]
+    anchors = []
+    for pos in 0.5 + 2e-4 * np.arange(40):
+        ct._pos = pos
+        _draw(fig)
+        anchors.append(_anchor_px(ct, first))
+    plt.close(fig)
+    return np.hypot(*np.diff(anchors, axis=0).T)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"offset": 14.0}, {"offset": 14.0, "min_radius": None},
+    {"offset": 14.0, "upright": True}])
+def test_a_smoothed_label_moves_only_as_far_as_its_pos_does(kwargs):
+    # The smoothed part follows the label along the line, and the vertices that
+    # rounding and the offset work on must not move with it. A step of 2e-4 in
+    # ``pos`` moves the label by about 0.03 pixel, and the median step is about
+    # that; with the part starting where the label does, it was a pixel. Single
+    # steps can still jump where the offset is larger than the radius of the
+    # smoothed path, so the median is the measure.
+    steps = _glyph_steps(smooth=3.0, **kwargs)
+    assert np.median(steps) < 0.2
+
+
+@pytest.mark.parametrize("make", [
+    lambda: _valley(120)[1:], lambda: _valley(400)[1:],
+    lambda: (plt.subplots()[1], *_sine()),
+    lambda: (plt.subplots()[1], np.linspace(0, 1, 30), np.linspace(0, 1, 30))])
+def test_a_smooth_curve_is_drawn_as_without_smoothing(make):
+    # Smoothing is skipped where the path is not rough, so a label on a gentle
+    # bend, a sine, or a straight run is drawn exactly as with ``smooth=0``.
+    outlines = []
+    for smooth in ("auto", 0):
+        ax, x, y = make()
+        ct = curved_text(ax, x, y, _FOLD_LABEL, fontsize=14, smooth=smooth)
+        _draw(ax.figure)
+        outlines.append(_outline(ct, ax.figure))
+        plt.close(ax.figure)
+    np.testing.assert_array_equal(*outlines)
+
+
+def test_a_width_in_points_always_smooths():
+    # The roughness test belongs to ``"auto"``; a width the caller names is
+    # applied to a smooth curve too, here a tight valley, whose apex it rounds.
+    outlines = []
+    for smooth in (0, 30):
+        fig, ax, x, y = _valley(5)
+        ct = curved_text(ax, x, y, "Temperature", fontsize=14, smooth=smooth,
+                         min_radius=None)
+        _draw(fig)
+        outlines.append(_outline(ct, fig))
+        plt.close(fig)
+    assert np.abs(outlines[0] - outlines[1]).max() > 1.0
+
+
+def test_smoothing_is_off_unless_asked_for():
+    outlines = []
+    for kwargs in ({}, {"smooth": 0}):
+        fig, ct = _stocks_label(**{"smooth": None, **kwargs})
+        outlines.append(_outline(ct, fig))
+        plt.close(fig)
+    np.testing.assert_array_equal(*outlines)
+    fig, ax = plt.subplots()
+    assert curved_text(ax, [0, 1], [0, 1], "a")._smooth is None
+    plt.close(fig)
+
+
+def test_a_smooth_of_zero_is_the_same_as_none():
+    outlines = []
+    for smooth in (0, None):
+        fig, ct = _stocks_label(smooth=smooth)
+        outlines.append(_outline(ct, fig))
+        plt.close(fig)
+    np.testing.assert_array_equal(*outlines)
+
+
+def test_a_width_in_points_scales_with_the_dpi():
+    # ``smooth=20`` is 20 points of arc length at any resolution, so the same
+    # label at two resolutions has the same extent as a fraction of the figure.
+    extents = []
+    for dpi in (72, 200):
+        fig, ax, x, y = _valley(5)
+        fig.set_dpi(dpi)
+        ct = curved_text(ax, x, y, "Temperature", fontsize=14, smooth=20,
+                         min_radius=None)
+        _draw(fig)
+        box = ct.get_window_extent(fig.canvas.get_renderer())
+        size = np.array(fig.get_size_inches()) * dpi
+        extents.append(np.array([box.x0, box.y0, box.x1, box.y1])
+                       / np.tile(size, 2))
+        plt.close(fig)
+    # A hundredth of the figure is a few pixels: the label's box moves by the
+    # smoothing, which differs by the pixel rounding of the width.
+    np.testing.assert_allclose(extents[0], extents[1], atol=0.01)
+
+
+@pytest.mark.parametrize("fontsize", [9, 18])
+def test_auto_is_three_quarters_of_an_em(fontsize):
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 1, 10)
+    ct = curved_text(ax, x, x, "a", fontsize=fontsize, smooth="auto")
+    renderer = fig.canvas.get_renderer()
+    assert ct._smooth_px(renderer) == pytest.approx(
+        0.75 * renderer.points_to_pixels(fontsize))
+    plt.close(fig)
+
+
+def test_smoothing_keeps_the_anchor_on_a_symmetric_curve():
+    # The valley is symmetric about x = 0, so a label centered at pos 0.5
+    # stays centered there when its path is smoothed.
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=20, smooth=20)
+    _draw(fig)
+    first = _place_of(ct, ct._segments[0])
+    last = _place_of(ct, ct._segments[-1])
+    middle = (first.s_left + last.s_left + last.width_px) / 2.0
+    cx, _, _ = first.frame.points_and_angles(middle)
+    assert abs(float(cx) - ax.transData.transform((0.0, 0.0))[0]) < 0.5
+    plt.close(fig)
+
+
+def _circle_arc(radius):
+    """Points on a circular arc of ``radius`` pixels, as a stretch."""
+    angle = np.linspace(0.0, 1.5, 600)
+    return np.column_stack([radius * np.cos(angle), radius * np.sin(angle)])
+
+
+def test_smoothing_leaves_a_straight_run_as_it_is():
+    points = np.column_stack([np.linspace(0, 300, 40), np.linspace(0, 120, 40)])
+    smoothed, anchor = _core._smoothed_stretch(points, 150.0, 8.0,
+                                               (100.0, 200.0), False)
+    frame = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1])
+    straight = _core._CurveFrame(points[:, 0], points[:, 1])
+    # The part ends on the next whole step past the stretch, along its line.
+    assert straight.length <= frame.length < straight.length + 1.0
+    assert anchor == pytest.approx(150.0, rel=1e-9)
+    along = np.linspace(0, straight.length, 50)
+    np.testing.assert_allclose(
+        np.column_stack(frame.points_and_angles(along)[:2]),
+        np.column_stack(straight.points_and_angles(along)[:2]), atol=1e-6)
+
+
+def test_smoothing_does_not_shrink_a_circular_bend():
+    # A Gaussian alone pulls a circle in by sigma ** 2 / (2 * radius), here
+    # 0.32 pixel; the correction leaves a tenth of that.
+    points = _circle_arc(100.0)
+    smoothed, *_ = _core._smoothed_stretch(points, 50.0, 8.0, (20.0, 80.0),
+                                          False)
+    middle = smoothed[len(smoothed) // 4: -len(smoothed) // 4]
+    shrink = 100.0 - np.hypot(middle[:, 0], middle[:, 1])
+    assert np.abs(shrink).max() < 0.05
+
+
+def test_smoothing_keeps_the_ends_of_the_stretch_in_place():
+    points = np.column_stack([np.linspace(0, 400, 200),
+                              5 * np.sin(np.linspace(0, 60, 200))])
+    smoothed, *_ = _core._smoothed_stretch(points, 200.0, 8.0, (150.0, 250.0),
+                                          False)
+    assert np.hypot(*(smoothed[0] - points[0])) < 2.0
+    assert np.hypot(*(smoothed[-1] - points[-1])) < 2.0
+
+
+def test_the_wiggle_test_tells_jitter_from_a_bend():
+    # A bend turns the chords one way all through it, tight or not, so it
+    # never turns back; a path that wiggles turns them back and forth.
+    chord = 6
+    arc = _circle_arc(100.0)
+    frame = _core._CurveFrame(arc[:, 0], arc[:, 1])
+    x, y, _ = frame.points_and_angles(np.linspace(0, frame.length, 400))
+    along = np.arange(400.0)
+    tight = _core._CurveFrame(along, 0.02 * (along - 200.0) ** 2)
+    tx, ty, _ = tight.points_and_angles(np.linspace(0, tight.length, 400))
+    assert _core._path_reversals(x, y, chord, 0, 400) == 0
+    assert _core._path_reversals(tx, ty, chord, 0, 400) == 0
+    assert _core._path_reversals(along, 4 * np.sin(along / 3.0), chord, 0,
+                                 400) >= 4
+    # Turns under the dead band are not counted.
+    assert _core._path_reversals(along, 0.01 * np.sin(along / 3.0), chord, 0,
+                                 400) == 0
+
+
+def test_auto_smooths_only_what_wiggles_where_the_label_covers():
+    # One stretch: smooth on the left, wiggling on the right. A label on the
+    # smooth part is untouched, and a label on the jittery part is smoothed.
+    along = np.linspace(0, 600, 1200)
+    y = np.where(along < 300, 0.0, 6.0 * np.sin(along / 2.5))
+    points = np.column_stack([along, y])
+    left = _core._smoothed_stretch(points, 100.0, 9.0, (50.0, 150.0), True)
+    right = _core._smoothed_stretch(points, 450.0, 9.0, (400.0, 500.0), True)
+    # The stretch comes back as the same array when it is left alone.
+    assert left[0] is points
+    assert right[0] is not points and len(right[0]) != len(points)
+
+
+def test_auto_needs_two_reversals_to_smooth():
+    # A single wave turns the chords back once, between its crest and its
+    # trough, which is a bend and an inflection, not a wiggle. Several waves
+    # turn them back and forth. The chords are 6 pixels long at a width of 9.
+    along = np.linspace(0, 400, 800)
+    one = np.column_stack([along, 40.0 * np.sin(2 * np.pi * along / 400.0)])
+    many = np.column_stack([along, 10.0 * np.sin(2 * np.pi * along / 80.0)])
+    assert _core._path_reversals(along, one[:, 1], 12, 0, 800) == 1
+    kept = _core._smoothed_stretch(one, 200.0, 9.0, (50.0, 350.0), True)
+    smoothed = _core._smoothed_stretch(many, 200.0, 9.0, (50.0, 350.0), True)
+    assert kept[0] is one
+    assert smoothed[0] is not many
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"box": True}, {"crowding": "curvature"}, {"valign": "baseline"},
+    {"upright": True}, {"offset": 10}, {"min_radius": 12}])
+def test_smoothing_composes_with_the_other_controls(kwargs):
+    # A smoke test: every control draws with a smoothed path, and the outline
+    # is whole. What each control does is pinned where the control is.
+    fig, ct = _stocks_label(**kwargs)
+    assert np.isfinite(_outline(ct, fig)).all()
+    plt.close(fig)
+
+
+def test_a_math_run_on_measured_data_does_not_fold():
+    fig, ct = _stocks_label(_FOLD_LABEL, pos=0.7, offset=0.0)
+    assert _height_violations(ct, fig.canvas.get_renderer())[0] == 0
+    plt.close(fig)
+
+
+def test_the_default_of_the_class_is_no_smoothing_too():
+    fig, ax = plt.subplots()
+    assert _make_class(ax, [0, 1], [0, 1], "a")._smooth is None
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("anchor, pos", [("start", 1.5), ("start", 1.2),
+                                         ("end", -0.2), ("center", 1.5)])
+def test_a_pos_beyond_the_ends_keeps_its_distance_when_smoothed(anchor, pos):
+    # Past an end the label rides the straight extension, as without
+    # smoothing, so a straight line gives the same label either way. The part
+    # ends on a whole step past the stretch, so the outlines agree to the
+    # rounding of that step: a twentieth of a pixel.
+    outlines = []
+    for smooth in (None, 5.0):
+        fig, ax = plt.subplots()
+        x = np.linspace(0, 1, 40)
+        ct = curved_text(ax, x, 0.3 * x, "label", pos=pos, anchor=anchor,
+                         smooth=smooth)
+        _draw(fig)
+        outlines.append(_outline(ct, fig))
+        plt.close(fig)
+    np.testing.assert_allclose(outlines[0], outlines[1], atol=0.05)
+
+
+def test_a_width_in_points_smooths_for_a_label_far_past_an_end():
+    # A label past the margin beyond an end still rides the smoothed path, not
+    # the raw one, so a width in points always smooths: the part is then the
+    # last step of the stretch, and the anchor keeps its distance.
+    along = np.linspace(0, 400, 800)
+    points = np.column_stack([along, 4.0 * np.sin(along / 2.3)])
+    raw = _core._CurveFrame(points[:, 0], points[:, 1])
+    for covered, steps in (((700.0, 800.0), None), ((3000.0, 3100.0), 1)):
+        smoothed, mapped = _core._smoothed_stretch(
+            points, covered[0], 8.0, covered, False)
+        assert smoothed is not points
+        # The anchor is as far past the end of the part as it was past the
+        # part's end on the stretch.
+        start, step, count = _core._smoothing_window(raw.length, covered, 8.0)
+        length = _core._CurveFrame(smoothed[:, 0], smoothed[:, 1]).length
+        assert mapped == pytest.approx(
+            length + covered[0] - start - count * step, abs=1e-6)
+        if steps:
+            assert len(smoothed) == steps + 1
+
+
+def test_smoothing_carries_an_anchor_off_the_stretch_by_its_distance():
+    points = np.column_stack([np.linspace(0, 300, 40), np.zeros(40)])
+    for anchor in (-50.0, 350.0):
+        covered = (anchor - 40.0, anchor + 40.0)
+        smoothed, mapped = _core._smoothed_stretch(points, anchor, 8.0,
+                                                   covered, False)
+        # The line is straight, so the anchor keeps its distance past the end
+        # it is off, measured from where the part starts.
+        start = _core._smoothing_window(300.0, covered, 8.0)[0]
+        assert start + mapped == pytest.approx(anchor, abs=1e-6)
+
+
+@pytest.mark.parametrize("smooth", [1e6, 1e7, 1e300])
+def test_a_very_wide_smooth_draws_without_error(smooth):
+    # A width far beyond the stretch once took seconds to a minute a draw, and
+    # the widest raised while drawing. The path is then a straight line.
+    fig, ax, x, y = _valley(5)
+    ct = curved_text(ax, x, y, "Temperature", fontsize=14, smooth=smooth)
+    _draw(fig)
+    assert np.isfinite(_outline(ct, fig)).all()
+    plt.close(fig)
+
+
+def test_a_long_stretch_is_smoothed_as_accurately_as_a_short_one():
+    # Only the part around the label is smoothed, so a stretch of a million
+    # pixels is sampled as finely as one of a few thousand, and the smoothed
+    # path near the label is the same. Positions on a stretch are arc lengths.
+    along = np.arange(0.0, 1.0e6, 2.0)
+    wiggle = 3.0 * np.sin(along / 7.0) + 2.0 * np.sin(along / 3.1)
+    arc = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(along),
+                                                    np.diff(wiggle)))])
+    long_stretch = np.column_stack([along, wiggle])
+    near = (arc > 499_000.0) & (arc < 501_000.0)
+    short_stretch = long_stretch[near]
+    anchor, covered = 500_050.0, (500_000.0, 500_100.0)
+    long_path, *_ = _core._smoothed_stretch(long_stretch, anchor, 14.0,
+                                           covered, False)
+    shift = arc[near][0]
+    short_path, *_ = _core._smoothed_stretch(
+        short_stretch, anchor - shift, 14.0,
+        (covered[0] - shift, covered[1] - shift), False)
+    # The smoothed y at the same x, across the label's span.
+    xs = np.interp(np.linspace(covered[0] + 20.0, covered[1] - 20.0, 50),
+                   arc, along)
+    long_y = np.interp(xs, long_path[:, 0], long_path[:, 1])
+    short_y = np.interp(xs, short_path[:, 0], short_path[:, 1])
+    # The two parts sit on different grids of the same stretch, so they agree to
+    # a twentieth of a pixel, not to the last digit.
+    assert np.abs(long_y - short_y).max() < 0.05
+
+
+def test_the_pixel_floor_and_the_step_floor_of_smoothing():
+    points = np.column_stack([np.linspace(0, 1000, 400),
+                              3.0 * np.sin(np.linspace(0, 400, 400))])
+    # A width under half a pixel is not smoothing: the stretch comes back.
+    assert _core._smoothed_stretch(points, 500.0, 0.4, (480.0, 520.0),
+                                   False)[0] is points
+    # At a width of 1 pixel an eighth of it is under the floor, so the samples
+    # are a quarter pixel apart, not 0.125 apart.
+    smoothed, _ = _core._smoothed_stretch(points, 500.0, 1.0, (480.0, 520.0),
+                                          False)
+    frame = _core._CurveFrame(points[:, 0], points[:, 1])
+    _, step, count = _core._smoothing_window(frame.length, (480.0, 520.0), 1.0)
+    assert step == 0.25 and len(smoothed) == count + 1
+    steps = np.hypot(*np.diff(smoothed, axis=0).T)
+    assert np.median(steps) == pytest.approx(0.25, abs=0.02)
+
+
+def test_the_smoothing_window_is_on_a_grid_that_the_label_does_not_move():
+    # The samples depend on the width alone, and the part starts and ends on
+    # whole steps along the stretch: moving the label by less than a step
+    # changes the part by at most one step, and never its grid.
+    for width in (1.0, 8.0):
+        step = max(width / 8.0, 0.25)
+        for shift in (0.0, 0.1, 0.37, 0.9):
+            start, got, count = _core._smoothing_window(
+                5000.0, (2000.0 + shift, 2100.0 + shift), width)
+            assert got == step
+            assert start / step == pytest.approx(round(start / step), abs=1e-9)
+            assert (start + count * step) / step == pytest.approx(
+                round((start + count * step) / step), abs=1e-9)
+
+
+def test_the_smoothing_window_reaches_a_margin_either_side_of_the_label():
+    # The margin is the larger of 24 widths and twice the label: 240 pixels at
+    # a width of 10 for a label of 10 pixels, not the 20 of twice the label.
+    start, step, count = _core._smoothing_window(5000.0, (500.0, 510.0), 10.0)
+    stop = start + count * step
+    assert 260.0 - step < start <= 260.0
+    assert 750.0 <= stop < 750.0 + step
+    # And twice the label where that is larger: 400 pixels at a width of 1.
+    start, step, count = _core._smoothing_window(5000.0, (500.0, 700.0), 1.0)
+    stop = start + count * step
+    assert 100.0 - step < start <= 100.0
+    assert 1100.0 <= stop < 1100.0 + step
+
+
+def test_the_smoothing_window_coarsens_by_doublings_over_20000_samples():
+    # A label of 10000 pixels at a width of 1 would need over 100000 samples at
+    # a quarter pixel. The step doubles until it holds 20000 or fewer, so the
+    # grid stays the same for every position of the label.
+    for shift in (0.0, 1234.5):
+        start, step, count = _core._smoothing_window(
+            1.0e6, (50000.0 + shift, 60000.0 + shift), 1.0)
+        assert count <= 20000
+        assert math.log2(step / 0.25) == pytest.approx(
+            round(math.log2(step / 0.25)))
+        assert step > 0.25
+
+
+def test_the_smoothing_window_keeps_one_step_past_either_end():
+    # A label far past the end of the stretch gets the last step of it, and one
+    # far before the start gets the first, so there is always a part to smooth.
+    start, step, count = _core._smoothing_window(400.0, (3000.0, 3100.0), 8.0)
+    assert (start, count) == (399.0, 1) and step == 1.0
+    start, step, count = _core._smoothing_window(400.0, (-3100.0, -3000.0), 8.0)
+    assert (start, count) == (0.0, 1)
+
+
+def test_the_gate_stops_where_the_label_does():
+    # A line smooth up to 900 pixels and wiggling after, with a label that
+    # covers 700 to 800. The part around it runs to about 1016, so it holds
+    # some of the wiggle, which lies past the label and is not looked at.
+    along = np.arange(0.0, 1400.0, 0.5)
+    y = np.where(along < 900.0, 0.0, 6.0 * np.sin(2.0 * np.pi * along / 24.0))
+    points = np.column_stack([along, y])
+    result = _core._smoothed_stretch(points, 750.0, 9.0, (700.0, 800.0), True)
+    assert result[0] is points
+
+
+def test_a_path_that_wiggles_leftward_is_counted_as_one_that_goes_rightward():
+    # Directions near a half turn jump between +pi and -pi, and a turn between
+    # two of them is a small one, not a whole turn the other way.
+    along = np.arange(0.0, 400.0)
+    y = 4.0 * np.sin(along / 3.0)
+    right = _core._path_reversals(along, y, 6, 0, 399)
+    left = _core._path_reversals(-along, y, 6, 0, 399)
+    assert right >= 4 and left == right
+
+
+def test_a_path_that_turns_by_nearly_a_half_turn_the_same_way_never_reverses():
+    # Chords that each turn by 170 degrees, always the same way, wind a tight
+    # curl: only an exact half turn is read as doubling back.
+    angle = np.radians(170.0) * np.arange(30)
+    x = np.concatenate([[0.0], np.cumsum(np.cos(angle))])
+    y = np.concatenate([[0.0], np.cumsum(np.sin(angle))])
+    assert _core._path_reversals(x, y, 1, 0, 30) == 0
+
+
+def test_three_chords_can_reverse_once():
+    # Forward, back, and forward again: two half turns, one reversal.
+    along = np.arange(31.0)
+    forward_and_back = 10.0 - np.abs(((along / 10.0) % 2.0) * 10.0 - 10.0)
+    assert _core._path_reversals(forward_and_back, 0 * along, 10, 0, 30) == 1
+
+
+@pytest.mark.parametrize("wiggle", [
+    # Found by search: each is a wiggle that two of the three starting offsets
+    # of a chord of 60 samples miss, and the third sees.
+    (63.668, 219.102, 17.279, 48.761, 0.876),
+    (33.214, 186.668, 1.504, 47.250, 0.285)])
+def test_each_of_the_three_offsets_sees_a_wiggle_the_others_miss(wiggle):
+    period, phase, amplitude, other_period, other_amplitude = wiggle
+    x = np.arange(1201.0)
+    y = (amplitude * np.sin(2.0 * np.pi * x / period + np.radians(phase))
+         + other_amplitude * np.sin(2.0 * np.pi * x / other_period))
+    assert _core._path_reversals(x, y, 60, 0, 1200) >= 2
+
+
+def test_a_wiggle_of_two_chords_is_seen_at_every_phase():
+    # Chords that start at the same phase of a wiggle as they end see no turn at
+    # all: with the wavelength twice the chord, every chord is flat. Three
+    # starting offsets find it.
+    along = np.linspace(0, 400, 4001)
+    wiggle = 8.0 * np.sin(2.0 * np.pi * along / 12.0)
+    assert _core._path_reversals(along, wiggle, 60, 0, 4000) >= 10
+
+
+def test_a_path_that_doubles_back_on_itself_wiggles():
+    # The chords of a switchback flip by exactly a half turn, which has no side
+    # of its own: every one is a turn back. Here x goes forward and back along
+    # a line, 10 pixels each way.
+    along = np.arange(401.0)
+    forward_and_back = 10.0 - np.abs(((along / 10.0) % 2.0) * 10.0 - 10.0)
+    flat = np.zeros_like(along)
+    assert _core._path_reversals(forward_and_back, flat, 4, 0, 400) >= 20
+    # Straight up and down is the same path turned a quarter.
+    assert _core._path_reversals(flat, forward_and_back, 4, 0, 400) >= 20
+    path = np.column_stack([forward_and_back, flat])
+    assert _core._smoothed_stretch(path, 200.0, 9.0, (0.0, 400.0),
+                                   True)[0] is not path
+
+
+def test_a_steep_zigzag_wiggles():
+    # The chords of a steep zigzag flip by a little under a half turn, each way
+    # in turn.
+    along = np.linspace(0, 400, 800)
+    zigzag = 30.0 * np.abs(((along / 10.0) % 4.0) - 2.0) - 30.0
+    path = np.column_stack([along, zigzag])
+    assert _core._path_reversals(along, zigzag, 12, 0, 800) >= 4
+    assert _core._smoothed_stretch(path, 200.0, 9.0, (50.0, 350.0),
+                                   True)[0] is not path
+
+
+def test_auto_smooths_at_exactly_two_reversals_and_not_at_one():
+    # One wave turns the chords back once, 1.5 waves twice. The whole path is
+    # the part the label covers, whatever its length.
+    along = np.linspace(0, 400, 800)
+    for periods, smoothed in ((1.0, False), (1.5, True)):
+        path = np.column_stack(
+            [along, 40.0 * np.sin(2 * np.pi * periods * along / 400.0)])
+        result = _core._smoothed_stretch(path, 200.0, 9.0, (0.0, 1.0e4),
+                                         True)[0]
+        assert (result is not path) == smoothed
+
+
+def test_the_gate_looks_where_the_label_is_for_each_anchor():
+    # A line smooth up to 300 pixels along it and wiggling after it. A label
+    # that ends there covers only the smooth part and is drawn as without
+    # smoothing; one that starts there covers the wiggles and is smoothed.
+    fig = plt.figure(figsize=(8, 3), dpi=100)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 800)
+    ax.set_ylim(-150, 150)
+    along = np.linspace(0, 700, 1400)
+    y = np.where(along < 300, 0.0, 6.0 * np.sin(along / 2.5))
+    # One data unit is one pixel, and ``pos`` is a fraction of the arc length.
+    length = np.hypot(np.diff(along), np.diff(y)).sum()
+    outlines = {}
+    for anchor in ("end", "start"):
+        for smooth in (None, "auto"):
+            ct = curved_text(ax, along, y, "label", pos=300.0 / length,
+                             anchor=anchor, fontsize=12, smooth=smooth,
+                             color="C0")
+            _draw(fig)
+            outlines[anchor, smooth] = _outline(ct, fig)
+            ct.remove()
+    np.testing.assert_array_equal(outlines["end", None],
+                                  outlines["end", "auto"])
+    assert np.abs(outlines["start", None] - outlines["start", "auto"]).max() > 0.5
     plt.close(fig)

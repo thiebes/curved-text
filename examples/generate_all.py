@@ -41,6 +41,7 @@ MODULES = [
     "example_25_pan_zoom",
     "example_26_gaps",
     "example_27_tight_bends",
+    "example_28_smooth",
 ]
 
 

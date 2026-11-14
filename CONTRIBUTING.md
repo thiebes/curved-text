@@ -134,7 +134,7 @@ regenerate, and commit only the figures that your change affects.
 Regenerating needs the `examples` extra (seaborn and pandas) for the one
 integration figure. It needs a LaTeX installation with `dvipng` for the usetex
 figure. It needs a matplotlib that includes the `Stocks.csv` sample data (3.5
-does not) for the seaborn and stock price figures, and the
+does not) for the seaborn, stock price, and measured data figures, and the
 `jacksboro_fault_dem.npz` sample data for the topographic map. Each of those
 scripts skips its figure when its requirement is missing, so the other figures
 still regenerate.

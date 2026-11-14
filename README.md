@@ -69,7 +69,9 @@ creation) are listed under [Limits](#limits).
   smaller than one character, or the glyphs overlap. Label a fitted or smoothed
   copy of the data and leave that copy unplotted. A polynomial fit
   (`numpy.polyfit`) works, and so does a Gaussian filter about one character
-  wide. A short running mean usually does not.
+  wide. A short running mean usually does not. For measured data, `smooth`
+  (see [Labels on measured data](#labels-on-measured-data-smooth)) smooths the
+  path the label rides and leaves the line as it is.
 - The label reads in the order of the points on screen. A curve that runs from
   right to left reads upside down unless `upright=True`: see Placement.
 - The curve is in data coordinates, and the `transform` keyword is ignored. To
@@ -351,11 +353,41 @@ label: the ball fits only far along the curve, farther than six of its radii,
 so the bend is blended instead of rounded, wherever the label sits on the arm.
 The other is a jagged curve that changes direction at the scale of the label's
 ink, such as noisy data plotted point by point. Pass a smoothed curve for such
-data.
+data, or ask for `smooth`.
 
 The Gallery section [Labels on the inside of a tight bend](https://thiebes.github.io/curved-text/gallery.html#labels-on-the-inside-of-a-tight-bend)
 shows a math label and an offset label on a tight valley, with and without the
 rounding.
+
+### Labels on measured data (`smooth`)
+
+A line of measured data wiggles at about the width of a letter, even after the
+data is averaged. Each letter is placed at its own point on the curve, so
+neighboring letters tilt by different amounts and step up and down. `smooth`
+smooths the path the label rides and leaves the line alone:
+
+```python
+curved_text(ax, dates, prices, "Microsoft", offset=14, smooth="auto")
+```
+
+`smooth` is `None` by default. A number is the width in points of arc length: a
+Gaussian of that standard deviation, corrected so that a smooth bend keeps its
+shape, and it smooths wherever the label is, so it rounds any bend narrower
+than the width. It is the choice for raw, unaveraged data. `"auto"` takes three
+quarters of an em and smooths only where the path wiggles under the label:
+where the chords across half an em, laid end to end along the label, turn one
+way and then the other at least twice. A curve that turns the same way all
+through the label, a tight bend included, is left as it is. The test is a
+heuristic that switches on and off as the label or the view moves, so give a
+number for a steadier result. The smoothing comes before the rounding of
+`min_radius`.
+
+The label rides the smoothed path, not the line. Where the line wiggles by more
+than the label's `offset`, it can touch the letters, so give the label an offset
+larger than the wiggles.
+
+The Gallery section [Labels on measured data](https://thiebes.github.io/curved-text/gallery.html#labels-on-measured-data)
+shows a label on a line of real monthly prices, with and without `smooth`.
 
 ### Vertical alignment (`valign`)
 
@@ -412,8 +444,9 @@ setters act on what is drawn: `set_visible`, `set_zorder`, `set_animated`,
 `set_rasterized`, `set_snap`, `set_sketch_params`, and the clipping setters
 (`set_clip_on`, `set_clip_box`, `set_clip_path`). The text, the font, the
 curve, and the placement arguments (`pos`, `anchor`, `offset`, `valign`,
-`box`, `crowding`, `upright`, and `min_radius`) are fixed when the label is
-made. To change one, remove the label (`remove()`) and make a new one.
+`box`, `crowding`, `upright`, `min_radius`, and `smooth`) are fixed when the
+label is made. To change one, remove the label (`remove()`) and make a new
+one.
 `get_text()` does not return the label's string.
 
 - **Vector output:** In Portable Document Format (PDF), Scalable Vector Graphics (SVG), PostScript, and Encapsulated PostScript (EPS) output, each character is

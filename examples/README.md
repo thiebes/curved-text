@@ -286,6 +286,29 @@ curved_text(ax, x, y, text, fontsize=14, min_radius=min_radius)
 
 [example_27_tight_bends.py](https://github.com/thiebes/curved-text/blob/main/examples/example_27_tight_bends.py)
 
+### Labels on measured data
+
+`smooth` smooths the path a label rides, so a label on a line of measured data
+does not tilt and step with the line's wiggles. The line is monthly closing
+prices of Microsoft from the `Stocks.csv` sample data, averaged over six
+months, which still wiggles at about the width of a letter. Without `smooth`, in
+(a), the letters of the label tilt and step with those wiggles. With
+`smooth="auto"`, in (b), the label rides a smoothed copy of the path, where
+the path wiggles under the label, and the letters sit evenly. The line is drawn
+as it is in both panels, and the label has an offset of 14 points, larger than
+the wiggles, so the line does not touch the letters.
+
+Every panel makes this call, with the argument its caption names:
+
+```python
+curved_text(ax, dates, prices, "Microsoft", offset=14, fontsize=16,
+            smooth=smooth)
+```
+
+![Two panels of a label on a rising line of monthly Microsoft prices, 2012 to 2017, on a log axis. In (a), with smooth None, the letters of 'Microsoft' tilt and step with the line's small wiggles. In (b), with 'auto', the letters sit evenly along a smoothed path.](https://raw.githubusercontent.com/thiebes/curved-text/main/examples/images/28_smooth.png)
+
+[example_28_smooth.py](https://github.com/thiebes/curved-text/blob/main/examples/example_28_smooth.py)
+
 ### Gaps in the curve
 
 A curve has gaps where it has no value to draw. Panel (a) has NaN (not a
@@ -497,16 +520,16 @@ To run one script on its own:
 python examples/example_02_sine_hello.py
 ```
 
-Most scripts need only matplotlib and numpy, which the package installs. Four
+Most scripts need only matplotlib and numpy, which the package installs. Five
 scripts have further requirements:
 
 - The seaborn figure (09) needs seaborn and pandas, which the `examples` extra
   installs.
 - The usetex figure (16) needs LaTeX with `dvipng`, which pip does not install.
   Without them the script skips its figure.
-- The seaborn figure (09) and the stock price figure (23) read the
-  `Stocks.csv` sample data. matplotlib 3.5 does not include it, and both
-  scripts skip their figures there.
+- The seaborn figure (09), the stock price figure (23), and the measured data
+  figure (28) read the `Stocks.csv` sample data. matplotlib 3.5 does not
+  include it, and all three scripts skip their figures there.
 - The topographic map (20) reads the `jacksboro_fault_dem.npz` sample data and
   skips its figure where matplotlib does not include it.
 

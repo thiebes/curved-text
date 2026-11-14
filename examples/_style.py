@@ -8,12 +8,14 @@ curve, so they hide their axes. The figures that plot data keep axes with
 units: direct labeling, its usetex version, the seaborn figure, the
 applications on real data or physical laws, the log-axis panel of the gaps
 figure (whose subject is the scale), and the pan-and-zoom animation (whose
-moving ticks show the view changing). Two data helpers are here as well:
-``sample_data`` finds matplotlib's sample data, and ``smooth_path`` smooths a
-line of real data into the curve that a label follows.
+moving ticks show the view changing). Data helpers are here as well:
+``sample_data`` finds matplotlib's sample data, ``smooth_path`` smooths a line
+of real data into the curve that a label follows, and ``read_stocks`` and
+``rolling_mean`` read and average the stock prices of two figures.
 """
 from __future__ import annotations
 
+import csv
 import os
 
 import matplotlib.cbook as cbook
@@ -159,6 +161,29 @@ def smooth_path(values, sigma, log=False):
                              np.full(reach, scaled[-1])])
     smoothed = np.convolve(padded, kernel / kernel.sum(), mode="valid")
     return np.exp(smoothed) if log else smoothed
+
+
+def read_stocks(path):
+    """Dates and the column-to-prices table, without the dividend-date rows,
+    which have no prices, and without a row that repeats the one before it,
+    as the file's last row repeats June 2022."""
+    with open(path, newline="") as f:
+        rows = [row for row in csv.reader(f)
+                if row and not row[0].startswith("#")]
+    header, rows = rows[0], [row for row in rows[1:] if any(row[1:])]
+    rows = [row for i, row in enumerate(rows)
+            if i == 0 or row[1:] != rows[i - 1][1:]]
+    dates = np.array([row[0] for row in rows], dtype="datetime64[D]")
+    column_to_prices = {
+        name: np.array([float(row[i]) if row[i] else np.nan for row in rows])
+        for i, name in enumerate(header) if i > 0
+    }
+    return dates, column_to_prices
+
+
+def rolling_mean(values, window):
+    """The mean of each run of ``window`` consecutive values."""
+    return np.convolve(values, np.ones(window) / window, mode="valid")
 
 
 def sample_data(name):

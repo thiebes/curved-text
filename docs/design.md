@@ -43,7 +43,9 @@ Each rule states a constraint and the reason for it.
   clearing the axes replaces the registries and their callback ids repeat.
 - **Let `_CurveFrame` extend past the curve ends.** It clips arc length into the
   end links and follows the end tangents, so a label that overruns an end is not
-  cut off. Tests depend on this behavior.
+  cut off. An offset frame follows the end tangents of the curve it was offset
+  from, so a label past an end runs parallel to the curve's own extension
+  (Tight bends, step 6). Tests depend on this behavior.
 - **Decide upright in display space, at placement.** `upright` turns a label
   over by reversing the stretch before the frame is built, from the chord across
   the span the label covers (`_reads_leftward`), on every draw. An axis
@@ -510,13 +512,15 @@ segment read the rounded frame:
    curve keeps the vertices of the sampled one.
 5. The anchor, given on the curve as it was passed in, carries over to the
    rounded, offset frame through the shared vertices (`remap_arc`).
-6. A label wholly past an end, where nothing was rounded, rides the offset of
-   the end link alone (`_end_link`). The offset of a longer frame turns the
-   direction of its first link at a vertex that bends by more than the offset
-   allows, by an amount that depends on how many links the frame holds, so a
-   label far past the end would move as the smoothed part grew from one step to
-   a few, or as the label came within reach of the curve. A label that reaches
-   the curve at all keeps the whole frame, rounded.
+6. Past an end, the offset frame runs along the end tangent of the curve it
+   was offset from (`ends` of `_CurveFrame`), from its own end vertex, and the
+   distance past the end carries over unscaled (`remap_arc`). The offset's own
+   end link turns with the vertex next to the end, and where the curve bends
+   there by more than the offset allows, it can point almost anywhere. A label
+   past the end that followed it would move whenever that vertex did: as the
+   smoothed part grew from one step to a few, or as the label reached the
+   curve. The extension starts at the offset's end vertex, so a label that
+   moves onto the curve moves continuously.
 
 **Cost to the label.** Where a bend is tighter than the least radius, the label
 leaves the curve: by about `0.29 * R_min` from either arm at a right-angle

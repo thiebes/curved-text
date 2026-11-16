@@ -483,14 +483,24 @@ class _CurveFrame:
     Arc lengths past either end of the curve clip into the two end links,
     so lookups there extrapolate along the end tangents and an overrunning
     label follows a straight extension instead of being clipped.
+
+    An offset frame (:meth:`offset`) extends instead along ``ends``, the
+    angles of the end tangents of the curve it was offset from, so it runs
+    parallel to that curve's extensions, from its own end vertices. The
+    direction of an offset's end link depends on the vertex next to the end,
+    which turns with the curve there: where the curve bends by more than the
+    offset allows, it can point anywhere, and it would send a label past the
+    end anywhere with it.
     """
 
-    def __init__(self, xf: np.ndarray, yf: np.ndarray) -> None:
+    def __init__(self, xf: np.ndarray, yf: np.ndarray,
+                 ends: tuple[float, float] | None = None) -> None:
         self._xf = xf
         self._yf = yf
         self._arc = np.insert(
             np.cumsum(np.hypot(np.diff(xf), np.diff(yf))), 0, 0.0)
         self._rads = np.arctan2(np.diff(yf), np.diff(xf))
+        self._ends = ends
 
     @property
     def length(self) -> float:
@@ -505,7 +515,19 @@ class _CurveFrame:
                      0.0)
         x = self._xf[i] + f * (self._xf[i + 1] - self._xf[i])
         y = self._yf[i] + f * (self._yf[i + 1] - self._yf[i])
-        return x, y, self._rads[i]
+        rad = self._rads[i]
+        if self._ends is None:
+            return x, y, rad
+        head, tail = self._ends
+        before = np.asarray(s) < 0.0
+        past = np.asarray(s) - self.length
+        after = past > 0.0
+        x = np.where(before, self._xf[0] + s * math.cos(head),
+                     np.where(after, self._xf[-1] + past * math.cos(tail), x))
+        y = np.where(before, self._yf[0] + s * math.sin(head),
+                     np.where(after, self._yf[-1] + past * math.sin(tail), y))
+        rad = np.where(before, head, np.where(after, tail, rad))
+        return x[()], y[()], rad[()]
 
     def chord_angles(self, s, span):
         """Angle of the chord across ``[s, s + span]``, elementwise.
@@ -552,7 +574,8 @@ class _CurveFrame:
         very curve the glyphs sit on. Positive ``distance``
         is to the left of the direction of travel; ``distance`` of zero returns
         this frame unchanged, so an un-offset label and a straight guide stay
-        numerically identical.
+        numerically identical. Past its ends the offset runs along this
+        frame's end tangents (``ends``), parallel to this frame's extensions.
         """
         if distance == 0.0:
             return self
@@ -570,7 +593,11 @@ class _CurveFrame:
         denom = np.where(safe, mlen, 1.0)
         vtx[1:-1] = np.where(safe, mx / denom, tx[:-1])
         vty[1:-1] = np.where(safe, my / denom, ty[:-1])
-        return _CurveFrame(self._xf - distance * vty, self._yf + distance * vtx)
+        ends = self._ends
+        if ends is None:
+            ends = (float(self._rads[0]), float(self._rads[-1]))
+        return _CurveFrame(self._xf - distance * vty, self._yf + distance * vtx,
+                           ends)
 
     def rounded(self, radius: float, side: int, step: float
                 ) -> tuple[_CurveFrame, bool]:
@@ -657,14 +684,19 @@ class _CurveFrame:
         offset curve the label is laid along. The label lands where the user
         asked on the original curve while keeping even spacing on the offset
         one. On a straight guide the two curves have equal-length links, so
-        the map is the identity.
+        the map is the identity. Past an end the distance beyond it carries
+        over unscaled, as the offset's extension runs parallel to this curve's
+        there, whatever the lengths of the two end links.
         """
         s = np.asarray(s, dtype=float)
         i = np.clip(np.searchsorted(self._arc, s) - 1, 0, len(self._arc) - 2)
         d = self._arc[i + 1] - self._arc[i]
         f = np.where(d != 0.0, (s - self._arc[i]) / np.where(d != 0.0, d, 1.0),
                      0.0)
-        return other._arc[i] + f * (other._arc[i + 1] - other._arc[i])
+        mapped = other._arc[i] + f * (other._arc[i + 1] - other._arc[i])
+        past = s - self.length
+        return np.where(s < 0.0, s,
+                        np.where(past > 0.0, other.length + past, mapped))[()]
 
 
 # How close, relative to the drawn length, ``pos`` must come to the point where
@@ -790,32 +822,6 @@ def _path_reversals(x: np.ndarray, y: np.ndarray, chord: int, first: int,
             side = now
         most = max(most, int(reversals))
     return most
-
-
-def _end_link(base: _CurveFrame, s_anchor: float, lead: float,
-              span: float) -> tuple[_CurveFrame, float] | None:
-    """The end link of ``base`` as a frame, and the arc length on it of the
-    point at ``s_anchor``, where a label of ``span`` pixels, with ``lead`` of
-    it before the anchor, lies wholly past that end of the curve; None where it
-    does not, or the link has no length.
-
-    Past an end the frame rides the straight tangent of the end link. The
-    offset of a longer frame bends that tangent where the curve turns by more
-    than the offset allows next to the end, by an amount that depends on how
-    many links the frame holds, so a label far past the end would move as
-    the frame's length changed. The link alone offsets straight.
-    """
-    first = s_anchor - lead * span
-    if first + span < 0.0:
-        i = 0
-    elif first > base.length:
-        i = len(base._arc) - 2
-    else:
-        return None
-    if not base._arc[i + 1] > base._arc[i]:
-        return None
-    link = _CurveFrame(base._xf[i:i + 2], base._yf[i:i + 2])
-    return link, s_anchor - float(base._arc[i])
 
 
 def _smoothing_window(length: float, covered: tuple[float, float],
@@ -2421,14 +2427,6 @@ class CurvedText(mtext.Text):
         # ``work`` and ``rounded`` share their vertices one to one, and so do
         # ``rounded`` and ``frame``: without rounding all three are the curve.
         work, rounded, s_work = rounding or (base, base, s_anchor)
-        if rounding is None:
-            # A label wholly past an end rides the straight tangent there.
-            # Offset only the end link, so the tangent does not depend on how
-            # much of the curve the frame holds beyond it.
-            end = _end_link(base, s_anchor, lead, reach)
-            if end is not None:
-                work = rounded = end[0]
-                s_work = end[1]
         frame = rounded.offset(offset_px)
         if not np.isfinite(frame.length) or frame.length <= 0.0:
             return None

@@ -3575,18 +3575,21 @@ def test_a_tiny_or_huge_min_radius_draws_without_error(min_radius):
     plt.close(fig)
 
 
-@pytest.mark.parametrize("lo, hi, offset, smooth", [
-    (-0.23, -0.21, 8.0, 10), (-0.23, -0.21, 3.0, 10),
-    (-0.11, -0.07, 8.0, None), (-0.11, -0.07, 8.0, 10)])
+@pytest.mark.parametrize("lo, hi, count, offset, smooth", [
+    (-0.196, -0.176, 21, 8.0, 10), (-0.196, -0.176, 21, -8.0, 10),
+    (-0.09, -0.07, 21, 3.0, None), (-0.109, -0.089, 21, 8.0, None),
+    (-0.06, -0.01, 51, -8.0, None)])
 def test_a_label_past_the_tight_start_of_a_spiral_moves_with_its_pos(
-        lo, hi, offset, smooth):
-    # The offset of a bend tighter than the offset folds, and a label past the
-    # end rides the offset of the end link. The first glyph must move as far
-    # as pos does, a pixel or so for a step of 0.001, where the frame's
-    # offset once turned the tangent by amounts that changed with how much of
-    # the curve it held: the smoothed part grows from one step to a few at
-    # -0.2215 (260 pixels for a 7 pixel move), and the label reaches the
-    # curve at -0.08 (300 pixels).
+        lo, hi, count, offset, smooth):
+    # The spiral turns far more tightly than the offset at its start, where
+    # the offset's first link can point almost anywhere. A label past the start
+    # runs parallel to the spiral's own end tangent, so its first glyph moves
+    # as far as pos does, under 3 pixels for a step of 0.001. Riding the
+    # offset's first link, it jumped over 330 pixels where the smoothed part
+    # grew from one step to a few (about -0.186) and, unsmoothed, 90 and 300
+    # pixels where the label reached the curve. The last window crosses that
+    # point at a negative offset, where switching from the end link alone to
+    # the whole frame jumped by 150 pixels.
     t = np.linspace(0, 12, 400)
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.set_xlim(-14, 14)
@@ -3596,40 +3599,55 @@ def test_a_label_past_the_tight_start_of_a_spiral_moves_with_its_pos(
                      smooth=smooth, pos=0.0)
     renderer = fig.canvas.get_renderer()
     first = []
-    for pos in np.linspace(lo, hi, 21):
+    for pos in np.linspace(lo, hi, count):
         ct._pos = pos
         _draw(fig)
         first.append(_path(ct, ct._segments[0], renderer).vertices.mean(axis=0))
     steps = np.hypot(*np.diff(first, axis=0).T)
-    assert steps.max() < 5.0
+    assert steps.max() < 10.0
     plt.close(fig)
 
 
-def test_a_label_wholly_past_an_end_rides_the_offset_of_the_end_link():
-    # Past either end the frame is the end link alone, offset straight, so the
-    # frame's tangent there is the link's however the curve turns beyond it.
-    frame = _core._CurveFrame(np.array([0.0, 10.0, 20.0, 25.0]),
-                              np.array([0.0, 0.0, 10.0, 30.0]))
-    link, s = _core._end_link(frame, -50.0, 0.0, 30.0)
-    assert (link._xf.tolist(), link._yf.tolist()) == ([0.0, 10.0], [0.0, 0.0])
-    assert s == -50.0
-    link, s = _core._end_link(frame, frame.length + 50.0, 1.0, 30.0)
-    assert (link._xf.tolist(), link._yf.tolist()) == ([20.0, 25.0], [10.0, 30.0])
-    assert s == pytest.approx(50.0 + frame._arc[-1] - frame._arc[-2])
-    # A label that reaches the curve at all keeps the whole frame, one whose
-    # edge is just at the end of it included.
-    for s_anchor, lead in ((-10.0, 0.0), (frame.length - 10.0, 1.0),
-                           (frame.length / 2.0, 0.5), (0.0, 1.0),
-                           (frame.length, 0.0)):
-        assert _core._end_link(frame, s_anchor, lead, 30.0) is None
+def _hairpin_start():
+    """A curve that turns right by a quarter turn one pixel from its start, far
+    tighter than an offset of 8 pixels to its left, and then runs at 45
+    degrees."""
+    return _core._CurveFrame(np.array([0.0, 1.0, 1.0, 50.0]),
+                             np.array([1.0, 1.0, 0.0, 49.0]))
 
 
-def test_an_end_link_of_no_length_is_not_a_frame():
-    # A curve that ends on a repeated point has no tangent to extend there.
-    frame = _core._CurveFrame(np.array([0.0, 1.0, 1.0]),
-                              np.array([0.0, 0.0, 0.0]))
-    assert _core._end_link(frame, frame.length + 50.0, 1.0, 10.0) is None
-    assert _core._end_link(frame, -50.0, 0.0, 10.0) is not None
+def test_an_offset_frame_runs_parallel_to_the_curve_past_its_ends():
+    # The offset's end links turn with the vertices next to the ends (its first
+    # link points 19 degrees down, not along the curve's 0, and its last at 50
+    # degrees, not 45), but past either end it runs along the curve's own end
+    # tangent, from its own end vertex, 8 pixels to the curve's left.
+    base = _hairpin_start()
+    frame = base.offset(8.0)
+    x, y, angle = frame.points_and_angles(-100.0)
+    assert (x, y, angle) == pytest.approx((-100.0, 9.0, 0.0))
+    along = 100.0 / math.sqrt(2.0)
+    last = (50.0 - 8.0 / math.sqrt(2.0), 49.0 + 8.0 / math.sqrt(2.0))
+    x, y, angle = frame.points_and_angles(frame.length + 100.0)
+    assert (x, y, angle) == pytest.approx(
+        (last[0] + along, last[1] + along, math.pi / 4.0))
+    # Between the ends it is the offset as before, and the curve itself still
+    # extends along its own end links.
+    np.testing.assert_allclose(frame.points_and_angles(frame._arc[1])[:2],
+                               (frame._xf[1], frame._yf[1]))
+    assert base.points_and_angles(-100.0)[:2] == pytest.approx((-100.0, 1.0))
+
+
+def test_an_overrun_carries_over_to_the_offset_unscaled():
+    # The offset's first link is seven times the curve's, but 30 pixels past an
+    # end of the curve is 30 pixels past that end of the offset, which runs
+    # parallel there; between the ends a link maps to its offset in proportion.
+    base = _hairpin_start()
+    frame = base.offset(8.0)
+    assert frame._arc[1] / base._arc[1] > 7.0
+    assert base.remap_arc(frame, -30.0) == pytest.approx(-30.0)
+    assert base.remap_arc(frame, base.length + 30.0) == pytest.approx(
+        frame.length + 30.0)
+    assert base.remap_arc(frame, 0.5) == pytest.approx(frame._arc[1] / 2.0)
 
 
 @pytest.mark.parametrize("smooth", [None, "auto", 4.0])

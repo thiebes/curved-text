@@ -7,8 +7,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- A huge `pos`, such as 1e15 or -1e17, draws the label far off the figure along
-  the end tangent instead of raising a numpy `ValueError` or `IndexError`
+- A `pos` of 1e15 or more in size, up to 1e300, draws the label far off the
+  figure along the end tangent instead of raising a numpy `ValueError` or
+  `IndexError`
   ([#86](https://github.com/thiebes/curved-text/issues/86)).
 
 ## 0.9.0

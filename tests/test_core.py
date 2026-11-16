@@ -3575,6 +3575,45 @@ def test_a_tiny_or_huge_min_radius_draws_without_error(min_radius):
     plt.close(fig)
 
 
+@pytest.mark.parametrize("smooth", [None, "auto", 4.0])
+@pytest.mark.parametrize("pos", [-1e300, -1e17, 1e15, 1e16, 1e300])
+def test_a_huge_pos_draws_without_error(pos, smooth):
+    # A label that far from its curve is off the figure, and rides the straight
+    # tangent there. (From 1e15, where arc lengths are too coarse to hold the
+    # probes of the rounding, it raised a numpy error; with smooth="auto", the
+    # count of reversals did too.)
+    fig, ax = plt.subplots()
+    x = np.linspace(0, 10, 50)
+    ct = curved_text(ax, x, np.sin(x), "label", pos=pos, smooth=smooth)
+    _draw(fig)
+    assert np.isfinite(_outline(ct, fig)).all()
+    assert np.isfinite(ct.get_window_extent().extents).all()
+    plt.close(fig)
+
+
+def test_a_label_wholly_past_an_end_has_no_bend_to_round():
+    # The curve turns a full half circle of 30 pixels' radius; a label whose
+    # reach lies beyond either end sits on the straight tangent.
+    angle = np.linspace(0.0, np.pi, 200)
+    base = _core._CurveFrame(30.0 * np.cos(angle), 30.0 * np.sin(angle))
+    ride = (45.0, 45.0)
+    assert CurvedText._round_curve(base, 100.0, 0.0, 40.0, ride, 0.0) is not None
+    for s_anchor in (1e4, 1e17, -1e4, -1e17):
+        assert CurvedText._round_curve(base, s_anchor, 0.0, 40.0, ride,
+                                       0.0) is None
+
+
+def test_the_reversals_of_a_part_far_from_the_label_are_none():
+    # The interval the gate looks at can lie anywhere along the stretch: far
+    # past either end of the part it holds no chord.
+    x = np.arange(400.0)
+    y = 4.0 * np.sin(x / 3.0)
+    assert _core._path_reversals(x, y, 6, 0, 399) >= 4
+    for first, last in ((10 ** 18, 10 ** 18 + 50), (-10 ** 18, -10 ** 18 + 50),
+                        (10 ** 40, 10 ** 41)):
+        assert _core._path_reversals(x, y, 6, first, last) == 0
+
+
 def _largest_step_with_pos(min_radius, reverse):
     """The largest distance, in pixels, that any glyph moves when ``pos`` moves
     by 0.002, over a wiggly curve whose bends come into and out of reach of

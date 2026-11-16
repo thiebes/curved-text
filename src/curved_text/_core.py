@@ -770,6 +770,10 @@ def _path_reversals(x: np.ndarray, y: np.ndarray, chord: int, first: int,
     two turns.
     """
     first, last = max(first, 0), min(last, len(x) - 1)
+    # Three chords fit in no starting offset where this is so, and a label far
+    # past the part leaves it negative, however large first or last were.
+    if last - first < 3 * chord:
+        return 0
     most = 0
     for offset in {0, chord // 3, 2 * chord // 3}:
         starts = np.arange(first + offset, last - chord + 1, chord)
@@ -2252,6 +2256,11 @@ class CurvedText(mtext.Text):
         label_lo = s_anchor - lead * length
         label_hi = s_anchor + (1.0 - lead) * length
         reach = _ROUND_REACH * widest
+        # A label whose reach lies wholly past an end rides the straight
+        # tangent there, which has nothing to round. This also keeps a huge
+        # ``pos`` from sampling arc lengths too coarse to hold a step.
+        if label_lo - reach > base.length or label_hi + reach < 0.0:
+            return None
         kappa = base.curvature(
             np.arange(label_lo - reach, label_hi + reach,
                       _ROUND_PROBE * widest), widest)

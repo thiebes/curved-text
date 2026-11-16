@@ -510,6 +510,13 @@ segment read the rounded frame:
    curve keeps the vertices of the sampled one.
 5. The anchor, given on the curve as it was passed in, carries over to the
    rounded, offset frame through the shared vertices (`remap_arc`).
+6. A label wholly past an end, where nothing was rounded, rides the offset of
+   the end link alone (`_end_link`). The offset of a longer frame turns the
+   direction of its first link at a vertex that bends by more than the offset
+   allows, by an amount that depends on how many links the frame holds, so a
+   label far past the end would move as the smoothed part grew from one step to
+   a few, or as the label came within reach of the curve. A label that reaches
+   the curve at all keeps the whole frame, rounded.
 
 **Cost to the label.** Where a bend is tighter than the least radius, the label
 leaves the curve: by about `0.29 * R_min` from either arm at a right-angle
@@ -644,9 +651,7 @@ follow what the label rides, and the line itself is untouched.
   it does. A number gives a steadier result, and is the choice for raw data. It
   is not perfectly steady: where the offset is larger than the radius of the
   smoothed path, a small change in the width or the view can move the label by
-  the size of the wiggles. A label far past an end rides the last step of the
-  part, so a bend tighter than the offset at that end can move it by a jump
-  as the label crosses from one step to a few.
+  the size of the wiggles.
 - A path that turns by a steep angle each way, such as a sine whose amplitude is
   several times its wavelength, has chords that flip by nearly a half turn, and
   `"auto"` can miss it. Give a number there.

@@ -3575,6 +3575,63 @@ def test_a_tiny_or_huge_min_radius_draws_without_error(min_radius):
     plt.close(fig)
 
 
+@pytest.mark.parametrize("lo, hi, offset, smooth", [
+    (-0.23, -0.21, 8.0, 10), (-0.23, -0.21, 3.0, 10),
+    (-0.11, -0.07, 8.0, None), (-0.11, -0.07, 8.0, 10)])
+def test_a_label_past_the_tight_start_of_a_spiral_moves_with_its_pos(
+        lo, hi, offset, smooth):
+    # The offset of a bend tighter than the offset folds, and a label past the
+    # end rides the offset of the end link. The first glyph must move as far
+    # as pos does, a pixel or so for a step of 0.001, where the frame's
+    # offset once turned the tangent by amounts that changed with how much of
+    # the curve it held: the smoothed part grows from one step to a few at
+    # -0.2215 (260 pixels for a 7 pixel move), and the label reaches the
+    # curve at -0.08 (300 pixels).
+    t = np.linspace(0, 12, 400)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_xlim(-14, 14)
+    ax.set_ylim(-14, 14)
+    ct = curved_text(ax, t * np.cos(2 * t), t * np.sin(2 * t),
+                     "Smoothing label", anchor="start", offset=offset,
+                     smooth=smooth, pos=0.0)
+    renderer = fig.canvas.get_renderer()
+    first = []
+    for pos in np.linspace(lo, hi, 21):
+        ct._pos = pos
+        _draw(fig)
+        first.append(_path(ct, ct._segments[0], renderer).vertices.mean(axis=0))
+    steps = np.hypot(*np.diff(first, axis=0).T)
+    assert steps.max() < 5.0
+    plt.close(fig)
+
+
+def test_a_label_wholly_past_an_end_rides_the_offset_of_the_end_link():
+    # Past either end the frame is the end link alone, offset straight, so the
+    # frame's tangent there is the link's however the curve turns beyond it.
+    frame = _core._CurveFrame(np.array([0.0, 10.0, 20.0, 25.0]),
+                              np.array([0.0, 0.0, 10.0, 30.0]))
+    link, s = _core._end_link(frame, -50.0, 0.0, 30.0)
+    assert (link._xf.tolist(), link._yf.tolist()) == ([0.0, 10.0], [0.0, 0.0])
+    assert s == -50.0
+    link, s = _core._end_link(frame, frame.length + 50.0, 1.0, 30.0)
+    assert (link._xf.tolist(), link._yf.tolist()) == ([20.0, 25.0], [10.0, 30.0])
+    assert s == pytest.approx(50.0 + frame._arc[-1] - frame._arc[-2])
+    # A label that reaches the curve at all keeps the whole frame, one whose
+    # edge is just at the end of it included.
+    for s_anchor, lead in ((-10.0, 0.0), (frame.length - 10.0, 1.0),
+                           (frame.length / 2.0, 0.5), (0.0, 1.0),
+                           (frame.length, 0.0)):
+        assert _core._end_link(frame, s_anchor, lead, 30.0) is None
+
+
+def test_an_end_link_of_no_length_is_not_a_frame():
+    # A curve that ends on a repeated point has no tangent to extend there.
+    frame = _core._CurveFrame(np.array([0.0, 1.0, 1.0]),
+                              np.array([0.0, 0.0, 0.0]))
+    assert _core._end_link(frame, frame.length + 50.0, 1.0, 10.0) is None
+    assert _core._end_link(frame, -50.0, 0.0, 10.0) is not None
+
+
 @pytest.mark.parametrize("smooth", [None, "auto", 4.0])
 @pytest.mark.parametrize("pos", [-1e300, -1e17, 1e15, 1e16, 1e300])
 def test_a_huge_pos_draws_without_error(pos, smooth):

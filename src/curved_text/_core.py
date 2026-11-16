@@ -792,6 +792,32 @@ def _path_reversals(x: np.ndarray, y: np.ndarray, chord: int, first: int,
     return most
 
 
+def _end_link(base: _CurveFrame, s_anchor: float, lead: float,
+              span: float) -> tuple[_CurveFrame, float] | None:
+    """The end link of ``base`` as a frame, and the arc length on it of the
+    point at ``s_anchor``, where a label of ``span`` pixels, with ``lead`` of
+    it before the anchor, lies wholly past that end of the curve; None where it
+    does not, or the link has no length.
+
+    Past an end the frame rides the straight tangent of the end link. The
+    offset of a longer frame bends that tangent where the curve turns by more
+    than the offset allows next to the end, by an amount that depends on how
+    many links the frame holds, so a label far past the end would move as
+    the frame's length changed. The link alone offsets straight.
+    """
+    first = s_anchor - lead * span
+    if first + span < 0.0:
+        i = 0
+    elif first > base.length:
+        i = len(base._arc) - 2
+    else:
+        return None
+    if not base._arc[i + 1] > base._arc[i]:
+        return None
+    link = _CurveFrame(base._xf[i:i + 2], base._yf[i:i + 2])
+    return link, s_anchor - float(base._arc[i])
+
+
 def _smoothing_window(length: float, covered: tuple[float, float],
                       sigma: float) -> tuple[float, float, int]:
     """The part of a stretch of ``length`` pixels that is smoothed: its start
@@ -2395,6 +2421,14 @@ class CurvedText(mtext.Text):
         # ``work`` and ``rounded`` share their vertices one to one, and so do
         # ``rounded`` and ``frame``: without rounding all three are the curve.
         work, rounded, s_work = rounding or (base, base, s_anchor)
+        if rounding is None:
+            # A label wholly past an end rides the straight tangent there.
+            # Offset only the end link, so the tangent does not depend on how
+            # much of the curve the frame holds beyond it.
+            end = _end_link(base, s_anchor, lead, reach)
+            if end is not None:
+                work = rounded = end[0]
+                s_work = end[1]
         frame = rounded.offset(offset_px)
         if not np.isfinite(frame.length) or frame.length <= 0.0:
             return None

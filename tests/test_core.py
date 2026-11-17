@@ -3587,9 +3587,10 @@ def test_a_label_past_the_tight_start_of_a_spiral_moves_with_its_pos(
     # as far as pos does, under 3 pixels for a step of 0.001. Riding the
     # offset's first link, it jumped over 330 pixels where the smoothed part
     # grew from one step to a few (about -0.186) and, unsmoothed, 90 and 300
-    # pixels where the label reached the curve. The last window crosses that
-    # point at a negative offset, where switching from the end link alone to
-    # the whole frame jumped by 150 pixels.
+    # pixels where the rounding of the start came within reach, with the label
+    # still past the start. The last window crosses the point where the label
+    # reaches the curve at a negative offset, where switching from the end link
+    # alone to the whole frame jumped by 150 pixels.
     t = np.linspace(0, 12, 400)
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.set_xlim(-14, 14)

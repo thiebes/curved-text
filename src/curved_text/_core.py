@@ -508,7 +508,9 @@ class _CurveFrame:
 
     def points_and_angles(self, s):
         """Map arc length ``s`` (scalar or array, pixels) to the position on
-        the curve and the tangent angle of the local link, elementwise."""
+        the curve and the tangent angle of the local link, elementwise. Past
+        the ends of an offset frame the angle is the matching end tangent of
+        ``ends``."""
         i = np.clip(np.searchsorted(self._arc, s) - 1, 0, len(self._arc) - 2)
         d = self._arc[i + 1] - self._arc[i]
         f = np.where(d != 0.0, (s - self._arc[i]) / np.where(d != 0.0, d, 1.0),
@@ -519,8 +521,9 @@ class _CurveFrame:
         if self._ends is None:
             return x, y, rad
         head, tail = self._ends
-        before = np.asarray(s) < 0.0
-        past = np.asarray(s) - self.length
+        s = np.asarray(s, dtype=float)
+        before = s < 0.0
+        past = s - self.length
         after = past > 0.0
         x = np.where(before, self._xf[0] + s * math.cos(head),
                      np.where(after, self._xf[-1] + past * math.cos(tail), x))

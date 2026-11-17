@@ -518,9 +518,10 @@ segment read the rounded frame:
    end link turns with the vertex next to the end, and where the curve bends
    there by more than the offset allows, it can point almost anywhere. A label
    past the end that followed it would move whenever that vertex did: as the
-   smoothed part grew from one step to a few, or as the label reached the
-   curve. The extension starts at the offset's end vertex, so a label that
-   moves onto the curve moves continuously.
+   smoothed part grew from one step to a few, or as the rounding of the end
+   came within reach while the label was still past it. The extension starts
+   at the offset's end vertex, so a label that moves onto the curve moves
+   continuously.
 
 **Cost to the label.** Where a bend is tighter than the least radius, the label
 leaves the curve: by about `0.29 * R_min` from either arm at a right-angle

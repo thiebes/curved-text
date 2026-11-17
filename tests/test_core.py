@@ -3575,6 +3575,82 @@ def test_a_tiny_or_huge_min_radius_draws_without_error(min_radius):
     plt.close(fig)
 
 
+@pytest.mark.parametrize("lo, hi, count, offset, smooth", [
+    (-0.196, -0.176, 21, 8.0, 10), (-0.196, -0.176, 21, -8.0, 10),
+    (-0.09, -0.07, 21, 3.0, None), (-0.109, -0.089, 21, 8.0, None),
+    (-0.06, -0.01, 51, -8.0, None)])
+def test_a_label_past_the_tight_start_of_a_spiral_moves_with_its_pos(
+        lo, hi, count, offset, smooth):
+    # The spiral turns far more tightly than the offset at its start, where
+    # the offset's first link can point almost anywhere. A label past the start
+    # runs parallel to the spiral's own end tangent, so its first glyph moves
+    # as far as pos does, under 3 pixels for a step of 0.001. Riding the
+    # offset's first link, it jumped over 330 pixels where the smoothed part
+    # grew from one step to a few (about -0.186) and, unsmoothed, 90 and 300
+    # pixels where the rounding of the start came within reach, with the label
+    # still past the start. The last window crosses the point where the label
+    # reaches the curve at a negative offset, where switching from the end link
+    # alone to the whole frame jumped by 150 pixels.
+    t = np.linspace(0, 12, 400)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.set_xlim(-14, 14)
+    ax.set_ylim(-14, 14)
+    ct = curved_text(ax, t * np.cos(2 * t), t * np.sin(2 * t),
+                     "Smoothing label", anchor="start", offset=offset,
+                     smooth=smooth, pos=0.0)
+    renderer = fig.canvas.get_renderer()
+    first = []
+    for pos in np.linspace(lo, hi, count):
+        ct._pos = pos
+        _draw(fig)
+        first.append(_path(ct, ct._segments[0], renderer).vertices.mean(axis=0))
+    steps = np.hypot(*np.diff(first, axis=0).T)
+    assert steps.max() < 10.0
+    plt.close(fig)
+
+
+def _hairpin_start():
+    """A curve that turns right by a quarter turn one pixel from its start, far
+    tighter than an offset of 8 pixels to its left, and then runs at 45
+    degrees."""
+    return _core._CurveFrame(np.array([0.0, 1.0, 1.0, 50.0]),
+                             np.array([1.0, 1.0, 0.0, 49.0]))
+
+
+def test_an_offset_frame_runs_parallel_to_the_curve_past_its_ends():
+    # The offset's end links turn with the vertices next to the ends (its first
+    # link points 19 degrees down, not along the curve's 0, and its last at 50
+    # degrees, not 45), but past either end it runs along the curve's own end
+    # tangent, from its own end vertex, 8 pixels to the curve's left.
+    base = _hairpin_start()
+    frame = base.offset(8.0)
+    x, y, angle = frame.points_and_angles(-100.0)
+    assert (x, y, angle) == pytest.approx((-100.0, 9.0, 0.0))
+    along = 100.0 / math.sqrt(2.0)
+    last = (50.0 - 8.0 / math.sqrt(2.0), 49.0 + 8.0 / math.sqrt(2.0))
+    x, y, angle = frame.points_and_angles(frame.length + 100.0)
+    assert (x, y, angle) == pytest.approx(
+        (last[0] + along, last[1] + along, math.pi / 4.0))
+    # Between the ends it is the offset as before, and the curve itself still
+    # extends along its own end links.
+    np.testing.assert_allclose(frame.points_and_angles(frame._arc[1])[:2],
+                               (frame._xf[1], frame._yf[1]))
+    assert base.points_and_angles(-100.0)[:2] == pytest.approx((-100.0, 1.0))
+
+
+def test_an_overrun_carries_over_to_the_offset_unscaled():
+    # The offset's first link is seven times the curve's, but 30 pixels past an
+    # end of the curve is 30 pixels past that end of the offset, which runs
+    # parallel there; between the ends a link maps to its offset in proportion.
+    base = _hairpin_start()
+    frame = base.offset(8.0)
+    assert frame._arc[1] / base._arc[1] > 7.0
+    assert base.remap_arc(frame, -30.0) == pytest.approx(-30.0)
+    assert base.remap_arc(frame, base.length + 30.0) == pytest.approx(
+        frame.length + 30.0)
+    assert base.remap_arc(frame, 0.5) == pytest.approx(frame._arc[1] / 2.0)
+
+
 @pytest.mark.parametrize("smooth", [None, "auto", 4.0])
 @pytest.mark.parametrize("pos", [-1e300, -1e17, 1e15, 1e16, 1e300])
 def test_a_huge_pos_draws_without_error(pos, smooth):

@@ -7,6 +7,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- A label past an end of its curve with an `offset` runs parallel to the
+  curve's own end tangent, at the offset, and moves as far as `pos` does
+  ([#87](https://github.com/thiebes/curved-text/issues/87)). Before, it ran
+  along the offset curve's end link, which turns with the vertex next to the
+  end, and its distance past the end was scaled by the ratio of that link to
+  the curve's. Where the curve bends next to the end more tightly than the
+  offset, the link can point almost anywhere: on a spiral, a label past the
+  start jumped by over 330 pixels for a step of 0.001 in `pos`, where the part
+  that `smooth` smooths grew from one step to a few and, without smoothing,
+  where the rounding of the start (`min_radius`) came within reach, with the
+  label still past the start. On a gently curved end, a label past it now sits
+  elsewhere by an amount that grows with the offset and the distance past the
+  end: 13 pixels at an offset of 4 points and 26 at 8, one curve length past
+  the end of a circle. A label with no offset, or wholly on the curve, is
+  unchanged.
 - A `pos` of 1e15 or more in size, up to 1e300, draws the label far off the
   figure along the end tangent instead of raising a numpy `ValueError` or
   `IndexError`
